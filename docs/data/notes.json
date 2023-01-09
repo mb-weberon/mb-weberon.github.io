@@ -11,8 +11,8 @@
       "title": "This page has not yet sprouted",
       "schemaStub": false,
       "type": "note",
-      "updated": 1673239019372,
-      "created": 1673239019372,
+      "updated": 1673271729512,
+      "created": 1673271729512,
       "desc": "",
       "links": [],
       "anchors": {},
@@ -109,12 +109,12 @@
         }
       },
       "children": [
-        "cjc8lhyauvhiej4j5d1vyk2"
+        "0nqyigqt4ueoivevbacaiur"
       ],
       "parent": null,
       "data": {}
     },
-    "cjc8lhyauvhiej4j5d1vyk2": {
+    "0nqyigqt4ueoivevbacaiur": {
       "fname": "branded",
       "stub": true,
       "vault": {
@@ -124,9 +124,9 @@
       },
       "schemaStub": false,
       "type": "note",
-      "updated": 1673239019305,
-      "created": 1673239019305,
-      "id": "cjc8lhyauvhiej4j5d1vyk2",
+      "updated": 1673271729425,
+      "created": 1673271729425,
+      "id": "0nqyigqt4ueoivevbacaiur",
       "desc": "",
       "links": [],
       "anchors": {},
@@ -178,7 +178,7 @@
       ],
       "anchors": {},
       "children": [],
-      "parent": "cjc8lhyauvhiej4j5d1vyk2",
+      "parent": "0nqyigqt4ueoivevbacaiur",
       "data": {}
     }
   },
@@ -272,7 +272,7 @@
         }
       },
       "children": [
-        "cjc8lhyauvhiej4j5d1vyk2"
+        "0nqyigqt4ueoivevbacaiur"
       ],
       "parent": null,
       "data": {},
@@ -368,7 +368,7 @@
       }
     },
     "children": [
-      "cjc8lhyauvhiej4j5d1vyk2"
+      "0nqyigqt4ueoivevbacaiur"
     ],
     "parent": null,
     "data": {},
