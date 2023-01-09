@@ -1,0 +1,29 @@
+{
+  "roots": [
+    {
+      "key": "cjc8lhyauvhiej4j5d1vyk2",
+      "title": "Branded",
+      "icon": "plusOutlined",
+      "hasTitleNumberOutlined": false,
+      "vaultName": "weberon-docs",
+      "children": [
+        {
+          "key": "7kvn34av9mw3siymi08qfrd",
+          "title": "Showcase",
+          "icon": null,
+          "hasTitleNumberOutlined": false,
+          "vaultName": "weberon-docs",
+          "children": []
+        }
+      ]
+    }
+  ],
+  "child2parent": {
+    "cjc8lhyauvhiej4j5d1vyk2": null,
+    "7kvn34av9mw3siymi08qfrd": "cjc8lhyauvhiej4j5d1vyk2"
+  },
+  "notesLabelById": {
+    "cjc8lhyauvhiej4j5d1vyk2": "Branded",
+    "7kvn34av9mw3siymi08qfrd": "Showcase"
+  }
+}
