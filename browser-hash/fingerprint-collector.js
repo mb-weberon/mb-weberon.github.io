@@ -50,6 +50,66 @@ function getCanvasFingerprint() {
 }
 
 /**
+ * Generates an audio fingerprint by examining Web Audio API properties.
+ * @returns {Promise<string>} A promise that resolves with a string representing the audio fingerprint or an error string.
+ */
+function getAudioFingerprint() {
+    return new Promise(resolve => {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContext) {
+            resolve('audio-unsupported');
+            return;
+        }
+
+        let context;
+        try {
+            context = new AudioContext();
+            const compressor = context.createDynamicsCompressor();
+            const analyser = context.createAnalyser();
+            const oscillator = context.createOscillator();
+
+            // Collect various parameters from the audio context and nodes
+            // These values can vary slightly depending on OS, hardware, and browser implementation
+            const audioFeatures = [
+                `context_sampleRate:${context.sampleRate}`,
+                `compressor_threshold:${compressor.threshold.value}`,
+                `compressor_knee:${compressor.knee.value}`,
+                `compressor_ratio:${compressor.ratio.value}`,
+                `compressor_attack:${compressor.attack.value}`,
+                `compressor_release:${compressor.release.value}`,
+                `analyser_fftSize:${analyser.fftSize}`,
+                `analyser_minDecibels:${analyser.minDecibels}`,
+                `analyser_maxDecibels:${analyser.maxDecibels}`,
+                `analyser_smoothingTimeConstant:${analyser.smoothingTimeConstant}`,
+                `oscillator_type:${oscillator.type}`,
+                `oscillator_frequency:${oscillator.frequency.value}`,
+                `oscillator_detune:${oscillator.detune.value}`
+            ].join(';');
+
+            // Close the audio context to release resources
+            if (context.state !== 'closed') {
+                context.close().then(() => resolve(audioFeatures)).catch(e => {
+                    console.error("Error closing audio context:", e);
+                    resolve(audioFeatures + '-context-close-error'); // Still return features but indicate close error
+                });
+            } else {
+                resolve(audioFeatures);
+            }
+
+        } catch (e) {
+            console.error("Audio fingerprinting error:", e);
+            // Ensure context is closed if it was opened before the error
+            if (context && context.state !== 'closed') {
+                context.close().finally(() => resolve('audio-error'));
+            } else {
+                resolve('audio-error');
+            }
+        }
+    });
+}
+
+
+/**
  * Computes the SHA-256 hash of a given string.
  * Robustly checks for crypto.subtle availability.
  * @param {string} str - The input string to hash.
@@ -76,8 +136,9 @@ async function sha256(str) {
 
 /**
  * Collects various browser and device attributes for fingerprinting.
- * @returns {Promise<{fingerprint: string, attributesDisplay: string, collectedStrings: string[]}>}
- * A promise that resolves with the generated fingerprint, HTML display string, and raw collected strings.
+ * @returns {Promise<{fingerprint: string, attributesDisplay: string, collectedStrings: string[], rawCanvasFingerprint: string, hashedCanvasFingerprint: string, rawAudioFingerprint: string, hashedAudioFingerprint: string}>}
+ * A promise that resolves with the generated fingerprint, HTML display string, raw collected strings,
+ * the raw canvas fingerprint data URL, its hash, the raw audio fingerprint string, and its hash.
  */
 export async function collectAttributesAndGenerateFingerprint() {
     const collectedStrings = [];
@@ -130,9 +191,20 @@ export async function collectAttributesAndGenerateFingerprint() {
     }
 
     // Canvas Fingerprint
-    const canvasFingerprint = await getCanvasFingerprint();
-    collectedStrings.push(`canvas_fp_val:${canvasFingerprint}`);
-    attributesDisplay += `<p><strong>Canvas Data URL (full):</strong> <span style="font-size: 0.75em; word-break: break-all;">${canvasFingerprint}</span></p>`;
+    const rawCanvasFingerprint = await getCanvasFingerprint();
+    const hashedCanvasFingerprint = await sha256(rawCanvasFingerprint); // HASH THE RAW CANVAS FP
+    collectedStrings.push(`canvas_fp_val:${rawCanvasFingerprint}`); // Keep raw for overall hash
+    attributesDisplay += `<p><strong>Canvas Data URL (full):</strong> <span style="font-size: 0.75em; word-break: break-all;">${rawCanvasFingerprint}</span></p>`;
+    attributesDisplay += `<p><strong>Canvas Data URL (SHA-256):</strong> <span style="font-size: 0.75em; word-break: break-all;">${hashedCanvasFingerprint}</span></p>`;
+
+
+    // Audio Fingerprint
+    const rawAudioFingerprint = await getAudioFingerprint();
+    const hashedAudioFingerprint = await sha256(rawAudioFingerprint); // HASH THE RAW AUDIO FP
+    collectedStrings.push(`audio_fp_val:${rawAudioFingerprint}`); // Keep raw for overall hash
+    attributesDisplay += `<p><strong>Audio Parameters (full):</strong> <span style="font-size: 0.75em; word-break: break-all;">${rawAudioFingerprint}</span></p>`;
+    attributesDisplay += `<p><strong>Audio Parameters (SHA-256):</strong> <span style="font-size: 0.75em; word-break: break-all;">${hashedAudioFingerprint}</span></p>`;
+
 
     // Combine all attributes into a single string, sorted for consistency
     collectedStrings.sort(); // Sort to ensure order doesn't affect the hash
@@ -140,5 +212,13 @@ export async function collectAttributesAndGenerateFingerprint() {
 
     const fingerprint = await sha256(attributeString);
 
-    return { fingerprint, attributesDisplay, collectedStrings };
+    return {
+        fingerprint,
+        attributesDisplay,
+        collectedStrings,
+        rawCanvasFingerprint,
+        hashedCanvasFingerprint, // NEW: Return hashed canvas FP
+        rawAudioFingerprint,
+        hashedAudioFingerprint // NEW: Return hashed audio FP
+    };
 }
