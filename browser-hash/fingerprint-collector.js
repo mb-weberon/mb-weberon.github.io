@@ -108,6 +108,57 @@ function getAudioFingerprint() {
     });
 }
 
+/**
+ * Generates a conceptual DRM-related fingerprint.
+ * This is highly conceptual as direct access to unique DRM identifiers is restricted.
+ * It checks for the availability of Media Key System Access and returns a string based on supported systems.
+ * @returns {Promise<string>} A promise that resolves with a string indicating DRM support or its absence.
+ */
+async function getDrmFingerprint() {
+    if (!navigator.requestMediaKeySystemAccess) {
+        return 'drm-api-unsupported'; // No API available
+    }
+
+    const keySystemsToTest = [
+        // Common key systems, for conceptual demonstration only.
+        // Actual support varies greatly by browser, OS, and content licenses.
+        'com.google.youtube.playready',
+        'org.w3.clearkey',
+        'com.microsoft.playready',
+        // 'com.apple.fps.1_0' // Apple FairPlay Streaming is highly restricted and usually requires specific hardware and certificates.
+    ];
+
+    let supportedKeySystems = [];
+
+    for (const keySystem of keySystemsToTest) {
+        try {
+            // Attempt to query support for a simple, generic configuration
+            // Note: This does NOT grant access, only checks for reported support.
+            const supported = await navigator.requestMediaKeySystemAccess(keySystem, [{
+                initDataTypes: ['cenc', 'webm', 'mp4'], // Common init data types
+                videoCapabilities: [{ contentType: 'video/mp4; codecs="avc1.42E01E"' }], // Common video codec
+                audioCapabilities: [{ contentType: 'audio/mp4; codecs="mp4a.40.2"' }] // Common audio codec
+            }]);
+            if (supported) {
+                // If support object is returned, it means the browser reports supporting it conceptually.
+                supportedKeySystems.push(keySystem);
+            }
+        } catch (e) {
+            // Catching errors here means the key system or configuration was explicitly rejected/unsupported
+            // by the browser's Media Key System Access API. This is not an error for the fingerprint,
+            // but rather information about the environment's capabilities.
+            // console.warn(`DRM check for ${keySystem} failed (expected for non-supported configs): ${e.message}`);
+        }
+    }
+
+    if (supportedKeySystems.length > 0) {
+        supportedKeySystems.sort(); // Ensure consistent order for fingerprinting
+        return `DRM_Supported:[${supportedKeySystems.join(',')}]`;
+    } else {
+        return 'DRM_Supported:None'; // No listed DRM systems reported as supported
+    }
+}
+
 
 /**
  * Computes the SHA-256 hash of a given string.
@@ -136,11 +187,12 @@ async function sha256(str) {
 
 /**
  * Collects various browser and device attributes for fingerprinting.
- * @returns {Promise<{fingerprint: string, attributesDisplay: string, collectedStrings: string[], rawCanvasFingerprint: string, hashedCanvasFingerprint: string, rawAudioFingerprint: string, hashedAudioFingerprint: string}>}
+ * @returns {Promise<{fingerprint: string, attributesDisplay: string, collectedStrings: string[], rawCanvasFingerprint: string, hashedCanvasFingerprint: string, rawAudioFingerprint: string, hashedAudioFingerprint: string, rawDrmFingerprint: string, hashedDrmFingerprint: string}>}
  * A promise that resolves with the generated fingerprint, HTML display string, raw collected strings,
- * the raw canvas fingerprint data URL, its hash, the raw audio fingerprint string, and its hash.
+ * the raw canvas fingerprint data URL, its hash, the raw audio fingerprint string, its hash,
+ * the raw DRM fingerprint string, and its hash.
  */
-export async function collectAttributesAndGenerateFingerprint() {
+export async function collectAttributesAndGenerateFingerprint() { // Removed includeDrm parameter
     const collectedStrings = [];
     let attributesDisplay = '';
     const ua = navigator.userAgent || 'N/A';
@@ -205,6 +257,12 @@ export async function collectAttributesAndGenerateFingerprint() {
     attributesDisplay += `<p><strong>Audio Parameters (full):</strong> <span style="font-size: 0.75em; word-break: break-all;">${rawAudioFingerprint}</span></p>`;
     attributesDisplay += `<p><strong>Audio Parameters (SHA-256):</strong> <span style="font-size: 0.75em; word-break: break-all;">${hashedAudioFingerprint}</span></p>`;
 
+    // DRM Fingerprint (Always Included)
+    const rawDrmFingerprint = await getDrmFingerprint();
+    const hashedDrmFingerprint = await sha256(rawDrmFingerprint);
+    collectedStrings.push(`drm_fp_val:${rawDrmFingerprint}`);
+    attributesDisplay += `<p><strong>DRM Support (full):</strong> <span style="font-size: 0.75em; word-break: break-all;">${rawDrmFingerprint}</span></p>`;
+    attributesDisplay += `<p><strong>DRM Support (SHA-256):</strong> <span style="font-size: 0.75em; word-break: break-all;">${hashedDrmFingerprint}</span></p>`;
 
     // Combine all attributes into a single string, sorted for consistency
     collectedStrings.sort(); // Sort to ensure order doesn't affect the hash
@@ -217,8 +275,11 @@ export async function collectAttributesAndGenerateFingerprint() {
         attributesDisplay,
         collectedStrings,
         rawCanvasFingerprint,
-        hashedCanvasFingerprint, // NEW: Return hashed canvas FP
+        hashedCanvasFingerprint,
         rawAudioFingerprint,
-        hashedAudioFingerprint // NEW: Return hashed audio FP
+        hashedAudioFingerprint,
+        rawDrmFingerprint,
+        hashedDrmFingerprint
     };
 }
+
