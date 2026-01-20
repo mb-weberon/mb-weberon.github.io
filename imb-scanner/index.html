@@ -3,35 +3,46 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>IMB Visual Scanner</title>
+    <title>IMB Visual Digitizer</title>
     <style>
-        body { font-family: monospace; margin: 0; background: #000; color: #00ff00; overflow: hidden; height: 100vh; }
+        :root { --line-color: #00ff00; }
+        body { font-family: monospace; margin: 0; background: #000; color: var(--line-color); overflow: hidden; height: 100vh; }
+        
         #camera-container { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; }
         video { width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; z-index: 1; }
         
-        /* The Viewfinder and Overlay */
-        #overlay-layer { position: relative; z-index: 2; height: 100%; pointer-events: none; }
+        /* The UI Layer */
+        #overlay-layer { position: relative; z-index: 2; height: 100%; pointer-events: none; display: flex; flex-direction: column; align-items: center; }
+        
         #viewfinder {
-            position: absolute; top: 35%; left: 5%; width: 90%; height: 60px;
-            border: 2px solid #00ff00; transform: translateY(-50%);
+            position: absolute; top: 40%; width: 90%; height: 60px;
+            border: 2px solid var(--line-color); transform: translateY(-50%);
             box-shadow: 0 0 0 2000px rgba(0,0,0,0.7);
         }
 
         #results-area {
-            position: absolute; top: calc(35% + 40px); left: 5%; width: 90%;
-            background: rgba(20, 20, 20, 0.9); padding: 15px; box-sizing: border-box;
+            position: absolute; top: calc(40% + 40px); width: 90%;
+            background: rgba(15, 15, 15, 0.95); padding: 12px; box-sizing: border-box;
             border: 1px solid #444; border-radius: 0 0 8px 8px; pointer-events: auto;
+            text-align: center;
         }
 
-        #fadt-text { font-size: 1.2rem; word-break: break-all; color: #fff; min-height: 1.5em; margin-bottom: 10px; text-align: center;}
-        #status { font-size: 0.8rem; color: #00ff00; margin-bottom: 10px; text-align: center; }
+        #fadt-text { font-size: 1.1rem; word-break: break-all; color: #fff; min-height: 1.5em; margin-bottom: 8px; letter-spacing: 1px; }
+        #status { font-size: 0.75rem; color: var(--line-color); margin-bottom: 12px; font-weight: bold; text-transform: uppercase; }
 
-        .btn-group { display: flex; gap: 10px; }
+        .btn-group { display: flex; gap: 8px; }
         button { 
-            flex: 1; padding: 15px; background: #333; color: white; border: 1px solid #555;
-            border-radius: 4px; font-weight: bold; font-size: 0.9rem;
+            flex: 1; padding: 14px; background: #222; color: white; border: 1px solid #555;
+            border-radius: 4px; font-weight: bold; font-size: 0.85rem; cursor: pointer;
         }
+        button:active { background: #444; }
         #copy-btn { background: #007bff; border-color: #0056b3; }
+
+        /* Handling Landscape Specifically */
+        @media (orientation: landscape) {
+            #viewfinder { width: 70%; height: 50px; top: 35%; }
+            #results-area { width: 70%; top: calc(35% + 35px); }
+        }
     </style>
 </head>
 <body>
@@ -41,11 +52,11 @@
         <div id="overlay-layer">
             <div id="viewfinder"></div>
             <div id="results-area">
-                <div id="status">INITIALIZING CAMERA...</div>
+                <div id="status">Starting Rear Camera...</div>
                 <div id="fadt-text">---</div>
                 <div class="btn-group">
-                    <button id="copy-btn" onclick="copyString()">COPY</button>
-                    <button onclick="resetScanner()">SCAN AGAIN</button>
+                    <button id="copy-btn" onclick="copyString()">COPY FADT</button>
+                    <button onclick="resetScanner()">RESET</button>
                 </div>
             </div>
         </div>
@@ -61,105 +72,135 @@
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
     let isLocked = false;
+    let stream = null;
 
-    async function initCamera() {
-        statusText.innerText = "REQUESTING CAMERA...";
-        
-        // Strategy: Try back camera, then any camera
-        const modes = [
-            { video: { facingMode: { preferred: "environment" } } },
-            { video: true }
-        ];
+    async function startCamera() {
+        if (stream) {
+            stream.getTracks().forEach(t => t.stop());
+        }
 
-        for (let constraints of modes) {
+        // Specifically targeting the rear camera with strict facingMode
+        const constraints = {
+            video: { 
+                facingMode: { exact: "environment" },
+                width: { ideal: 1280 },
+                height: { ideal: 720 }
+            }
+        };
+
+        try {
+            stream = await navigator.mediaDevices.getUserMedia(constraints);
+            video.srcObject = stream;
+            // Handle browser play-policy
+            video.onloadedmetadata = () => {
+                video.play();
+                statusText.innerText = "READY: Center Barcode";
+                requestAnimationFrame(processLoop);
+            };
+        } catch (e) {
+            console.error(e);
+            // Fallback for devices that don't support 'exact' or desktop testing
             try {
-                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
                 video.srcObject = stream;
-                // Force play for iOS
-                await video.play();
-                statusText.innerText = "READY: ALIGN BARCODE";
-                requestAnimationFrame(processFrame);
-                return; // Success!
-            } catch (e) {
-                console.log("Mode failed, trying next...", e);
+                statusText.innerText = "READY (Fallback Mode)";
+                requestAnimationFrame(processLoop);
+            } catch (err2) {
+                statusText.innerText = "CAMERA ERROR: Ensure HTTPS and permissions.";
             }
         }
-        statusText.innerText = "ERROR: CAMERA NOT FOUND OR DENIED";
     }
 
-    function processFrame() {
-        if (isLocked) { requestAnimationFrame(processFrame); return; }
+    function processLoop() {
+        if (isLocked) { requestAnimationFrame(processLoop); return; }
 
         if (video.readyState === video.HAVE_ENOUGH_DATA) {
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
             
-            // Extract the area inside the viewfinder
-            const vWidth = canvas.width * 0.9;
-            const vHeight = 80; 
-            const vX = canvas.width * 0.05;
-            const vY = (canvas.height * 0.35) - (vHeight / 2);
+            // Map the viewfinder area to the canvas
+            const viewYPercent = 0.40; 
+            const viewHeightPercent = 0.12;
+            const scanW = canvas.width * 0.9;
+            const scanH = canvas.height * viewHeightPercent;
+            const scanX = canvas.width * 0.05;
+            const scanY = (canvas.height * viewYPercent) - (scanH / 2);
 
-            ctx.drawImage(video, vX, vY, vWidth, vHeight, 0, 0, vWidth, vHeight);
-            const imgData = ctx.getImageData(0, 0, vWidth, vHeight);
-            const fadt = analyzeImage(imgData);
+            ctx.drawImage(video, scanX, scanY, scanW, scanH, 0, 0, scanW, scanH);
+            const imgData = ctx.getImageData(0, 0, scanW, scanH);
+            const result = decodeFADT(imgData);
 
-            if (fadt.length === 65) {
-                fadtDisplay.innerText = fadt;
-                statusText.innerText = "65 BARS DETECTED (LOCKED)";
+            if (result.length === 65) {
+                fadtDisplay.innerText = result;
+                statusText.innerText = "65 BARS FOUND - SCAN LOCKED";
                 isLocked = true;
             } else {
-                fadtDisplay.innerText = fadt || "...";
-                statusText.innerText = `FOUND: ${fadt.length}/65 BARS`;
+                fadtDisplay.innerText = result || "...";
+                statusText.innerText = `Bars: ${result.length}/65 (Hold Steady)`;
             }
         }
-        requestAnimationFrame(processFrame);
+        requestAnimationFrame(processLoop);
     }
 
-    function analyzeImage(imgData) {
-        const d = imgData.data; const w = imgData.width; const h = imgData.height;
-        let cols = new Array(w).fill(0);
+    function decodeFADT(imgData) {
+        const d = imgData.data;
+        const w = imgData.width;
+        const h = imgData.height;
+        
+        // Vertical Projection (Summing darkness)
+        let projection = new Array(w).fill(0);
         for (let x = 0; x < w; x++) {
             for (let y = 0; y < h; y++) {
                 const i = (y * w + x) * 4;
-                if ((d[i] + d[i+1] + d[i+2]) / 3 < 120) cols[x]++;
+                const brightness = (d[i] + d[i+1] + d[i+2]) / 3;
+                if (brightness < 125) projection[x]++;
             }
         }
-        let bars = []; let inBar = false; let start = 0;
+
+        // Segmentation
+        let bars = [];
+        let inBar = false;
+        let start = 0;
         for (let x = 0; x < w; x++) {
-            let active = cols[x] > (h * 0.15);
+            const active = projection[x] > (h * 0.15);
             if (active && !inBar) { inBar = true; start = x; }
             else if (!active && inBar) { inBar = false; bars.push({s: start, e: x}); }
         }
+
+        // Classification
         return bars.map(b => {
-            const mid = Math.floor((b.s + b.e) / 2);
-            let top = false, bot = false;
+            const midX = Math.floor((b.s + b.e) / 2);
+            let hasTop = false, hasBot = false;
             for (let y = 0; y < h; y++) {
-                const i = (y * w + mid) * 4;
-                if ((d[i] + d[i+1] + d[i+2]) / 3 < 120) {
-                    if (y < h * 0.3) top = true;
-                    if (y > h * 0.7) bot = true;
+                const i = (y * w + midX) * 4;
+                if ((d[i] + d[i+1] + d[i+2]) / 3 < 125) {
+                    if (y < h * 0.35) hasTop = true;
+                    if (y > h * 0.65) hasBot = true;
                 }
             }
-            if (top && bot) return 'F';
-            if (top) return 'A';
-            if (bot) return 'D';
+            if (hasTop && hasBot) return 'F';
+            if (hasTop) return 'A';
+            if (hasBot) return 'D';
             return 'T';
         }).join('');
     }
 
-    function resetScanner() { isLocked = false; statusText.innerText = "SCANNING..."; }
+    function resetScanner() {
+        isLocked = false;
+        statusText.innerText = "SCANNING...";
+        fadtDisplay.innerText = "...";
+    }
 
     function copyString() {
+        if (fadtDisplay.innerText.length < 5) return;
         navigator.clipboard.writeText(fadtDisplay.innerText).then(() => {
-            const oldStatus = statusText.innerText;
-            statusText.innerText = "COPIED!";
-            setTimeout(() => statusText.innerText = oldStatus, 2000);
+            const prev = statusText.innerText;
+            statusText.innerText = "COPIED TO CLIPBOARD!";
+            setTimeout(() => statusText.innerText = prev, 1500);
         });
     }
 
-    // Start on load
-    window.addEventListener('load', initCamera);
+    window.addEventListener('load', startCamera);
 </script>
 </body>
 </html>
