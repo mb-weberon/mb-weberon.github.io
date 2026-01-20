@@ -5,61 +5,50 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>IMB Visual Scanner</title>
     <style>
-        :root { --accent: #00ff00; }
-        body { font-family: system-ui, sans-serif; margin: 0; background: #121212; color: white; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        body { font-family: monospace; margin: 0; background: #000; color: #00ff00; overflow: hidden; }
         
-        /* Layout Containers */
-        #camera-section { position: relative; flex: 1; background: #000; overflow: hidden; }
-        #output-section { padding: 15px; background: #1e1e1e; border-top: 1px solid #333; z-index: 20; }
-        
+        #camera-container { position: relative; width: 100vw; height: 100vh; }
         video { width: 100%; height: 100%; object-fit: cover; }
         
-        /* Viewfinder */
+        /* The Viewfinder Box */
         #viewfinder {
-            position: absolute; top: 50%; left: 5%; width: 90%; height: 50px;
-            border: 2px solid var(--accent); transform: translateY(-50%);
-            box-shadow: 0 0 0 2000px rgba(0,0,0,0.6); pointer-events: none;
+            position: absolute; top: 40%; left: 5%; width: 90%; height: 60px;
+            border: 2px solid #00ff00; transform: translateY(-50%);
+            box-shadow: 0 0 0 2000px rgba(0,0,0,0.7); pointer-events: none;
         }
 
-        /* FADT Text Display */
-        #fadt-display { 
-            background: #000; padding: 12px; border-radius: 6px; 
-            font-family: 'Courier New', monospace; font-size: 1rem;
-            word-break: break-all; min-height: 2.5em; border: 1px solid #444;
-            color: var(--accent); margin-bottom: 10px;
+        /* Results display directly under the box */
+        #results-overlay {
+            position: absolute; top: calc(40% + 40px); left: 5%; width: 90%;
+            background: rgba(0, 0, 0, 0.8); padding: 10px; box-sizing: border-box;
+            border: 1px solid #444; border-radius: 0 0 8px 8px; text-align: center;
         }
 
-        /* Buttons */
-        .btn-group { display: flex; gap: 10px; justify-content: center; }
+        #fadt-text { font-size: 1.1rem; word-break: break-all; margin-bottom: 10px; color: #fff; min-height: 1.2em;}
+        #status { font-size: 0.8rem; color: #00ff00; margin-bottom: 10px; }
+
+        .btn-group { display: flex; gap: 5px; }
         button { 
-            flex: 1; padding: 12px; font-size: 0.9rem; font-weight: bold;
-            border-radius: 6px; border: none; cursor: pointer;
+            flex: 1; padding: 12px; background: #333; color: white; border: 1px solid #555;
+            border-radius: 4px; font-weight: bold; font-size: 0.8rem;
         }
-        #copy-btn { background: #007bff; color: white; }
-        #reset-btn { background: #444; color: white; }
-
-        /* Landscape Orientation Fix */
-        @media (orientation: landscape) {
-            body { flex-direction: row; }
-            #camera-section { flex: 3; }
-            #output-section { flex: 2; border-top: none; border-left: 1px solid #333; display: flex; flex-direction: column; justify-content: center; overflow-y: auto; }
-            #viewfinder { height: 40px; }
-        }
+        button:active { background: #555; }
+        #copy-btn { background: #007bff; border-color: #0056b3; }
     </style>
 </head>
 <body>
 
-    <div id="camera-section">
+    <div id="camera-container">
         <video id="video" autoplay playsinline></video>
         <div id="viewfinder"></div>
-    </div>
-
-    <div id="output-section">
-        <div id="status">Align barcode in green box...</div>
-        <div id="fadt-display">Searching...</div>
-        <div class="btn-group">
-            <button id="copy-btn" onclick="copyString()">Copy String</button>
-            <button id="reset-btn" onclick="resetScanner()">Clear / Scan Again</button>
+        
+        <div id="results-overlay">
+            <div id="status">ALIGN BARCODE IN BOX</div>
+            <div id="fadt-text">...</div>
+            <div class="btn-group">
+                <button id="copy-btn" onclick="copyString()">COPY</button>
+                <button onclick="resetScanner()">SCAN AGAIN</button>
+            </div>
         </div>
     </div>
 
@@ -68,15 +57,106 @@
 <script>
     const video = document.getElementById('video');
     const canvas = document.getElementById('procCanvas');
-    const display = document.getElementById('fadt-display');
+    const fadtDisplay = document.getElementById('fadt-text');
     const statusText = document.getElementById('status');
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
     let isLocked = false;
 
-    async function startCamera() {
+    async function initCamera() {
+        const constraints = {
+            video: { facingMode: "environment", width: { ideal: 1280 } }
+        };
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ 
-                video: { facingMode: "environment", width: { ideal: 1280 } } 
-            });
-            video.src
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            video.srcObject = stream;
+            video.onloadedmetadata = () => requestAnimationFrame(processFrame);
+        } catch (e) {
+            statusText.innerText = "ERROR: " + e.message;
+        }
+    }
+
+    function processFrame() {
+        if (isLocked) { requestAnimationFrame(processFrame); return; }
+
+        if (video.readyState === video.HAVE_ENOUGH_DATA) {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            
+            const vWidth = canvas.width * 0.9;
+            const vHeight = 80; 
+            const vX = canvas.width * 0.05;
+            const vY = (canvas.height * 0.4) - (vHeight / 2);
+
+            ctx.drawImage(video, vX, vY, vWidth, vHeight, 0, 0, vWidth, vHeight);
+            const imgData = ctx.getImageData(0, 0, vWidth, vHeight);
+            const fadt = analyzeImage(imgData);
+
+            if (fadt.length === 65) {
+                fadtDisplay.innerText = fadt;
+                statusText.innerText = "65 BARS FOUND (LOCKED)";
+                isLocked = true;
+            } else {
+                fadtDisplay.innerText = fadt || "...";
+                statusText.innerText = `BARS: ${fadt.length}/65`;
+            }
+        }
+        requestAnimationFrame(processFrame);
+    }
+
+    function analyzeImage(imgData) {
+        const d = imgData.data;
+        const w = imgData.width;
+        const h = imgData.height;
+        
+        // 1. Column Vertical Projection
+        let cols = new Array(w).fill(0);
+        for (let x = 0; x < w; x++) {
+            for (let y = 0; y < h; y++) {
+                const i = (y * w + x) * 4;
+                if ((d[i] + d[i+1] + d[i+2]) / 3 < 110) cols[x]++;
+            }
+        }
+
+        // 2. Group Columns into Bars
+        let bars = [];
+        let inBar = false;
+        let start = 0;
+        for (let x = 0; x < w; x++) {
+            let active = cols[x] > (h * 0.15);
+            if (active && !inBar) { inBar = true; start = x; }
+            else if (!active && inBar) { 
+                inBar = false; 
+                bars.push({s: start, e: x}); 
+            }
+        }
+
+        // 3. Classify FADT
+        return bars.map(b => {
+            const mid = Math.floor((b.s + b.e) / 2);
+            let top = false, bot = false;
+            for (let y = 0; y < h; y++) {
+                const i = (y * w + mid) * 4;
+                if ((d[i] + d[i+1] + d[i+2]) / 3 < 110) {
+                    if (y < h * 0.3) top = true;
+                    if (y > h * 0.7) bot = true;
+                }
+            }
+            if (top && bot) return 'F';
+            if (top) return 'A';
+            if (bot) return 'D';
+            return 'T';
+        }).join('');
+    }
+
+    function resetScanner() { isLocked = false; statusText.innerText = "SCANNING..."; }
+
+    function copyString() {
+        navigator.clipboard.writeText(fadtDisplay.innerText);
+        statusText.innerText = "COPIED TO CLIPBOARD!";
+    }
+
+    window.onload = initCamera;
+</script>
+</body>
+</html>
