@@ -43,7 +43,7 @@
         <div id="overlay-layer">
             <div id="viewfinder"></div>
             <div id="results-area">
-                <div id="status">Initializing...</div>
+                <div id="status">Initializing Camera...</div>
                 <div id="fadt-text">---</div>
                 <div class="btn-group">
                     <button id="copy-btn" onclick="copyString()">COPY FADT</button>
@@ -67,13 +67,9 @@
 
     async function startCamera() {
         const constraints = {
-            video: { 
-                facingMode: { ideal: "environment" }, 
-                width: { ideal: 1280 } 
-            }
+            video: { facingMode: "environment", width: { ideal: 1280 } }
         };
         try {
-            // Try specific back camera first
             stream = await navigator.mediaDevices.getUserMedia({ 
                 video: { facingMode: { exact: "environment" }, width: { ideal: 1280 } } 
             });
@@ -90,7 +86,10 @@
     }
 
     function processLoop() {
-        if (isLocked) { requestAnimationFrame(processLoop); return; }
+        if (isLocked) { 
+            requestAnimationFrame(processLoop); 
+            return; 
+        }
         
         if (video.readyState === video.HAVE_ENOUGH_DATA) {
             canvas.width = video.videoWidth;
@@ -106,7 +105,7 @@
             const result = decodeFADT(imgData);
             
             if (result.length === 65) {
-                fadtBuffer = result.trim(); // Ensure no leading/trailing spaces
+                fadtBuffer = result;
                 fadtDisplay.innerText = fadtBuffer;
                 statusText.innerText = "65 BARS DETECTED - LOCKED";
                 isLocked = true;
@@ -122,7 +121,6 @@
         const d = imgData.data; const w = imgData.width; const h = imgData.height;
         let projection = new Array(w).fill(0);
         
-        // Vertical scan
         for (let x = 0; x < w; x++) {
             for (let y = 0; y < h; y++) {
                 const i = (y * w + x) * 4;
@@ -140,6 +138,9 @@
                 if(x - start > 1) bars.push({s: start, e: x}); 
             }
         }
+
+        // Return empty string if no bars found to avoid nulls
+        if (bars.length === 0) return "";
 
         return bars.map(b => {
             const midX = Math.floor((b.s + b.e) / 2);
@@ -163,28 +164,32 @@
     }
 
     function resetScanner() { 
-        isLocked = false; 
         fadtBuffer = ""; 
         fadtDisplay.innerText = "---";
+        isLocked = false; 
         statusText.innerText = "SCANNING..."; 
         statusText.style.color = "var(--line-color)";
     }
 
     function copyString() {
-        const textToCopy = fadtBuffer.trim();
-        if (!textToCopy || textToCopy === "---") {
+        // Strict cleanup: remove any non-FADT characters including spaces/newlines
+        const cleanString = fadtBuffer.replace(/[^FADT]/g, '');
+        
+        if (!cleanString || cleanString.length === 0) {
+            const oldStatus = statusText.innerText;
             statusText.innerText = "NOTHING TO COPY";
+            setTimeout(() => statusText.innerText = oldStatus, 1000);
             return;
         }
         
-        navigator.clipboard.writeText(textToCopy).then(() => {
+        navigator.clipboard.writeText(cleanString).then(() => {
             const currentStatus = statusText.innerText;
-            statusText.innerText = "COPIED (NO SPACES)!";
+            statusText.innerText = "COPIED (CLEAN)!";
             statusText.style.color = "#fff";
             setTimeout(() => {
                 statusText.innerText = currentStatus;
                 statusText.style.color = "var(--line-color)";
-            }, 2000);
+            }, 1500);
         });
     }
 
