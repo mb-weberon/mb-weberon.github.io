@@ -5,48 +5,61 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>IMB Visual Scanner</title>
     <style>
-        body { font-family: system-ui, sans-serif; margin: 0; background: #1a1a1a; color: white; text-align: center; overflow: hidden; }
-        #camera-container { position: relative; width: 100vw; height: 60vh; background: #000; }
+        :root { --accent: #00ff00; }
+        body { font-family: system-ui, sans-serif; margin: 0; background: #121212; color: white; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        
+        /* Layout Containers */
+        #camera-section { position: relative; flex: 1; background: #000; overflow: hidden; }
+        #output-section { padding: 15px; background: #1e1e1e; border-top: 1px solid #333; z-index: 20; }
+        
         video { width: 100%; height: 100%; object-fit: cover; }
         
-        /* The Scanning Guide */
+        /* Viewfinder */
         #viewfinder {
-            position: absolute; top: 50%; left: 5%; width: 90%; height: 60px;
-            border: 2px solid #00ff00; transform: translateY(-50%);
-            box-shadow: 0 0 0 2000px rgba(0,0,0,0.6);
-            pointer-events: none;
-        }
-        #viewfinder::after {
-            content: "ALIGN BARCODE HERE";
-            position: absolute; top: -25px; left: 0; width: 100%;
-            font-size: 12px; color: #00ff00; font-weight: bold;
+            position: absolute; top: 50%; left: 5%; width: 90%; height: 50px;
+            border: 2px solid var(--accent); transform: translateY(-50%);
+            box-shadow: 0 0 0 2000px rgba(0,0,0,0.6); pointer-events: none;
         }
 
-        #output-container { padding: 20px; height: 40vh; box-sizing: border-box; }
+        /* FADT Text Display */
         #fadt-display { 
-            background: #222; padding: 15px; border-radius: 8px; 
-            font-family: monospace; font-size: 1.1rem; letter-spacing: 1px;
-            word-break: break-all; min-height: 3.3rem; border: 1px solid #444;
+            background: #000; padding: 12px; border-radius: 6px; 
+            font-family: 'Courier New', monospace; font-size: 1rem;
+            word-break: break-all; min-height: 2.5em; border: 1px solid #444;
+            color: var(--accent); margin-bottom: 10px;
         }
-        .controls { margin-top: 15px; }
+
+        /* Buttons */
+        .btn-group { display: flex; gap: 10px; justify-content: center; }
         button { 
-            padding: 12px 24px; font-size: 1rem; border-radius: 5px; border: none;
-            background: #007bff; color: white; cursor: pointer;
+            flex: 1; padding: 12px; font-size: 0.9rem; font-weight: bold;
+            border-radius: 6px; border: none; cursor: pointer;
+        }
+        #copy-btn { background: #007bff; color: white; }
+        #reset-btn { background: #444; color: white; }
+
+        /* Landscape Orientation Fix */
+        @media (orientation: landscape) {
+            body { flex-direction: row; }
+            #camera-section { flex: 3; }
+            #output-section { flex: 2; border-top: none; border-left: 1px solid #333; display: flex; flex-direction: column; justify-content: center; overflow-y: auto; }
+            #viewfinder { height: 40px; }
         }
     </style>
 </head>
 <body>
 
-    <div id="camera-container">
+    <div id="camera-section">
         <video id="video" autoplay playsinline></video>
         <div id="viewfinder"></div>
     </div>
 
-    <div id="output-container">
-        <h3>Detected FADT String</h3>
-        <div id="fadt-display">Center barcode to start...</div>
-        <div class="controls">
-            <button onclick="copyString()">Copy FADT String</button>
+    <div id="output-section">
+        <div id="status">Align barcode in green box...</div>
+        <div id="fadt-display">Searching...</div>
+        <div class="btn-group">
+            <button id="copy-btn" onclick="copyString()">Copy String</button>
+            <button id="reset-btn" onclick="resetScanner()">Clear / Scan Again</button>
         </div>
     </div>
 
@@ -56,112 +69,14 @@
     const video = document.getElementById('video');
     const canvas = document.getElementById('procCanvas');
     const display = document.getElementById('fadt-display');
+    const statusText = document.getElementById('status');
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
-    // 1. Initialize Camera
+    let isLocked = false;
+
     async function startCamera() {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ 
-                video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } } 
+                video: { facingMode: "environment", width: { ideal: 1280 } } 
             });
-            video.srcObject = stream;
-            requestAnimationFrame(analyzeFrame);
-        } catch (err) {
-            display.innerText = "Error: Camera access denied. Use HTTPS.";
-        }
-    }
-
-    // 2. Continuous Analysis Loop
-    function analyzeFrame() {
-        if (video.readyState === video.HAVE_ENOUGH_DATA) {
-            // Match canvas to video size
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            
-            // Define scanning area (the viewfinder rectangle)
-            const vWidth = canvas.width * 0.9;
-            const vHeight = 60; // Fixed relative height
-            const vX = canvas.width * 0.05;
-            const vY = (canvas.height / 2) - (vHeight / 2);
-
-            // Draw just the viewfinder area to our hidden canvas
-            ctx.drawImage(video, vX, vY, vWidth, vHeight, 0, 0, vWidth, vHeight);
-            
-            const imgData = ctx.getImageData(0, 0, vWidth, vHeight);
-            const fadt = processImage(imgData);
-
-            if (fadt.length === 65) {
-                display.innerText = fadt;
-                display.style.color = "#00ff00";
-            } else {
-                display.style.color = "#888";
-                display.innerText = `Searching... (Found ${fadt.length}/65 bars)`;
-            }
-        }
-        requestAnimationFrame(analyzeFrame);
-    }
-
-    // 3. Image Processing Logic
-    function processImage(imgData) {
-        const data = imgData.data;
-        const width = imgData.width;
-        const height = imgData.height;
-        
-        // Simple Vertical Projection to find bars
-        // We sum 'darkness' in each column
-        let columnDarkness = new Array(width).fill(0);
-        for (let x = 0; x < width; x++) {
-            for (let y = 0; y < height; y++) {
-                const i = (y * width + x) * 4;
-                const brightness = (data[i] + data[i+1] + data[i+2]) / 3;
-                if (brightness < 100) columnDarkness[x]++;
-            }
-        }
-
-        // Identify clusters of dark columns (The Bars)
-        let bars = [];
-        let inBar = false;
-        let startX = 0;
-
-        for (let x = 0; x < width; x++) {
-            const isDark = columnDarkness[x] > (height * 0.1); // At least 10% dark
-            if (isDark && !inBar) {
-                inBar = true; startX = x;
-            } else if (!isDark && inBar) {
-                inBar = false;
-                bars.push({ xStart: startX, xEnd: x });
-            }
-        }
-
-        // Analyze height of each detected bar
-        return bars.map(bar => {
-            const midX = Math.floor((bar.xStart + bar.xEnd) / 2);
-            let topSeen = false;
-            let bottomSeen = false;
-
-            // Check top 25% and bottom 25% of the zone
-            for (let y = 0; y < height; y++) {
-                const i = (y * width + midX) * 4;
-                const isDark = (data[i] + data[i+1] + data[i+2]) / 3 < 100;
-                if (isDark) {
-                    if (y < height * 0.25) topSeen = true;
-                    if (y > height * 0.75) bottomSeen = true;
-                }
-            }
-
-            if (topSeen && bottomSeen) return 'F';
-            if (topSeen) return 'A';
-            if (bottomSeen) return 'D';
-            return 'T';
-        }).join('');
-    }
-
-    function copyString() {
-        navigator.clipboard.writeText(display.innerText);
-        alert("Copied to clipboard!");
-    }
-
-    window.onload = startCamera;
-</script>
-</body>
-</html>
+            video.src
