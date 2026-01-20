@@ -7,53 +7,37 @@
     <style>
         :root { --line-color: #00ff00; }
         body { font-family: monospace; margin: 0; background: #000; color: var(--line-color); overflow: hidden; height: 100vh; }
-        
         #camera-container { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; }
         video { width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; z-index: 1; }
-        
         #overlay-layer { position: relative; z-index: 2; height: 100%; pointer-events: none; display: flex; flex-direction: column; align-items: center; }
         
         #viewfinder {
-            position: absolute; top: 35%; width: 90%; height: 80px;
+            position: absolute; top: 40%; width: 90%; height: 80px;
             border: 2px solid var(--line-color); transform: translateY(-50%);
             box-shadow: 0 0 0 2000px rgba(0,0,0,0.7);
         }
 
         #results-area {
-            position: absolute; top: calc(35% + 50px); width: 95%;
+            position: absolute; top: calc(40% + 50px); width: 90%;
             background: rgba(15, 15, 15, 0.95); padding: 12px; box-sizing: border-box;
-            border: 1px solid #444; border-radius: 8px; pointer-events: auto;
+            border: 1px solid #444; border-radius: 0 0 8px 8px; pointer-events: auto;
             text-align: center;
         }
 
-        #fadt-text { font-size: 1rem; word-break: break-all; color: #fff; min-height: 1.5em; margin-bottom: 8px; letter-spacing: 1px; font-weight: bold; }
+        #fadt-text { font-size: 1.1rem; word-break: break-all; color: #fff; min-height: 1.5em; margin-bottom: 8px; letter-spacing: 1px; font-weight: bold; }
         #status { font-size: 0.75rem; color: var(--line-color); margin-bottom: 12px; font-weight: bold; text-transform: uppercase; }
 
         .btn-group { display: flex; gap: 8px; }
         button { flex: 1; padding: 14px; background: #222; color: white; border: 1px solid #555; border-radius: 4px; font-weight: bold; font-size: 0.85rem; cursor: pointer; }
         #copy-btn { background: #007bff; border-color: #0056b3; }
-
-        #history-panel {
-            position: absolute; bottom: 0; width: 100%; max-height: 30vh;
-            background: rgba(20, 20, 20, 0.95); border-top: 2px solid #333;
-            overflow-y: auto; pointer-events: auto; padding: 10px; box-sizing: border-box;
-        }
-        .history-item {
-            display: flex; align-items: center; gap: 10px; background: #111;
-            padding: 10px; border-radius: 4px; margin-bottom: 8px; border-left: 3px solid var(--line-color);
-        }
-        .history-text { flex: 1; font-size: 0.7rem; color: #ccc; word-break: break-all; text-align: left; }
-        .mini-btn { flex: 0 0 60px; padding: 8px; font-size: 0.7rem; background: #444; border: none; color: white; border-radius: 3px; }
-
+        
         @media (orientation: landscape) { 
-            #viewfinder { width: 65%; height: 60px; top: 30%; } 
-            #results-area { width: 60%; top: calc(30% + 40px); left: 2%; }
-            #history-panel { width: 35%; height: 100%; right: 0; top: 0; border-top: none; border-left: 2px solid #333; max-height: none; }
+            #viewfinder { width: 75%; height: 60px; top: 35%; } 
+            #results-area { width: 75%; top: calc(35% + 40px); } 
         }
     </style>
 </head>
 <body>
-
     <div id="camera-container">
         <video id="video" autoplay playsinline muted></video>
         <div id="overlay-layer">
@@ -62,17 +46,12 @@
                 <div id="status">Initializing Camera...</div>
                 <div id="fadt-text">---</div>
                 <div class="btn-group">
-                    <button id="copy-btn" onclick="copyString()">COPY CURRENT</button>
-                    <button onclick="resetScanner()">RESET / SCAN NEXT</button>
+                    <button id="copy-btn" onclick="copyString()">COPY FADT</button>
+                    <button onclick="resetScanner()">RESET / SCAN AGAIN</button>
                 </div>
-            </div>
-            <div id="history-panel">
-                <div style="font-size: 0.7rem; color: #888; margin-bottom: 10px;">RECENT SCANS (TOP 5)</div>
-                <div id="history-list"></div>
             </div>
         </div>
     </div>
-
     <canvas id="procCanvas" style="display:none;"></canvas>
 
 <script>
@@ -80,24 +59,25 @@
     const canvas = document.getElementById('procCanvas');
     const fadtDisplay = document.getElementById('fadt-text');
     const statusText = document.getElementById('status');
-    const historyList = document.getElementById('history-list');
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
     let isLocked = false;
+    let stream = null;
     let fadtBuffer = ""; 
-    let historyData = [];
 
     async function startCamera() {
-        const constraints = { video: { facingMode: "environment", width: { ideal: 1280 } } };
+        const constraints = {
+            video: { facingMode: "environment", width: { ideal: 1280 } }
+        };
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ 
+            stream = await navigator.mediaDevices.getUserMedia({ 
                 video: { facingMode: { exact: "environment" }, width: { ideal: 1280 } } 
             });
-            video.srcObject = stream;
         } catch (e) {
-            const stream = await navigator.mediaDevices.getUserMedia(constraints);
-            video.srcObject = stream;
+            stream = await navigator.mediaDevices.getUserMedia(constraints);
         }
+        
+        video.srcObject = stream;
         video.onloadedmetadata = () => {
             video.play();
             statusText.innerText = "READY: Center Barcode";
@@ -106,7 +86,10 @@
     }
 
     function processLoop() {
-        if (isLocked) { requestAnimationFrame(processLoop); return; }
+        if (isLocked) { 
+            requestAnimationFrame(processLoop); 
+            return; 
+        }
         
         if (video.readyState === video.HAVE_ENOUGH_DATA) {
             canvas.width = video.videoWidth;
@@ -115,17 +98,16 @@
             const scanW = canvas.width * 0.9;
             const scanH = 100; 
             const scanX = canvas.width * 0.05;
-            const scanY = (canvas.height * 0.35) - (scanH / 2);
+            const scanY = (canvas.height * 0.4) - (scanH / 2);
             
             ctx.drawImage(video, scanX, scanY, scanW, scanH, 0, 0, scanW, scanH);
             const imgData = ctx.getImageData(0, 0, scanW, scanH);
             const result = decodeFADT(imgData);
             
             if (result.length === 65) {
-                fadtBuffer = result.replace(/[^FADT]/g, '');
+                fadtBuffer = result;
                 fadtDisplay.innerText = fadtBuffer;
                 statusText.innerText = "65 BARS DETECTED - LOCKED";
-                addToHistory(fadtBuffer);
                 isLocked = true;
             } else {
                 fadtDisplay.innerText = result || "...";
@@ -157,6 +139,9 @@
             }
         }
 
+        // Return empty string if no bars found to avoid nulls
+        if (bars.length === 0) return "";
+
         return bars.map(b => {
             const midX = Math.floor((b.s + b.e) / 2);
             let minY = h, maxY = 0;
@@ -167,50 +152,45 @@
                     if (y > maxY) maxY = y;
                 }
             }
-            if (minY < (h * 0.35) && maxY > (h * 0.65)) return 'F';
-            if (minY < (h * 0.35)) return 'A';
-            if (maxY > (h * 0.65)) return 'D';
+            
+            const isTallTop = minY < (h * 0.35);
+            const isLowBottom = maxY > (h * 0.65);
+
+            if (isTallTop && isLowBottom) return 'F';
+            if (isTallTop) return 'A';
+            if (isLowBottom) return 'D';
             return 'T';
         }).join('');
     }
 
-    function addToHistory(str) {
-        if (historyData[0] === str) return;
-        historyData.unshift(str);
-        if (historyData.length > 5) historyData.pop();
-        renderHistory();
-    }
-
-    function renderHistory() {
-        historyList.innerHTML = historyData.map(item => `
-            <div class="history-item">
-                <div class="history-text">${item}</div>
-                <button class="mini-btn" onclick="copySpecific('${item}')">COPY</button>
-            </div>
-        `).join('');
-    }
-
-    function copySpecific(str) {
-        const clean = str.replace(/[^FADT]/g, '');
-        navigator.clipboard.writeText(clean);
-    }
-
     function resetScanner() { 
-        isLocked = false; 
         fadtBuffer = ""; 
         fadtDisplay.innerText = "---";
+        isLocked = false; 
         statusText.innerText = "SCANNING..."; 
+        statusText.style.color = "var(--line-color)";
     }
 
     function copyString() {
-        const clean = fadtBuffer.replace(/[^FADT]/g, '');
-        if (clean) {
-            navigator.clipboard.writeText(clean).then(() => {
-                const oldText = statusText.innerText;
-                statusText.innerText = "COPIED!";
-                setTimeout(() => statusText.innerText = oldText, 1500);
-            });
+        // Strict cleanup: remove any non-FADT characters including spaces/newlines
+        const cleanString = fadtBuffer.replace(/[^FADT]/g, '');
+        
+        if (!cleanString || cleanString.length === 0) {
+            const oldStatus = statusText.innerText;
+            statusText.innerText = "NOTHING TO COPY";
+            setTimeout(() => statusText.innerText = oldStatus, 1000);
+            return;
         }
+        
+        navigator.clipboard.writeText(cleanString).then(() => {
+            const currentStatus = statusText.innerText;
+            statusText.innerText = "COPIED (CLEAN)!";
+            statusText.style.color = "#fff";
+            setTimeout(() => {
+                statusText.innerText = currentStatus;
+                statusText.style.color = "var(--line-color)";
+            }, 1500);
+        });
     }
 
     window.addEventListener('load', startCamera);
