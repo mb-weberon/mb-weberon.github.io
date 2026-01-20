@@ -7,54 +7,213 @@
     <style>
         :root { --line-color: #00ff00; }
         body { font-family: monospace; margin: 0; background: #000; color: var(--line-color); overflow: hidden; height: 100vh; }
+        
         #camera-container { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; }
         video { width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; z-index: 1; }
+        
         #overlay-layer { position: relative; z-index: 2; height: 100%; pointer-events: none; display: flex; flex-direction: column; align-items: center; }
         
         #viewfinder {
-            position: absolute; top: 30%; width: 90%; height: 70px;
+            position: absolute; top: 35%; width: 90%; height: 80px;
             border: 2px solid var(--line-color); transform: translateY(-50%);
             box-shadow: 0 0 0 2000px rgba(0,0,0,0.7);
         }
 
         #results-area {
-            position: absolute; top: calc(30% + 45px); width: 95%;
-            background: rgba(15, 15, 15, 0.95); padding: 10px; box-sizing: border-box;
+            position: absolute; top: calc(35% + 50px); width: 95%;
+            background: rgba(15, 15, 15, 0.95); padding: 12px; box-sizing: border-box;
             border: 1px solid #444; border-radius: 8px; pointer-events: auto;
             text-align: center;
         }
 
-        #fadt-text { font-size: 1rem; word-break: break-all; color: #fff; min-height: 1.2em; margin-bottom: 8px; letter-spacing: 1px; font-weight: bold; }
-        #status { font-size: 0.7rem; color: var(--line-color); margin-bottom: 10px; font-weight: bold; text-transform: uppercase; }
+        #fadt-text { font-size: 1rem; word-break: break-all; color: #fff; min-height: 1.5em; margin-bottom: 8px; letter-spacing: 1px; font-weight: bold; }
+        #status { font-size: 0.75rem; color: var(--line-color); margin-bottom: 12px; font-weight: bold; text-transform: uppercase; }
+
+        .btn-group { display: flex; gap: 8px; }
+        button { flex: 1; padding: 14px; background: #222; color: white; border: 1px solid #555; border-radius: 4px; font-weight: bold; font-size: 0.85rem; cursor: pointer; }
+        #copy-btn { background: #007bff; border-color: #0056b3; }
 
         #history-panel {
-            position: absolute; bottom: 0; width: 100%; max-height: 35vh;
+            position: absolute; bottom: 0; width: 100%; max-height: 30vh;
             background: rgba(20, 20, 20, 0.95); border-top: 2px solid #333;
             overflow-y: auto; pointer-events: auto; padding: 10px; box-sizing: border-box;
         }
         .history-item {
-            display: flex; align-items: center; gap: 8px; background: #111;
-            padding: 8px; border-radius: 4px; margin-bottom: 6px; border-left: 3px solid var(--line-color);
+            display: flex; align-items: center; gap: 10px; background: #111;
+            padding: 10px; border-radius: 4px; margin-bottom: 8px; border-left: 3px solid var(--line-color);
         }
-        .history-text { flex: 1; font-size: 0.75rem; color: #ccc; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        
-        .btn-group { display: flex; gap: 8px; }
-        button { flex: 1; padding: 12px; background: #222; color: white; border: 1px solid #555; border-radius: 4px; font-weight: bold; font-size: 0.8rem; cursor: pointer; }
-        .mini-btn { flex: 0; padding: 6px 10px; font-size: 0.65rem; background: #007bff; border: none; }
-        #copy-btn { background: #007bff; border-color: #0056b3; }
-        
+        .history-text { flex: 1; font-size: 0.7rem; color: #ccc; word-break: break-all; text-align: left; }
+        .mini-btn { flex: 0 0 60px; padding: 8px; font-size: 0.7rem; background: #444; border: none; color: white; border-radius: 3px; }
+
         @media (orientation: landscape) { 
-            #viewfinder { width: 70%; top: 25%; } 
-            #results-area { width: 70%; top: calc(25% + 40px); }
-            #history-panel { width: 30%; height: 100%; right: 0; top: 0; border-top: none; border-left: 2px solid #333; max-height: none; }
+            #viewfinder { width: 65%; height: 60px; top: 30%; } 
+            #results-area { width: 60%; top: calc(30% + 40px); left: 2%; }
+            #history-panel { width: 35%; height: 100%; right: 0; top: 0; border-top: none; border-left: 2px solid #333; max-height: none; }
         }
     </style>
 </head>
 <body>
+
     <div id="camera-container">
         <video id="video" autoplay playsinline muted></video>
         <div id="overlay-layer">
             <div id="viewfinder"></div>
             <div id="results-area">
-                <div id="status">Initializing...</div>
-                <div id
+                <div id="status">Initializing Camera...</div>
+                <div id="fadt-text">---</div>
+                <div class="btn-group">
+                    <button id="copy-btn" onclick="copyString()">COPY CURRENT</button>
+                    <button onclick="resetScanner()">RESET / SCAN NEXT</button>
+                </div>
+            </div>
+            <div id="history-panel">
+                <div style="font-size: 0.7rem; color: #888; margin-bottom: 10px;">RECENT SCANS (TOP 5)</div>
+                <div id="history-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <canvas id="procCanvas" style="display:none;"></canvas>
+
+<script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('procCanvas');
+    const fadtDisplay = document.getElementById('fadt-text');
+    const statusText = document.getElementById('status');
+    const historyList = document.getElementById('history-list');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+    let isLocked = false;
+    let fadtBuffer = ""; 
+    let historyData = [];
+
+    async function startCamera() {
+        const constraints = { video: { facingMode: "environment", width: { ideal: 1280 } } };
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: { exact: "environment" }, width: { ideal: 1280 } } 
+            });
+            video.srcObject = stream;
+        } catch (e) {
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            video.srcObject = stream;
+        }
+        video.onloadedmetadata = () => {
+            video.play();
+            statusText.innerText = "READY: Center Barcode";
+            requestAnimationFrame(processLoop);
+        };
+    }
+
+    function processLoop() {
+        if (isLocked) { requestAnimationFrame(processLoop); return; }
+        
+        if (video.readyState === video.HAVE_ENOUGH_DATA) {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            
+            const scanW = canvas.width * 0.9;
+            const scanH = 100; 
+            const scanX = canvas.width * 0.05;
+            const scanY = (canvas.height * 0.35) - (scanH / 2);
+            
+            ctx.drawImage(video, scanX, scanY, scanW, scanH, 0, 0, scanW, scanH);
+            const imgData = ctx.getImageData(0, 0, scanW, scanH);
+            const result = decodeFADT(imgData);
+            
+            if (result.length === 65) {
+                fadtBuffer = result.replace(/[^FADT]/g, '');
+                fadtDisplay.innerText = fadtBuffer;
+                statusText.innerText = "65 BARS DETECTED - LOCKED";
+                addToHistory(fadtBuffer);
+                isLocked = true;
+            } else {
+                fadtDisplay.innerText = result || "...";
+                statusText.innerText = `Bars: ${result.length}/65`;
+            }
+        }
+        requestAnimationFrame(processLoop);
+    }
+
+    function decodeFADT(imgData) {
+        const d = imgData.data; const w = imgData.width; const h = imgData.height;
+        let projection = new Array(w).fill(0);
+        
+        for (let x = 0; x < w; x++) {
+            for (let y = 0; y < h; y++) {
+                const i = (y * w + x) * 4;
+                const brightness = (d[i] + d[i+1] + d[i+2]) / 3;
+                if (brightness < 110) projection[x]++;
+            }
+        }
+
+        let bars = []; let inBar = false; let start = 0;
+        for (let x = 0; x < w; x++) {
+            const active = projection[x] > (h * 0.1); 
+            if (active && !inBar) { inBar = true; start = x; }
+            else if (!active && inBar) { 
+                inBar = false; 
+                if(x - start > 1) bars.push({s: start, e: x}); 
+            }
+        }
+
+        return bars.map(b => {
+            const midX = Math.floor((b.s + b.e) / 2);
+            let minY = h, maxY = 0;
+            for (let y = 0; y < h; y++) {
+                const i = (y * w + midX) * 4;
+                if ((d[i] + d[i+1] + d[i+2]) / 3 < 110) {
+                    if (y < minY) minY = y;
+                    if (y > maxY) maxY = y;
+                }
+            }
+            if (minY < (h * 0.35) && maxY > (h * 0.65)) return 'F';
+            if (minY < (h * 0.35)) return 'A';
+            if (maxY > (h * 0.65)) return 'D';
+            return 'T';
+        }).join('');
+    }
+
+    function addToHistory(str) {
+        if (historyData[0] === str) return;
+        historyData.unshift(str);
+        if (historyData.length > 5) historyData.pop();
+        renderHistory();
+    }
+
+    function renderHistory() {
+        historyList.innerHTML = historyData.map(item => `
+            <div class="history-item">
+                <div class="history-text">${item}</div>
+                <button class="mini-btn" onclick="copySpecific('${item}')">COPY</button>
+            </div>
+        `).join('');
+    }
+
+    function copySpecific(str) {
+        const clean = str.replace(/[^FADT]/g, '');
+        navigator.clipboard.writeText(clean);
+    }
+
+    function resetScanner() { 
+        isLocked = false; 
+        fadtBuffer = ""; 
+        fadtDisplay.innerText = "---";
+        statusText.innerText = "SCANNING..."; 
+    }
+
+    function copyString() {
+        const clean = fadtBuffer.replace(/[^FADT]/g, '');
+        if (clean) {
+            navigator.clipboard.writeText(clean).then(() => {
+                const oldText = statusText.innerText;
+                statusText.innerText = "COPIED!";
+                setTimeout(() => statusText.innerText = oldText, 1500);
+            });
+        }
+    }
+
+    window.addEventListener('load', startCamera);
+</script>
+</body>
+</html>
