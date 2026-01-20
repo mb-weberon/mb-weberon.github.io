@@ -10,23 +10,31 @@
         #camera-container { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; }
         video { width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; z-index: 1; }
         #overlay-layer { position: relative; z-index: 2; height: 100%; pointer-events: none; display: flex; flex-direction: column; align-items: center; }
+        
         #viewfinder {
             position: absolute; top: 40%; width: 90%; height: 80px;
             border: 2px solid var(--line-color); transform: translateY(-50%);
             box-shadow: 0 0 0 2000px rgba(0,0,0,0.7);
         }
+
         #results-area {
             position: absolute; top: calc(40% + 50px); width: 90%;
             background: rgba(15, 15, 15, 0.95); padding: 12px; box-sizing: border-box;
             border: 1px solid #444; border-radius: 0 0 8px 8px; pointer-events: auto;
             text-align: center;
         }
-        #fadt-text { font-size: 1.1rem; word-break: break-all; color: #fff; min-height: 1.5em; margin-bottom: 8px; letter-spacing: 1px; }
+
+        #fadt-text { font-size: 1.1rem; word-break: break-all; color: #fff; min-height: 1.5em; margin-bottom: 8px; letter-spacing: 1px; font-weight: bold; }
         #status { font-size: 0.75rem; color: var(--line-color); margin-bottom: 12px; font-weight: bold; text-transform: uppercase; }
+
         .btn-group { display: flex; gap: 8px; }
         button { flex: 1; padding: 14px; background: #222; color: white; border: 1px solid #555; border-radius: 4px; font-weight: bold; font-size: 0.85rem; cursor: pointer; }
         #copy-btn { background: #007bff; border-color: #0056b3; }
-        @media (orientation: landscape) { #viewfinder { width: 75%; height: 60px; top: 35%; } #results-area { width: 75%; top: calc(35% + 40px); } }
+        
+        @media (orientation: landscape) { 
+            #viewfinder { width: 75%; height: 60px; top: 35%; } 
+            #results-area { width: 75%; top: calc(35% + 40px); } 
+        }
     </style>
 </head>
 <body>
@@ -39,7 +47,7 @@
                 <div id="fadt-text">---</div>
                 <div class="btn-group">
                     <button id="copy-btn" onclick="copyString()">COPY FADT</button>
-                    <button onclick="resetScanner()">RESET</button>
+                    <button onclick="resetScanner()">RESET / SCAN AGAIN</button>
                 </div>
             </div>
         </div>
@@ -55,15 +63,24 @@
 
     let isLocked = false;
     let stream = null;
+    let fadtBuffer = ""; 
 
     async function startCamera() {
+        const constraints = {
+            video: { 
+                facingMode: { ideal: "environment" }, 
+                width: { ideal: 1280 } 
+            }
+        };
         try {
+            // Try specific back camera first
             stream = await navigator.mediaDevices.getUserMedia({ 
                 video: { facingMode: { exact: "environment" }, width: { ideal: 1280 } } 
             });
         } catch (e) {
-            stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+            stream = await navigator.mediaDevices.getUserMedia(constraints);
         }
+        
         video.srcObject = stream;
         video.onloadedmetadata = () => {
             video.play();
@@ -74,19 +91,24 @@
 
     function processLoop() {
         if (isLocked) { requestAnimationFrame(processLoop); return; }
+        
         if (video.readyState === video.HAVE_ENOUGH_DATA) {
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
+            
             const scanW = canvas.width * 0.9;
-            const scanH = 100; // Increased sample height
+            const scanH = 100; 
             const scanX = canvas.width * 0.05;
             const scanY = (canvas.height * 0.4) - (scanH / 2);
+            
             ctx.drawImage(video, scanX, scanY, scanW, scanH, 0, 0, scanW, scanH);
             const imgData = ctx.getImageData(0, 0, scanW, scanH);
             const result = decodeFADT(imgData);
+            
             if (result.length === 65) {
-                fadtDisplay.innerText = result;
-                statusText.innerText = "65 BARS FOUND - LOCKED";
+                fadtBuffer = result.trim(); // Ensure no leading/trailing spaces
+                fadtDisplay.innerText = fadtBuffer;
+                statusText.innerText = "65 BARS DETECTED - LOCKED";
                 isLocked = true;
             } else {
                 fadtDisplay.innerText = result || "...";
@@ -99,35 +121,37 @@
     function decodeFADT(imgData) {
         const d = imgData.data; const w = imgData.width; const h = imgData.height;
         let projection = new Array(w).fill(0);
+        
+        // Vertical scan
         for (let x = 0; x < w; x++) {
             for (let y = 0; y < h; y++) {
                 const i = (y * w + x) * 4;
-                if ((d[i] + d[i+1] + d[i+2]) / 3 < 100) projection[x]++;
+                const brightness = (d[i] + d[i+1] + d[i+2]) / 3;
+                if (brightness < 110) projection[x]++;
             }
         }
+
         let bars = []; let inBar = false; let start = 0;
         for (let x = 0; x < w; x++) {
-            const active = projection[x] > (h * 0.1); // Bar must occupy at least 10% of height
+            const active = projection[x] > (h * 0.1); 
             if (active && !inBar) { inBar = true; start = x; }
-            else if (!active && inBar) { inBar = false; if(x - start > 1) bars.push({s: start, e: x}); }
+            else if (!active && inBar) { 
+                inBar = false; 
+                if(x - start > 1) bars.push({s: start, e: x}); 
+            }
         }
 
         return bars.map(b => {
             const midX = Math.floor((b.s + b.e) / 2);
             let minY = h, maxY = 0;
-            // Find actual pixel extents for this specific bar
             for (let y = 0; y < h; y++) {
                 const i = (y * w + midX) * 4;
-                if ((d[i] + d[i+1] + d[i+2]) / 3 < 100) {
+                if ((d[i] + d[i+1] + d[i+2]) / 3 < 110) {
                     if (y < minY) minY = y;
                     if (y > maxY) maxY = y;
                 }
             }
-            const barHeight = maxY - minY;
-            const midPoint = minY + (barHeight / 2);
             
-            // FADT logic based on typical IMB proportions
-            // Tracker is usually ~40% of the height of a Full bar
             const isTallTop = minY < (h * 0.35);
             const isLowBottom = maxY > (h * 0.65);
 
@@ -138,13 +162,32 @@
         }).join('');
     }
 
-    function resetScanner() { isLocked = false; statusText.innerText = "SCANNING..."; fadtDisplay.innerText = "..."; }
+    function resetScanner() { 
+        isLocked = false; 
+        fadtBuffer = ""; 
+        fadtDisplay.innerText = "---";
+        statusText.innerText = "SCANNING..."; 
+        statusText.style.color = "var(--line-color)";
+    }
+
     function copyString() {
-        navigator.clipboard.writeText(fadtDisplay.innerText).then(() => {
-            statusText.innerText = "COPIED!";
-            setTimeout(() => statusText.innerText = "LOCKED", 1500);
+        const textToCopy = fadtBuffer.trim();
+        if (!textToCopy || textToCopy === "---") {
+            statusText.innerText = "NOTHING TO COPY";
+            return;
+        }
+        
+        navigator.clipboard.writeText(textToCopy).then(() => {
+            const currentStatus = statusText.innerText;
+            statusText.innerText = "COPIED (NO SPACES)!";
+            statusText.style.color = "#fff";
+            setTimeout(() => {
+                statusText.innerText = currentStatus;
+                statusText.style.color = "var(--line-color)";
+            }, 2000);
         });
     }
+
     window.addEventListener('load', startCamera);
 </script>
 </body>
