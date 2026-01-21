@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>IMB Shrink-Wrap Decoder</title>
+    <title>IMB v1.1 Corner-Selection</title>
     <style>
         :root { --line-color: #00ff00; }
         body { font-family: monospace; margin: 0; background: #000; color: var(--line-color); overflow: hidden; height: 100vh; }
@@ -17,8 +17,10 @@
             border: 1px solid #444; border-radius: 12px; pointer-events: auto; text-align: center;
         }
         #fadt-text { font-size: 0.9rem; word-break: break-all; color: #fff; min-height: 1.5em; margin-bottom: 10px; letter-spacing: 1px; font-weight: bold; }
-        #status { font-size: 0.8rem; color: var(--line-color); margin-bottom: 12px; font-weight: bold; text-transform: uppercase; }
-        button { width: 100%; padding: 15px; background: #222; color: white; border: 1px solid #555; border-radius: 8px; font-weight: bold; cursor: pointer; }
+        #status { font-size: 0.8rem; color: var(--line-color); margin-bottom: 12px; font-weight: bold; }
+        .btn-group { display: flex; gap: 10px; }
+        button { flex: 1; padding: 15px; background: #222; color: white; border: 1px solid #555; border-radius: 8px; font-weight: bold; cursor: pointer; }
+        #accept-btn { background: #006400; display: none; }
     </style>
 </head>
 <body>
@@ -30,9 +32,12 @@
         
     <div id="overlay-layer">
         <div id="results-area">
-            <div id="status">TAP TO CAPTURE</div>
+            <div id="status">v1.1 | TAP TO CAPTURE</div>
             <div id="fadt-text">---</div>
-            <button onclick="resetScanner()">RESET / LIVE</button>
+            <div class="btn-group">
+                <button id="accept-btn" onclick="decodeSelection()">ACCEPT & DECODE</button>
+                <button onclick="resetScanner()">RESET / LIVE</button>
+            </div>
         </div>
     </div>
 
@@ -41,8 +46,10 @@
     const staticCanvas = document.getElementById('static-frame');
     const fadtDisplay = document.getElementById('fadt-text');
     const statusText = document.getElementById('status');
+    const acceptBtn = document.getElementById('accept-btn');
     
-    let isFrozen = false, startX, startY, isSwiping = false, cleanImageBuffer = null;
+    let isFrozen = false, isSwiping = false, cleanImageBuffer = null;
+    let startX, startY, rectCoords = null;
 
     async function startCamera() {
         try {
@@ -50,26 +57,40 @@
                 video: { facingMode: "environment", width: { ideal: 1920 } } 
             });
             video.srcObject = s;
-        } catch (e) { statusText.innerText = "CAMERA ERROR"; }
+        } catch (e) { statusText.innerText = "v1.1 | CAMERA ERROR"; }
     }
 
     video.parentElement.addEventListener('pointerdown', (e) => {
         const r = video.getBoundingClientRect();
+        const x = e.clientX - r.left;
+        const y = e.clientY - r.top;
+
         if (!isFrozen) {
             captureFrame();
         } else {
-            clearOldGrid();
+            // Start defining diagonal corners
+            clearCanvas();
             isSwiping = true;
-            startX = e.clientX - r.left;
-            startY = e.clientY - r.top;
+            startX = x;
+            startY = y;
         }
+    });
+
+    window.addEventListener('pointermove', (e) => {
+        if (!isSwiping) return;
+        const r = staticCanvas.getBoundingClientRect();
+        const curX = e.clientX - r.left;
+        const curY = e.clientY - r.top;
+        drawPreview(startX, startY, curX, curY);
     });
 
     window.addEventListener('pointerup', (e) => {
         if (!isSwiping) return;
         isSwiping = false;
         const r = staticCanvas.getBoundingClientRect();
-        processShrinkWrapSwipe(startX, startY, e.clientX - r.left, e.clientY - r.top);
+        rectCoords = { sX: startX, sY: startY, eX: e.clientX - r.left, eY: e.clientY - r.top };
+        acceptBtn.style.display = 'block';
+        statusText.innerText = "v1.1 | ADJUST OR TAP ACCEPT";
     });
 
     function captureFrame() {
@@ -80,13 +101,34 @@
         cleanImageBuffer = ctx.getImageData(0, 0, staticCanvas.width, staticCanvas.height);
         staticCanvas.style.display = 'block';
         isFrozen = true;
-        statusText.innerText = "SWIPE EXACTLY OVER THE BARS";
+        statusText.innerText = "v1.1 | SWIPE DIAGONALLY OVER BARCODE";
     }
 
-    function clearOldGrid() {
+    function clearCanvas() {
         if (!cleanImageBuffer) return;
         staticCanvas.getContext('2d').putImageData(cleanImageBuffer, 0, 0);
-        fadtDisplay.innerText = "---";
+        acceptBtn.style.display = 'none';
+    }
+
+    function drawPreview(sx, sy, ex, ey) {
+        clearCanvas();
+        const ctx = staticCanvas.getContext('2d');
+        const p1 = getNativeCoords(sx, sy);
+        const p2 = getNativeCoords(ex, ey);
+        
+        const L = Math.min(p1.x, p2.x), T = Math.min(p1.y, p2.y);
+        const W = Math.abs(p1.x - p2.x), H = Math.abs(p1.y - p2.y);
+        
+        ctx.strokeStyle = "#00ff00"; ctx.lineWidth = 4;
+        ctx.strokeRect(L, T, W, H);
+        
+        // Draw 5 strip guides
+        ctx.setLineDash([10, 10]); ctx.lineWidth = 2;
+        for (let i = 1; i < 5; i++) {
+            const ly = T + (i * (H/5));
+            ctx.beginPath(); ctx.moveTo(L, ly); ctx.lineTo(L+W, ly); ctx.stroke();
+        }
+        ctx.setLineDash([]);
     }
 
     function getNativeCoords(sX, sY) {
@@ -99,77 +141,38 @@
         return { x: ((sX + oX) / aW) * staticCanvas.width, y: ((sY + oY) / aH) * staticCanvas.height };
     }
 
-    function processShrinkWrapSwipe(sX, sY, eX, eY) {
+    function decodeSelection() {
         const ctx = staticCanvas.getContext('2d');
-        const p1 = getNativeCoords(sX, sY);
-        const p2 = getNativeCoords(eX, eY);
+        const p1 = getNativeCoords(rectCoords.sX, rectCoords.sY);
+        const p2 = getNativeCoords(rectCoords.eX, rectCoords.eY);
+        
+        const L = Math.min(p1.x, p2.x), T = Math.min(p1.y, p2.y);
+        const W = Math.abs(p1.x - p2.x), H = Math.abs(p1.y - p2.y);
 
-        const left = Math.min(p1.x, p2.x), right = Math.max(p1.x, p2.x);
-        const centerY = (p1.y + p2.y) / 2;
-        const searchH = 200; 
+        const imgData = ctx.getImageData(L, T, W, H);
+        const d = imgData.data;
+        const stripH = H / 5;
 
-        const imgData = ctx.getImageData(Math.max(0, left), Math.max(0, centerY - (searchH/2)), right - left, searchH);
-        const d = imgData.data, w = imgData.width, h = imgData.height;
-
-        // 1. Threshold
+        // Auto-thresholding for this specific box
         let br = [];
         for (let i = 0; i < d.length; i += 40) br.push(d[i]);
         br.sort((a,b) => a-b);
-        const thresh = br[Math.floor(br.length * 0.2)] + 35;
+        const thresh = br[Math.floor(br.length * 0.25)] + 35;
 
-        // 2. Find Horizontal Bars
+        // Find bars in middle strip
         let bars = [], inB = false, tempS = 0;
-        const mid = Math.floor(h/2);
-        for (let x = 0; x < w; x++) {
-            if (d[(mid * w + x) * 4] < thresh && !inB) { inB = true; tempS = x; }
-            else if (d[(mid * w + x) * 4] >= thresh && inB) { inB = false; if (x-tempS > 1) bars.push({s: tempS, e: x}); }
+        const midY = Math.floor(H / 2);
+        for (let x = 0; x < W; x++) {
+            if (d[(midY * W + x) * 4] < thresh && !inB) { inB = true; tempS = x; }
+            else if (d[(midY * W + x) * 4] >= thresh && inB) { inB = false; if (x-tempS > 1) bars.push({s: tempS, e: x}); }
         }
 
-        if (bars.length < 10) { statusText.innerText = "MISS! SWIPE THROUGH THE BARS"; return; }
-
-        // 3. VERTICAL SHRINK-WRAP: Find the absolute top and bottom ink across all bars
-        let minInkY = h, maxInkY = 0;
-        bars.forEach(b => {
-            const mx = Math.floor((b.s + b.e) / 2);
-            for (let y = 0; y < h; y++) {
-                if (d[(y * w + mx) * 4] < thresh) {
-                    if (y < minInkY) minInkY = y;
-                    if (y > maxInkY) maxInkY = y;
-                }
-            }
-        });
-
-        // 4. Set Grid to exactly cover the ink (plus tiny 2px buffer)
-        const boxT_Local = minInkY - 2;
-        const boxB_Local = maxInkY + 2;
-        const boxH = boxB_Local - boxT_Local;
-        const stripH = boxH / 5;
-
-        // Final Native Coordinates
-        const finalL = left + bars[0].s - 10;
-        const finalR = left + bars[bars.length-1].e + 10;
-        const finalT = (centerY - (searchH/2)) + boxT_Local;
-
-        // Draw Tight Grid
-        ctx.strokeStyle = "#00ff00"; ctx.lineWidth = 4;
-        ctx.strokeRect(finalL, finalT, finalR - finalL, boxH);
-        
-        ctx.lineWidth = 1; ctx.setLineDash([5, 5]);
-        for (let i = 1; i < 5; i++) {
-            const ly = finalT + (i * stripH);
-            ctx.beginPath(); ctx.moveTo(finalL, ly); ctx.lineTo(finalR, ly); ctx.stroke();
-        }
-        ctx.setLineDash([]);
-
-        // 5. Decode using the TIGHT strips
         const fadt = bars.map(b => {
             const mx = Math.floor((b.s + b.e) / 2);
             let p = new Array(5).fill(false);
             for (let s = 0; s < 5; s++) {
-                const sStart = Math.floor(boxT_Local + (s * stripH));
-                const sEnd = Math.floor(sStart + stripH);
-                for (let y = sStart; y < sEnd; y++) {
-                    if (d[(y * w + mx) * 4] < thresh) { p[s] = true; break; }
+                for (let y = Math.floor(s*stripH); y < Math.floor((s+1)*stripH); y++) {
+                    if (d[(y * W + mx) * 4] < thresh) { p[s] = true; break; }
                 }
             }
             if (p[0] && p[4]) return 'F';
@@ -179,14 +182,16 @@
         }).join('');
 
         fadtDisplay.innerText = fadt;
-        statusText.innerText = fadt.length === 65 ? "65 BARS" : `FOUND ${fadt.length}`;
+        statusText.innerText = `v1.1 | ${fadt.length} BARS FOUND`;
+        statusText.style.color = fadt.length === 65 ? "#00ff00" : "#ff4444";
     }
 
     function resetScanner() {
         staticCanvas.style.display = 'none';
         isFrozen = false;
+        acceptBtn.style.display = 'none';
         fadtDisplay.innerText = "---";
-        statusText.innerText = "TAP TO CAPTURE";
+        statusText.innerText = "v1.1 | TAP TO CAPTURE";
     }
     window.addEventListener('load', startCamera);
 </script>
