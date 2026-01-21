@@ -3,19 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>IMB Grid-Decision Decoder</title>
+    <title>IMB Tap-Sync Decoder</title>
     <style>
         :root { --line-color: #00ff00; }
         body { font-family: monospace; margin: 0; background: #000; color: var(--line-color); overflow: hidden; height: 100vh; }
+        
         #camera-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; cursor: pointer; z-index: 1; }
         video, #static-frame { width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; }
         #static-frame { display: none; z-index: 2; pointer-events: none; }
+        
         #overlay-layer { position: relative; z-index: 3; height: 100%; pointer-events: none; display: flex; flex-direction: column; align-items: center; }
-        #viewfinder {
-            position: absolute; top: 40%; width: 92%; height: 180px;
-            border: 1px solid rgba(0, 255, 0, 0.3); transform: translateY(-50%);
-            box-shadow: 0 0 0 5000px rgba(0,0,0,0.8);
-        }
         #results-area {
             position: absolute; bottom: 20px; width: 90%;
             background: rgba(15, 15, 15, 0.95); padding: 15px; box-sizing: border-box;
@@ -29,15 +26,14 @@
 </head>
 <body>
 
-    <div id="camera-container" onclick="handleTap()">
+    <div id="camera-container" onclick="handleTap(event)">
         <video id="video" autoplay playsinline muted></video>
         <canvas id="static-frame"></canvas>
     </div>
         
     <div id="overlay-layer">
-        <div id="viewfinder"></div>
         <div id="results-area">
-            <div id="status">TAP TO SCAN</div>
+            <div id="status">TAP THE BARCODE DIRECTLY</div>
             <div id="fadt-text">---</div>
             <div class="btn-group">
                 <button onclick="copyString()" style="background:#007bff;">COPY</button>
@@ -55,31 +51,74 @@
 
     async function startCamera() {
         try {
-            const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1920 } } });
+            const s = await navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: "environment", width: { ideal: 1920 } } 
+            });
             video.srcObject = s;
             videoTrack = s.getVideoTracks()[0];
         } catch (e) { statusText.innerText = "CAMERA ERROR"; }
     }
 
-    async function handleTap() {
+    async function handleTap(e) {
         if (isFrozen) { resetScanner(); return; }
-        statusText.innerText = "FOCUSING...";
-        if (videoTrack && videoTrack.getCapabilities().focusMode) {
-            try { await videoTrack.applyConstraints({ advanced: [{ focusMode: "continuous" }] }); } catch (e) {}
+
+        // 1. Calculate the precise camera-to-screen mapping
+        const rect = video.getBoundingClientRect();
+        
+        // Account for 'object-fit: cover' zoom/offset
+        const videoRatio = video.videoWidth / video.videoHeight;
+        const displayRatio = rect.width / rect.height;
+        
+        let actualWidth, actualHeight, offsetX = 0, offsetY = 0;
+        
+        if (displayRatio > videoRatio) {
+            actualWidth = rect.width;
+            actualHeight = rect.width / videoRatio;
+            offsetY = (actualHeight - rect.height) / 2;
+        } else {
+            actualHeight = rect.height;
+            actualWidth = rect.height * videoRatio;
+            offsetX = (actualWidth - rect.width) / 2;
         }
-        setTimeout(captureAndDecode, 500);
+
+        // Tap point in normalized video coordinates (0.0 to 1.0)
+        const normX = (e.clientX - rect.left + offsetX) / actualWidth;
+        const normY = (e.clientY - rect.top + offsetY) / actualHeight;
+
+        statusText.innerText = "FOCUSING ON TAP...";
+        
+        if (videoTrack && videoTrack.getCapabilities().focusMode) {
+            try { await videoTrack.applyConstraints({ advanced: [{ focusMode: "continuous" }] }); } catch (err) {}
+        }
+
+        setTimeout(() => captureAndDecode(normX, normY), 450);
     }
 
-    function captureAndDecode() {
+    function captureAndDecode(nX, nY) {
         const vw = video.videoWidth, vh = video.videoHeight;
         staticCanvas.width = vw; staticCanvas.height = vh;
         const ctx = staticCanvas.getContext('2d');
         ctx.drawImage(video, 0, 0);
         
-        const sW = vw * 0.94, sH = 350, sX = vw * 0.03, sY = (vh * 0.4) - (sH / 2);
+        const tapPX = nX * vw;
+        const tapPY = nY * vh;
+
+        // Visual feedback: Draw a small red dot at the Tap Point on the static frame
+        ctx.fillStyle = "red";
+        ctx.beginPath();
+        ctx.arc(tapPX, tapPY, 10, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Search area width is nearly full screen, but height is constrained around the tap
+        const sW = vw * 0.96;
+        const sH = 300; 
+        const sX = (vw - sW) / 2;
+        const sY = Math.max(0, tapPY - (sH / 2));
+
         const imgData = ctx.getImageData(sX, sY, sW, sH);
         
-        const result = processWithGrid(imgData, ctx, sX, sY);
+        // Use tapPY as the absolute center for the Middle Strip
+        const result = processWithFixedAnchor(imgData, ctx, sX, sY, tapPY);
 
         staticCanvas.style.display = 'block';
         isFrozen = true;
@@ -95,76 +134,68 @@
         }
     }
 
-    function processWithGrid(img, ctx, offX, offY) {
+    function processWithFixedAnchor(img, ctx, offX, offY, tapNativeY) {
         const d = img.data, w = img.width, h = img.height;
         
-        // 1. Find Barcode Y-Center
-        let rowDensity = new Array(h).fill(0);
-        for (let y = 1; y < h; y++) {
-            for (let x = 0; x < w; x += 10) {
-                const i = (y * w + x) * 4, pi = ((y-1) * w + x) * 4;
-                if (Math.abs(d[i] - d[pi]) > 35) rowDensity[y]++;
-            }
-        }
-        const bestY = rowDensity.indexOf(Math.max(...rowDensity));
-
-        // 2. Thresholding
+        // Thresholding based on tap area
         let br = [];
-        for (let x = 0; x < w; x += 20) br.push(d[(bestY * w + x) * 4]);
+        const localY = Math.floor(tapNativeY - offY);
+        for (let x = 0; x < w; x += 15) {
+            const i = (localY * w + x) * 4;
+            if (i < d.length) br.push(d[i]);
+        }
         br.sort((a,b) => a - b);
         const threshold = br[Math.floor(br.length * 0.2)] + 30;
 
-        // 3. Find horizontal start/end
+        // Find horizontal bounds (horizontal scan along the tap line)
         let bars = [], inBar = false, startX = 0;
         for (let x = 0; x < w; x++) {
-            const isDark = d[(bestY * w + x) * 4] < threshold;
+            const idx = (localY * w + x) * 4;
+            const isDark = d[idx] < threshold;
             if (isDark && !inBar) { inBar = true; startX = x; }
             else if (!isDark && inBar) { inBar = false; if (x - startX > 1) bars.push({s: startX, e: x}); }
         }
 
         if (bars.length === 0) return "";
 
-        // 4. Calculate Grid Layout
+        // GRID DIMENSIONS: tapNativeY is exactly the center
         const boxL = bars[0].s, boxR = bars[bars.length-1].e;
-        const boxT = bestY - 45, boxB = bestY + 45, boxH = 90;
+        const boxH = 100; // Total height of the IMB grid
         const stripH = boxH / 5;
+        const boxT_Native = tapNativeY - (boxH / 2); // Center the whole box on tap
 
-        // --- DRAW GRID ON SNAPSHOT ---
-        ctx.strokeStyle = "rgba(0, 255, 0, 0.8)";
+        // Draw Visual Grid
+        ctx.strokeStyle = "rgba(0, 255, 0, 0.9)";
         ctx.lineWidth = 4;
-        // Main Box
-        ctx.strokeRect(offX + boxL - 10, offY + boxT, (boxR - boxL) + 20, boxH);
-        // 5-Strip Dividers
+        ctx.strokeRect(offX + boxL - 5, boxT_Native, (boxR - boxL) + 10, boxH);
+        
+        // Draw Strip Dividers
         ctx.lineWidth = 1;
-        ctx.setLineDash([10, 10]);
+        ctx.setLineDash([8, 4]);
         for (let i = 1; i < 5; i++) {
-            const lineY = offY + boxT + (i * stripH);
+            const ly = boxT_Native + (i * stripH);
             ctx.beginPath();
-            ctx.moveTo(offX + boxL - 10, lineY);
-            ctx.lineTo(offX + boxR + 10, lineY);
+            ctx.moveTo(offX + boxL - 5, ly);
+            ctx.lineTo(offX + boxR + 5, ly);
             ctx.stroke();
         }
         ctx.setLineDash([]);
 
-        // 5. Grid Logic Decoding
+        // 5-Strip Analysis
         return bars.map(b => {
             const mx = Math.floor((b.s + b.e) / 2);
             let presence = []; 
-
             for (let s = 0; s < 5; s++) {
-                let stripInk = false;
-                const sStart = Math.floor(boxT + (s * stripH));
-                const sEnd = Math.floor(sStart + stripH);
-                for (let y = sStart; y < sEnd; y++) {
-                    if (d[(y * w + mx) * 4] < threshold) { stripInk = true; break; }
+                let ink = false;
+                const sStart = Math.floor((boxT_Native - offY) + (s * stripH));
+                const sEnd = sStart + stripH;
+                for (let y = Math.max(0, sStart); y < Math.min(h, sEnd); y++) {
+                    if (d[(y * w + mx) * 4] < threshold) { ink = true; break; }
                 }
-                presence.push(stripInk);
+                presence.push(ink);
             }
-
-            // Logic:
             const hasTop = presence[0] || presence[1];
             const hasBottom = presence[3] || presence[4];
-            
             if (hasTop && hasBottom) return 'F';
             if (hasTop) return 'A';
             if (hasBottom) return 'D';
@@ -176,7 +207,7 @@
         staticCanvas.style.display = 'none';
         isFrozen = false;
         fadtDisplay.innerText = "---";
-        statusText.innerText = "TAP TO SCAN";
+        statusText.innerText = "TAP THE BARCODE DIRECTLY";
         statusText.style.color = "#00ff00";
     }
 
