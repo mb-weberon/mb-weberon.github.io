@@ -3,84 +3,47 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>IMB Tap Decoder</title>
+    <title>IMB Robust Decoder</title>
     <style>
         :root { --line-color: #00ff00; }
         body { font-family: monospace; margin: 0; background: #000; color: var(--line-color); overflow: hidden; height: 100vh; width: 100vw; }
-        
-        /* Camera & Capture Layer */
-        #camera-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; cursor: pointer; }
+        #camera-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; cursor: pointer; z-index: 1; }
         video, #static-frame { width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; }
-        #static-frame { display: none; z-index: 2; border: 5px solid #fff; box-sizing: border-box; }
-        
-        /* UI Overlay */
+        #static-frame { display: none; z-index: 2; pointer-events: none; border: 4px solid var(--line-color); box-sizing: border-box; }
         #overlay-layer { position: relative; z-index: 3; height: 100%; pointer-events: none; display: flex; flex-direction: column; align-items: center; }
-        
         #viewfinder {
-            position: absolute; top: 40%; width: 90%; height: 80px;
+            position: absolute; top: 40%; width: 92%; height: 120px;
             border: 2px solid var(--line-color); transform: translateY(-50%);
-            box-shadow: 0 0 0 5000px rgba(0,0,0,0.7); /* Deep dimming around focus */
+            box-shadow: 0 0 0 5000px rgba(0,0,0,0.7);
         }
-
         #results-area {
             position: absolute; bottom: 20px; width: 90%;
-            background: rgba(15, 15, 15, 0.9); padding: 15px; box-sizing: border-box;
+            background: rgba(15, 15, 15, 0.95); padding: 15px; box-sizing: border-box;
             border: 1px solid #444; border-radius: 12px; pointer-events: auto; text-align: center;
         }
-
-        #fadt-text { font-size: 1.2rem; word-break: break-all; color: #fff; min-height: 1.5em; margin-bottom: 10px; letter-spacing: 1px; font-weight: bold; }
+        #fadt-text { font-size: 1.1rem; word-break: break-all; color: #fff; min-height: 1.5em; margin-bottom: 10px; letter-spacing: 1px; font-weight: bold; }
         #status { font-size: 0.8rem; color: var(--line-color); margin-bottom: 12px; font-weight: bold; text-transform: uppercase; }
-
         .btn-group { display: flex; gap: 10px; }
         button { flex: 1; padding: 15px; background: #222; color: white; border: 1px solid #555; border-radius: 8px; font-weight: bold; cursor: pointer; }
-        #copy-btn { background: #007bff; border-color: #0056b3; }
-        
-        /* History Overlay (Hidden by Default) */
-        #history-overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.95); z-index: 10; display: none;
-            flex-direction: column; padding: 20px; box-sizing: border-box; pointer-events: auto;
-        }
-        .history-item {
-            display: flex; align-items: center; gap: 10px; background: #111;
-            padding: 12px; border-radius: 6px; margin-bottom: 10px; border-left: 4px solid var(--line-color);
-        }
-        .history-text { flex: 1; font-size: 0.8rem; color: #ccc; word-break: break-all; }
-        
-        @media (orientation: landscape) { 
-            #viewfinder { width: 70%; height: 60px; } 
-            #results-area { width: 50%; left: 25%; }
-        }
+        @media (orientation: landscape) { #viewfinder { width: 75%; height: 80px; } #results-area { width: 50%; left: 25%; } }
     </style>
 </head>
 <body>
-
     <div id="camera-container" onclick="captureAndDecode()">
         <video id="video" autoplay playsinline muted></video>
         <canvas id="static-frame"></canvas>
     </div>
-        
     <div id="overlay-layer">
         <div id="viewfinder"></div>
         <div id="results-area">
-            <div id="status">TAP SCREEN TO CAPTURE</div>
+            <div id="status">TAP ANYWHERE TO CAPTURE</div>
             <div id="fadt-text">---</div>
             <div class="btn-group">
-                <button id="copy-btn" onclick="copyString()">COPY</button>
+                <button onclick="copyString()" style="background:#007bff;">COPY</button>
                 <button onclick="resetScanner()">CLEAR</button>
-                <button onclick="toggleHistory(true)" style="background:#444;">HISTORY</button>
             </div>
         </div>
     </div>
-
-    <div id="history-overlay">
-        <div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-            <h2 style="color:var(--line-color); margin:0;">SCAN HISTORY</h2>
-            <button onclick="toggleHistory(false)" style="flex:0; padding: 10px 20px; background:#aa0000;">CLOSE</button>
-        </div>
-        <div id="history-list" style="overflow-y:auto;"></div>
-    </div>
-
     <canvas id="procCanvas" style="display:none;"></canvas>
 
 <script>
@@ -89,136 +52,90 @@
     const procCanvas = document.getElementById('procCanvas');
     const fadtDisplay = document.getElementById('fadt-text');
     const statusText = document.getElementById('status');
-    const historyList = document.getElementById('history-list');
-    const historyOverlay = document.getElementById('history-overlay');
-    
-    let fadtBuffer = ""; 
-    let historyData = [];
+    let fadtBuffer = "";
 
     async function startCamera() {
-        const constraints = { video: { facingMode: "environment", width: { ideal: 1920 } } };
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ 
-                video: { facingMode: { exact: "environment" }, width: { ideal: 1920 } } 
-            });
-            video.srcObject = stream;
-        } catch (e) {
-            const stream = await navigator.mediaDevices.getUserMedia(constraints);
-            video.srcObject = stream;
-        }
+            const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1920 } } });
+            video.srcObject = s;
+        } catch (e) { alert("Camera error: " + e); }
     }
 
     function captureAndDecode() {
         if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
-        if (staticCanvas.style.display === 'block') return; // Prevent double taps during processing
-
-        // 1. Snapshot
         staticCanvas.width = video.videoWidth;
         staticCanvas.height = video.videoHeight;
         const sCtx = staticCanvas.getContext('2d');
         sCtx.drawImage(video, 0, 0);
         staticCanvas.style.display = 'block';
-        statusText.innerText = "DECODING SNAPSHOT...";
-
-        // 2. Crop
-        const scanW = staticCanvas.width * 0.9;
-        const scanH = 120;
-        const scanX = staticCanvas.width * 0.05;
-        const scanY = (staticCanvas.height * 0.40) - (scanH / 2);
-
-        procCanvas.width = scanW;
-        procCanvas.height = scanH;
-        const pCtx = procCanvas.getContext('2d', { willReadFrequently: true });
-        pCtx.drawImage(staticCanvas, scanX, scanY, scanW, scanH, 0, 0, scanW, scanH);
-
-        // 3. Logic
-        const imgData = pCtx.getImageData(0, 0, scanW, scanH);
-        const result = decodeFADT(imgData);
-
-        fadtBuffer = result.replace(/[^FADT]/g, '');
-        fadtDisplay.innerText = fadtBuffer || "NO BARCODE FOUND";
         
-        if (fadtBuffer.length === 65) {
-            statusText.innerText = "SUCCESS (65 BARS)";
-            addToHistory(fadtBuffer);
-        } else {
-            statusText.innerText = `ERROR: FOUND ${fadtBuffer.length} BARS`;
+        // Multi-Pass Analysis
+        const zones = [0.35, 0.40, 0.45]; // Top, Middle, Bottom of viewfinder area
+        let bestResult = "";
+
+        for (let passY of zones) {
+            const scanW = staticCanvas.width * 0.94;
+            const scanH = 100;
+            const scanX = staticCanvas.width * 0.03;
+            const scanY = (staticCanvas.height * passY) - (scanH / 2);
+            
+            procCanvas.width = scanW;
+            procCanvas.height = scanH;
+            const pCtx = procCanvas.getContext('2d');
+            pCtx.drawImage(staticCanvas, scanX, scanY, scanW, scanH, 0, 0, scanW, scanH);
+            
+            const result = decodeFADT(pCtx.getImageData(0, 0, scanW, scanH));
+            if (result.length > bestResult.length) bestResult = result;
+            if (result.length === 65) break; 
         }
+
+        fadtBuffer = bestResult.replace(/[^FADT]/g, '');
+        fadtDisplay.innerText = fadtBuffer || "0 BARS - TRY AGAIN";
+        statusText.innerText = fadtBuffer.length === 65 ? "SUCCESS" : `FOUND ${fadtBuffer.length}/65`;
+        statusText.style.color = fadtBuffer.length === 65 ? "#00ff00" : "#ff4444";
     }
 
     function decodeFADT(imgData) {
-        const d = imgData.data; const w = imgData.width; const h = imgData.height;
+        const d = imgData.data, w = imgData.width, h = imgData.height;
+        // Auto-Threshold: find the darkest pixels in this strip
+        let brightnesses = [];
+        for (let i = 0; i < d.length; i += 40) brightnesses.push((d[i]+d[i+1]+d[i+2])/3);
+        brightnesses.sort((a, b) => a - b);
+        const threshold = brightnesses[Math.floor(brightnesses.length * 0.2)] + 20; // 20th percentile + margin
+
         let projection = new Array(w).fill(0);
         for (let x = 0; x < w; x++) {
             for (let y = 0; y < h; y++) {
                 const i = (y * w + x) * 4;
-                if ((d[i] + d[i+1] + d[i+2]) / 3 < 100) projection[x]++;
+                if ((d[i] + d[i+1] + d[i+2]) / 3 < threshold) projection[x]++;
             }
         }
-        let bars = []; let inBar = false; let start = 0;
+
+        let bars = [], inBar = false, start = 0;
         for (let x = 0; x < w; x++) {
-            const active = projection[x] > (h * 0.15); 
+            const active = projection[x] > (h * 0.1); 
             if (active && !inBar) { inBar = true; start = x; }
-            else if (!active && inBar) { inBar = false; if(x - start > 1) bars.push({s: start, e: x}); }
+            else if (!active && inBar) { inBar = false; bars.push({s: start, e: x}); }
         }
+
         return bars.map(b => {
             const midX = Math.floor((b.s + b.e) / 2);
             let minY = h, maxY = 0;
             for (let y = 0; y < h; y++) {
                 const i = (y * w + midX) * 4;
-                if ((d[i] + d[i+1] + d[i+2]) / 3 < 100) {
+                if ((d[i] + d[i+1] + d[i+2]) / 3 < threshold) {
                     if (y < minY) minY = y; if (y > maxY) maxY = y;
                 }
             }
-            if (minY < (h * 0.4) && maxY > (h * 0.6)) return 'F';
-            if (minY < (h * 0.4)) return 'A';
-            if (maxY > (h * 0.6)) return 'D';
+            if (minY < (h * 0.42) && maxY > (h * 0.58)) return 'F';
+            if (minY < (h * 0.42)) return 'A';
+            if (maxY > (h * 0.58)) return 'D';
             return 'T';
         }).join('');
     }
 
-    function addToHistory(str) {
-        if (historyData[0] === str) return;
-        historyData.unshift(str);
-        if (historyData.length > 20) historyData.pop();
-        renderHistory();
-    }
-
-    function renderHistory() {
-        historyList.innerHTML = historyData.map(item => `
-            <div class="history-item">
-                <div class="history-text">${item}</div>
-                <button style="flex:0; background:#007bff; border:none; padding:8px;" onclick="copySpecific('${item}')">COPY</button>
-            </div>
-        `).join('');
-    }
-
-    function toggleHistory(show) {
-        historyOverlay.style.display = show ? 'flex' : 'none';
-    }
-
-    function copySpecific(str) {
-        navigator.clipboard.writeText(str.replace(/[^FADT]/g, ''));
-    }
-
-    function resetScanner() { 
-        staticCanvas.style.display = 'none';
-        fadtBuffer = ""; 
-        fadtDisplay.innerText = "---";
-        statusText.innerText = "TAP SCREEN TO CAPTURE"; 
-    }
-
-    function copyString() {
-        const clean = fadtBuffer.replace(/[^FADT]/g, '');
-        if (clean) {
-            navigator.clipboard.writeText(clean).then(() => {
-                const oldText = statusText.innerText;
-                statusText.innerText = "COPIED!";
-                setTimeout(() => statusText.innerText = oldText, 1500);
-            });
-        }
-    }
-
+    function resetScanner() { staticCanvas.style.display = 'none'; fadtBuffer = ""; fadtDisplay.innerText = "---"; statusText.innerText = "READY"; statusText.style.color = "var(--line-color)"; }
+    function copyString() { if (fadtBuffer) navigator.clipboard.writeText(fadtBuffer); }
     window.addEventListener('load', startCamera);
 </script>
 </body>
