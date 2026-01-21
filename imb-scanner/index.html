@@ -3,15 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>IMB Tap-Sync Decoder</title>
+    <title>IMB Wide-Margin Decoder</title>
     <style>
         :root { --line-color: #00ff00; }
         body { font-family: monospace; margin: 0; background: #000; color: var(--line-color); overflow: hidden; height: 100vh; }
-        
         #camera-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; cursor: pointer; z-index: 1; }
         video, #static-frame { width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; }
         #static-frame { display: none; z-index: 2; pointer-events: none; }
-        
         #overlay-layer { position: relative; z-index: 3; height: 100%; pointer-events: none; display: flex; flex-direction: column; align-items: center; }
         #results-area {
             position: absolute; bottom: 20px; width: 90%;
@@ -33,7 +31,7 @@
         
     <div id="overlay-layer">
         <div id="results-area">
-            <div id="status">TAP THE BARCODE DIRECTLY</div>
+            <div id="status">TAP CENTER OF BARCODE</div>
             <div id="fadt-text">---</div>
             <div class="btn-group">
                 <button onclick="copyString()" style="background:#007bff;">COPY</button>
@@ -62,10 +60,7 @@
     async function handleTap(e) {
         if (isFrozen) { resetScanner(); return; }
 
-        // 1. Calculate the precise camera-to-screen mapping
         const rect = video.getBoundingClientRect();
-        
-        // Account for 'object-fit: cover' zoom/offset
         const videoRatio = video.videoWidth / video.videoHeight;
         const displayRatio = rect.width / rect.height;
         
@@ -81,17 +76,11 @@
             offsetX = (actualWidth - rect.width) / 2;
         }
 
-        // Tap point in normalized video coordinates (0.0 to 1.0)
         const normX = (e.clientX - rect.left + offsetX) / actualWidth;
         const normY = (e.clientY - rect.top + offsetY) / actualHeight;
 
-        statusText.innerText = "FOCUSING ON TAP...";
-        
-        if (videoTrack && videoTrack.getCapabilities().focusMode) {
-            try { await videoTrack.applyConstraints({ advanced: [{ focusMode: "continuous" }] }); } catch (err) {}
-        }
-
-        setTimeout(() => captureAndDecode(normX, normY), 450);
+        statusText.innerText = "CAPTURING...";
+        setTimeout(() => captureAndDecode(normX, normY), 400);
     }
 
     function captureAndDecode(nX, nY) {
@@ -100,25 +89,13 @@
         const ctx = staticCanvas.getContext('2d');
         ctx.drawImage(video, 0, 0);
         
-        const tapPX = nX * vw;
-        const tapPY = nY * vh;
+        const tapPX = nX * vw, tapPY = nY * vh;
 
-        // Visual feedback: Draw a small red dot at the Tap Point on the static frame
-        ctx.fillStyle = "red";
-        ctx.beginPath();
-        ctx.arc(tapPX, tapPY, 10, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Search area width is nearly full screen, but height is constrained around the tap
-        const sW = vw * 0.96;
-        const sH = 300; 
-        const sX = (vw - sW) / 2;
-        const sY = Math.max(0, tapPY - (sH / 2));
-
+        // Wide search window (98% of width)
+        const sW = vw * 0.98, sH = 400, sX = (vw - sW) / 2, sY = Math.max(0, tapPY - (sH / 2));
         const imgData = ctx.getImageData(sX, sY, sW, sH);
         
-        // Use tapPY as the absolute center for the Middle Strip
-        const result = processWithFixedAnchor(imgData, ctx, sX, sY, tapPY);
+        const result = processWithWideGrid(imgData, ctx, sX, sY, tapPY);
 
         staticCanvas.style.display = 'block';
         isFrozen = true;
@@ -129,25 +106,25 @@
             statusText.innerText = "SUCCESS: 65 BARS";
             statusText.style.color = "#00ff00";
         } else {
-            statusText.innerText = `RETRY: FOUND ${result.length} BARS`;
+            statusText.innerText = `FOUND ${result.length} BARS - TRY AGAIN`;
             statusText.style.color = "#ff4444";
         }
     }
 
-    function processWithFixedAnchor(img, ctx, offX, offY, tapNativeY) {
+    function processWithWideGrid(img, ctx, offX, offY, tapNativeY) {
         const d = img.data, w = img.width, h = img.height;
-        
-        // Thresholding based on tap area
-        let br = [];
         const localY = Math.floor(tapNativeY - offY);
+
+        // Thresholding
+        let br = [];
         for (let x = 0; x < w; x += 15) {
             const i = (localY * w + x) * 4;
             if (i < d.length) br.push(d[i]);
         }
         br.sort((a,b) => a - b);
-        const threshold = br[Math.floor(br.length * 0.2)] + 30;
+        const threshold = br[Math.floor(br.length * 0.2)] + 35;
 
-        // Find horizontal bounds (horizontal scan along the tap line)
+        // Find horizontal bounds
         let bars = [], inBar = false, startX = 0;
         for (let x = 0; x < w; x++) {
             const idx = (localY * w + x) * 4;
@@ -158,30 +135,31 @@
 
         if (bars.length === 0) return "";
 
-        // GRID DIMENSIONS: tapNativeY is exactly the center
+        // GRID DIMENSIONS: Increased Padding and Height
         const boxL = bars[0].s, boxR = bars[bars.length-1].e;
-        const boxH = 100; // Total height of the IMB grid
+        const boxH = 120; // Increased from 100 for better bar coverage
         const stripH = boxH / 5;
-        const boxT_Native = tapNativeY - (boxH / 2); // Center the whole box on tap
+        const boxT_Native = tapNativeY - (boxH / 2);
 
-        // Draw Visual Grid
-        ctx.strokeStyle = "rgba(0, 255, 0, 0.9)";
+        // Visual Grid: Draw with 40px horizontal padding so edges aren't touching
+        ctx.strokeStyle = "rgba(0, 255, 0, 1.0)";
         ctx.lineWidth = 4;
-        ctx.strokeRect(offX + boxL - 5, boxT_Native, (boxR - boxL) + 10, boxH);
+        const drawX = offX + boxL - 40;
+        const drawW = (boxR - boxL) + 80;
+        ctx.strokeRect(drawX, boxT_Native, drawW, boxH);
         
-        // Draw Strip Dividers
+        // Strip Dividers
         ctx.lineWidth = 1;
-        ctx.setLineDash([8, 4]);
+        ctx.setLineDash([10, 5]);
         for (let i = 1; i < 5; i++) {
             const ly = boxT_Native + (i * stripH);
             ctx.beginPath();
-            ctx.moveTo(offX + boxL - 5, ly);
-            ctx.lineTo(offX + boxR + 5, ly);
+            ctx.moveTo(drawX, ly);
+            ctx.lineTo(drawX + drawW, ly);
             ctx.stroke();
         }
         ctx.setLineDash([]);
 
-        // 5-Strip Analysis
         return bars.map(b => {
             const mx = Math.floor((b.s + b.e) / 2);
             let presence = []; 
@@ -207,7 +185,7 @@
         staticCanvas.style.display = 'none';
         isFrozen = false;
         fadtDisplay.innerText = "---";
-        statusText.innerText = "TAP THE BARCODE DIRECTLY";
+        statusText.innerText = "TAP CENTER OF BARCODE";
         statusText.style.color = "#00ff00";
     }
 
