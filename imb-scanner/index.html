@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>IMB 5-Strip Precision</title>
+    <title>IMB Grid-Decision Decoder</title>
     <style>
         :root { --line-color: #00ff00; }
         body { font-family: monospace; margin: 0; background: #000; color: var(--line-color); overflow: hidden; height: 100vh; }
@@ -12,8 +12,8 @@
         #static-frame { display: none; z-index: 2; pointer-events: none; }
         #overlay-layer { position: relative; z-index: 3; height: 100%; pointer-events: none; display: flex; flex-direction: column; align-items: center; }
         #viewfinder {
-            position: absolute; top: 40%; width: 92%; height: 160px;
-            border: 1px solid rgba(0, 255, 0, 0.4); transform: translateY(-50%);
+            position: absolute; top: 40%; width: 92%; height: 180px;
+            border: 1px solid rgba(0, 255, 0, 0.3); transform: translateY(-50%);
             box-shadow: 0 0 0 5000px rgba(0,0,0,0.8);
         }
         #results-area {
@@ -21,9 +21,10 @@
             background: rgba(15, 15, 15, 0.95); padding: 15px; box-sizing: border-box;
             border: 1px solid #444; border-radius: 12px; pointer-events: auto; text-align: center;
         }
-        #fadt-text { font-size: 1rem; word-break: break-all; color: #fff; min-height: 1.5em; margin-bottom: 10px; letter-spacing: 1px; font-weight: bold; }
+        #fadt-text { font-size: 1rem; word-break: break-all; color: #fff; min-height: 1.5em; margin-bottom: 10px; letter-spacing: 2px; font-weight: bold; }
         #status { font-size: 0.8rem; color: var(--line-color); margin-bottom: 12px; font-weight: bold; text-transform: uppercase; }
-        button { width: 100%; padding: 15px; background: #007bff; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; }
+        .btn-group { display: flex; gap: 10px; }
+        button { flex: 1; padding: 15px; background: #222; color: white; border: 1px solid #555; border-radius: 8px; font-weight: bold; cursor: pointer; }
     </style>
 </head>
 <body>
@@ -38,7 +39,10 @@
         <div id="results-area">
             <div id="status">TAP TO SCAN</div>
             <div id="fadt-text">---</div>
-            <button onclick="copyString()">COPY FADT</button>
+            <div class="btn-group">
+                <button onclick="copyString()" style="background:#007bff;">COPY</button>
+                <button onclick="resetScanner()">RESET</button>
+            </div>
         </div>
     </div>
 
@@ -60,11 +64,10 @@
     async function handleTap() {
         if (isFrozen) { resetScanner(); return; }
         statusText.innerText = "FOCUSING...";
-        // Briefly try to lock focus
         if (videoTrack && videoTrack.getCapabilities().focusMode) {
             try { await videoTrack.applyConstraints({ advanced: [{ focusMode: "continuous" }] }); } catch (e) {}
         }
-        setTimeout(captureAndDecode, 450);
+        setTimeout(captureAndDecode, 500);
     }
 
     function captureAndDecode() {
@@ -73,11 +76,10 @@
         const ctx = staticCanvas.getContext('2d');
         ctx.drawImage(video, 0, 0);
         
-        // Scan Window
-        const sW = vw * 0.94, sH = 300, sX = vw * 0.03, sY = (vh * 0.4) - (sH / 2);
+        const sW = vw * 0.94, sH = 350, sX = vw * 0.03, sY = (vh * 0.4) - (sH / 2);
         const imgData = ctx.getImageData(sX, sY, sW, sH);
         
-        const result = processWithStrips(imgData, ctx, sX, sY);
+        const result = processWithGrid(imgData, ctx, sX, sY);
 
         staticCanvas.style.display = 'block';
         isFrozen = true;
@@ -93,10 +95,10 @@
         }
     }
 
-    function processWithStrips(img, ctx, offX, offY) {
+    function processWithGrid(img, ctx, offX, offY) {
         const d = img.data, w = img.width, h = img.height;
         
-        // 1. Locate Y-Belt (Center of barcode)
+        // 1. Find Barcode Y-Center
         let rowDensity = new Array(h).fill(0);
         for (let y = 1; y < h; y++) {
             for (let x = 0; x < w; x += 10) {
@@ -106,13 +108,13 @@
         }
         const bestY = rowDensity.indexOf(Math.max(...rowDensity));
 
-        // 2. Find ink threshold
+        // 2. Thresholding
         let br = [];
         for (let x = 0; x < w; x += 20) br.push(d[(bestY * w + x) * 4]);
         br.sort((a,b) => a - b);
         const threshold = br[Math.floor(br.length * 0.2)] + 30;
 
-        // 3. Find horizontal bounds (The 65 Bars)
+        // 3. Find horizontal start/end
         let bars = [], inBar = false, startX = 0;
         for (let x = 0; x < w; x++) {
             const isDark = d[(bestY * w + x) * 4] < threshold;
@@ -122,45 +124,50 @@
 
         if (bars.length === 0) return "";
 
-        // 4. Draw bounding box and the 5 detection strips
+        // 4. Calculate Grid Layout
         const boxL = bars[0].s, boxR = bars[bars.length-1].e;
-        const boxT = bestY - 40, boxB = bestY + 40, boxH = 80;
-        
-        ctx.strokeStyle = "#00ff00";
-        ctx.lineWidth = 4;
-        ctx.strokeRect(offX + boxL - 5, offY + boxT, (boxR - boxL) + 10, boxH);
+        const boxT = bestY - 45, boxB = bestY + 45, boxH = 90;
+        const stripH = boxH / 5;
 
-        // 5. Divide box into 5 strips and analyze presence of ink in each
-        const stripHeight = boxH / 5;
+        // --- DRAW GRID ON SNAPSHOT ---
+        ctx.strokeStyle = "rgba(0, 255, 0, 0.8)";
+        ctx.lineWidth = 4;
+        // Main Box
+        ctx.strokeRect(offX + boxL - 10, offY + boxT, (boxR - boxL) + 20, boxH);
+        // 5-Strip Dividers
+        ctx.lineWidth = 1;
+        ctx.setLineDash([10, 10]);
+        for (let i = 1; i < 5; i++) {
+            const lineY = offY + boxT + (i * stripH);
+            ctx.beginPath();
+            ctx.moveTo(offX + boxL - 10, lineY);
+            ctx.lineTo(offX + boxR + 10, lineY);
+            ctx.stroke();
+        }
+        ctx.setLineDash([]);
+
+        // 5. Grid Logic Decoding
         return bars.map(b => {
             const mx = Math.floor((b.s + b.e) / 2);
-            let presence = []; // Boolean for each of the 5 strips
+            let presence = []; 
 
             for (let s = 0; s < 5; s++) {
                 let stripInk = false;
-                const stripStart = Math.floor(boxT + (s * stripHeight));
-                const stripEnd = Math.floor(stripStart + stripHeight);
-                
-                // Check if any part of the bar exists in this specific vertical strip
-                for (let y = stripStart; y < stripEnd; y++) {
-                    const idx = (y * w + mx) * 4;
-                    if (d[idx] < threshold) { stripInk = true; break; }
+                const sStart = Math.floor(boxT + (s * stripH));
+                const sEnd = Math.floor(sStart + stripH);
+                for (let y = sStart; y < sEnd; y++) {
+                    if (d[(y * w + mx) * 4] < threshold) { stripInk = true; break; }
                 }
                 presence.push(stripInk);
             }
 
-            // Presence logic:
-            // Full: [1,1,1,1,1]
-            // Ascender: [1,1,1,0,0] (Top 3)
-            // Descender: [0,0,1,1,1] (Bottom 3)
-            // Tracker: [0,0,1,0,0] (Middle)
-            const top = presence[0] || presence[1];
-            const bottom = presence[3] || presence[4];
-            const middle = presence[2];
-
-            if (top && bottom) return 'F';
-            if (top) return 'A';
-            if (bottom) return 'D';
+            // Logic:
+            const hasTop = presence[0] || presence[1];
+            const hasBottom = presence[3] || presence[4];
+            
+            if (hasTop && hasBottom) return 'F';
+            if (hasTop) return 'A';
+            if (hasBottom) return 'D';
             return 'T';
         }).join('');
     }
