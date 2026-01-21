@@ -3,19 +3,40 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>IMB Scanner v2.4</title>
+    <title>IMB Scanner v2.5</title>
     <style>
         :root { --accent: #00ff00; --handle: #ff0000; }
         body { font-family: system-ui, sans-serif; margin: 0; background: #000; color: var(--accent); overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
+        
         #camera-container { position: relative; flex-grow: 1; overflow: hidden; touch-action: none; background: #000; }
         video, #static-frame { width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; }
         #static-frame { display: none; z-index: 2; }
+        
         #results-area { background: rgba(15, 15, 15, 0.98); padding: 20px; border-top: 1px solid #333; z-index: 10; }
-        .control-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px; }
+        .control-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
         #status { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; }
-        #accept-btn { background: #008000; color: white; border: none; padding: 12px 28px; border-radius: 8px; font-weight: bold; cursor: pointer; }
-        #fadt-text { font-family: monospace; font-size: 1.1rem; color: #fff; background: #000; padding: 15px; border-radius: 6px; margin-bottom: 15px; letter-spacing: 3px; text-align: center; border: 1px solid #444; user-select: all; }
-        .reset-btn { background: #222; color: #aaa; border: 1px solid #444; padding: 12px; border-radius: 8px; width: 100%; cursor: pointer; }
+        
+        #accept-btn { background: #008000; color: white; border: none; padding: 10px 24px; border-radius: 8px; font-weight: bold; cursor: pointer; }
+        
+        /* Updated for Single Line Visibility */
+        #fadt-text { 
+            font-family: 'Courier New', monospace; 
+            font-size: 2.4vw; /* Scaled to viewport width */
+            color: #fff; 
+            background: #000; 
+            padding: 12px 5px; 
+            border-radius: 6px; 
+            margin-bottom: 15px; 
+            letter-spacing: 1px; 
+            text-align: center; 
+            border: 1px solid #444; 
+            white-space: nowrap; 
+            overflow-x: auto;
+            min-height: 1.2em;
+            user-select: all;
+        }
+        
+        .reset-btn { background: #222; color: #aaa; border: 1px solid #444; padding: 12px; border-radius: 8px; width: 100%; cursor: pointer; font-size: 0.8rem; }
     </style>
 </head>
 <body>
@@ -27,7 +48,7 @@
         
     <div id="results-area">
         <div class="control-row">
-            <div id="status">v2.4 | Tap to Capture</div>
+            <div id="status">v2.5 | Tap to Capture</div>
             <button id="accept-btn" style="display:none" onclick="decodeSelection()">DECODE</button>
         </div>
         <div id="fadt-text">---</div>
@@ -42,8 +63,8 @@
     const acceptBtn = document.getElementById('accept-btn');
     
     let isFrozen = false, cleanImageBuffer = null;
-    let p1 = {x:0, y:0}, p2 = {x:0, y:0}; // Native coords
-    let activeHandle = null; // 1 or 2
+    let p1 = {x:0, y:0}, p2 = {x:0, y:0};
+    let activeHandle = null;
 
     async function startCamera() {
         const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1920 } } });
@@ -55,19 +76,14 @@
         const mouseX = e.clientX - rect.left;
         const mouseY = e.clientY - rect.top;
 
-        if (!isFrozen) { 
-            captureFrame(); 
-            return;
-        }
+        if (!isFrozen) { captureFrame(); return; }
 
         const sP1 = nativeToScreen(p1.x, p1.y);
         const sP2 = nativeToScreen(p2.x, p2.y);
 
-        // Check if touching handles (40px radius for fingers)
-        if (Math.hypot(mouseX - sP1.x, mouseY - sP1.y) < 40) { activeHandle = 1; }
-        else if (Math.hypot(mouseX - sP2.x, mouseY - sP2.y) < 40) { activeHandle = 2; }
+        if (Math.hypot(mouseX - sP1.x, mouseY - sP1.y) < 45) { activeHandle = 1; }
+        else if (Math.hypot(mouseX - sP2.x, mouseY - sP2.y) < 45) { activeHandle = 2; }
         else {
-            // New swipe start
             const native = screenToNative(mouseX, mouseY);
             p1 = { ...native }; p2 = { ...native };
             activeHandle = 2;
@@ -78,10 +94,8 @@
         if (!activeHandle) return;
         const rect = staticCanvas.getBoundingClientRect();
         const native = screenToNative(e.clientX - rect.left, e.clientY - rect.top);
-        
         if (activeHandle === 1) p1 = native;
         else if (activeHandle === 2) p2 = native;
-        
         drawInterface();
     });
 
@@ -89,7 +103,7 @@
         activeHandle = null;
         if (Math.hypot(p2.x - p1.x, p2.y - p1.y) > 20) {
             acceptBtn.style.display = 'block';
-            statusText.innerText = "v2.4 | Adjust Handles or Decode";
+            statusText.innerText = "v2.5 | Adjust or Decode";
         }
     });
 
@@ -101,27 +115,21 @@
         cleanImageBuffer = ctx.getImageData(0, 0, staticCanvas.width, staticCanvas.height);
         staticCanvas.style.display = 'block';
         isFrozen = true;
-        statusText.innerText = "v2.4 | Swipe to place spine";
+        statusText.innerText = "v2.5 | Swipe to place spine";
     }
 
     function drawInterface() {
         if (!cleanImageBuffer) return;
         const ctx = staticCanvas.getContext('2d');
         ctx.putImageData(cleanImageBuffer, 0, 0);
-
         const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
         const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
         const H = staticCanvas.height * 0.08;
-        const stripH = H / 7;
-
         ctx.save();
         ctx.translate(p1.x, p1.y); ctx.rotate(angle);
-        
-        // Spine and Grid
         ctx.shadowBlur = 5; ctx.shadowColor = "black";
         ctx.strokeStyle = "#ff0000"; ctx.lineWidth = 6;
         ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(dist, 0); ctx.stroke();
-        
         ctx.strokeStyle = "#00ff00"; ctx.lineWidth = 3;
         ctx.strokeRect(0, -H/2, dist, H);
         ctx.setLineDash([15, 15]);
@@ -130,18 +138,13 @@
             ctx.beginPath(); ctx.moveTo(0, ly); ctx.lineTo(dist, ly); ctx.stroke();
         }
         ctx.restore();
-
-        // Draw Handles
         drawHandle(ctx, p1.x, p1.y);
         drawHandle(ctx, p2.x, p2.y);
     }
 
     function drawHandle(ctx, x, y) {
-        ctx.fillStyle = "white";
-        ctx.strokeStyle = "red";
-        ctx.lineWidth = 4;
-        ctx.beginPath();
-        ctx.arc(x, y, 15, 0, Math.PI * 2);
+        ctx.fillStyle = "white"; ctx.strokeStyle = "red"; ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.arc(x, y, 15, 0, Math.PI * 2);
         ctx.fill(); ctx.stroke();
     }
 
@@ -156,14 +159,12 @@
     }
 
     function decodeSelection() {
-        const ctx = staticCanvas.getContext('2d');
         const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
         const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
         const H = staticCanvas.height * 0.08;
         const stripH = H / 7;
         const fullData = cleanImageBuffer.data;
         const W_nat = staticCanvas.width;
-
         let lums = [];
         for (let i = 0; i < dist; i += 5) {
             const px = Math.floor(p1.x + Math.cos(angle) * i);
@@ -173,7 +174,6 @@
         }
         lums.sort((a,b)=>a-b);
         const thresh = lums[Math.floor(lums.length * 0.35)] + 25;
-
         let bars = [], inB = false, tempS = 0;
         for (let i = 0; i < dist; i++) {
             const px = Math.floor(p1.x + Math.cos(angle) * i);
@@ -184,13 +184,9 @@
             if (isInk && !inB) { inB = true; tempS = i; }
             else if (!isInk && inB) {
                 inB = false;
-                if (i - tempS > 1) {
-                    bars.push({s: tempS, e: i});
-                    ctx.fillStyle = "cyan"; ctx.fillRect(px, py, 4, 4);
-                }
+                if (i - tempS > 1) bars.push({s: tempS, e: i});
             }
         }
-
         const fadt = bars.map(b => {
             const mDist = (b.s + b.e) / 2;
             let zones = new Array(7).fill(false);
@@ -205,9 +201,8 @@
             const hasD = zones[5] || zones[6];
             return (hasA && hasD) ? 'F' : hasA ? 'A' : hasD ? 'D' : 'T';
         }).join('');
-
         fadtDisplay.innerText = fadt;
-        statusText.innerText = `v2.4 | ${fadt.length} Bars Found`;
+        statusText.innerText = `v2.5 | ${fadt.length} Bars Found`;
         statusText.style.color = fadt.length === 65 ? "#00ff00" : "#ff4444";
     }
 
@@ -215,7 +210,7 @@
         staticCanvas.style.display = 'none';
         isFrozen = false; acceptBtn.style.display = 'none';
         fadtDisplay.innerText = "---";
-        statusText.innerText = "v2.4 | Tap to Capture";
+        statusText.innerText = "v2.5 | Tap to Capture";
         statusText.style.color = "var(--accent)";
     }
     window.addEventListener('load', startCamera);
