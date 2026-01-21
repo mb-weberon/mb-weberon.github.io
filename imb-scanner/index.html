@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>IMB Wide-Margin Decoder</title>
+    <title>IMB Swipe Decoder</title>
     <style>
         :root { --line-color: #00ff00; }
         body { font-family: monospace; margin: 0; background: #000; color: var(--line-color); overflow: hidden; height: 100vh; }
-        #camera-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; cursor: pointer; z-index: 1; }
+        #camera-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; cursor: pointer; z-index: 1; touch-action: none; }
         video, #static-frame { width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; }
         #static-frame { display: none; z-index: 2; pointer-events: none; }
         #overlay-layer { position: relative; z-index: 3; height: 100%; pointer-events: none; display: flex; flex-direction: column; align-items: center; }
@@ -18,165 +18,152 @@
         }
         #fadt-text { font-size: 1rem; word-break: break-all; color: #fff; min-height: 1.5em; margin-bottom: 10px; letter-spacing: 2px; font-weight: bold; }
         #status { font-size: 0.8rem; color: var(--line-color); margin-bottom: 12px; font-weight: bold; text-transform: uppercase; }
-        .btn-group { display: flex; gap: 10px; }
-        button { flex: 1; padding: 15px; background: #222; color: white; border: 1px solid #555; border-radius: 8px; font-weight: bold; cursor: pointer; }
+        button { width: 100%; padding: 15px; background: #222; color: white; border: 1px solid #555; border-radius: 8px; font-weight: bold; }
     </style>
 </head>
 <body>
 
-    <div id="camera-container" onclick="handleTap(event)">
+    <div id="camera-container">
         <video id="video" autoplay playsinline muted></video>
         <canvas id="static-frame"></canvas>
     </div>
         
     <div id="overlay-layer">
         <div id="results-area">
-            <div id="status">TAP CENTER OF BARCODE</div>
+            <div id="status">SWIPE ALONG THE BARCODE</div>
             <div id="fadt-text">---</div>
-            <div class="btn-group">
-                <button onclick="copyString()" style="background:#007bff;">COPY</button>
-                <button onclick="resetScanner()">RESET</button>
-            </div>
+            <button onclick="resetScanner()">RESET / CLEAR</button>
         </div>
     </div>
 
 <script>
     const video = document.getElementById('video');
     const staticCanvas = document.getElementById('static-frame');
+    const container = document.getElementById('camera-container');
     const fadtDisplay = document.getElementById('fadt-text');
     const statusText = document.getElementById('status');
-    let isFrozen = false, fadtBuffer = "", videoTrack = null;
+    
+    let isFrozen = false, startX, startY, endX, endY;
 
     async function startCamera() {
         try {
-            const s = await navigator.mediaDevices.getUserMedia({ 
-                video: { facingMode: "environment", width: { ideal: 1920 } } 
-            });
+            const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1920 } } });
             video.srcObject = s;
-            videoTrack = s.getVideoTracks()[0];
         } catch (e) { statusText.innerText = "CAMERA ERROR"; }
     }
 
-    async function handleTap(e) {
+    container.addEventListener('pointerdown', (e) => {
         if (isFrozen) { resetScanner(); return; }
+        const r = video.getBoundingClientRect();
+        startX = e.clientX - r.left;
+        startY = e.clientY - r.top;
+        statusText.innerText = "SWIPING...";
+    });
 
-        const rect = video.getBoundingClientRect();
-        const videoRatio = video.videoWidth / video.videoHeight;
-        const displayRatio = rect.width / rect.height;
-        
-        let actualWidth, actualHeight, offsetX = 0, offsetY = 0;
-        
-        if (displayRatio > videoRatio) {
-            actualWidth = rect.width;
-            actualHeight = rect.width / videoRatio;
-            offsetY = (actualHeight - rect.height) / 2;
+    container.addEventListener('pointerup', (e) => {
+        if (isFrozen) return;
+        const r = video.getBoundingClientRect();
+        endX = e.clientX - r.left;
+        endY = e.clientY - r.top;
+        captureAndProcessSwipe();
+    });
+
+    function getNativeCoords(screenX, screenY) {
+        const r = video.getBoundingClientRect();
+        const vRatio = video.videoWidth / video.videoHeight;
+        const dRatio = r.width / r.height;
+        let aW, aH, offX = 0, offY = 0;
+
+        if (dRatio > vRatio) {
+            aW = r.width; aH = r.width / vRatio;
+            offY = (aH - r.height) / 2;
         } else {
-            actualHeight = rect.height;
-            actualWidth = rect.height * videoRatio;
-            offsetX = (actualWidth - rect.width) / 2;
+            aH = r.height; aW = r.height * vRatio;
+            offX = (aW - r.width) / 2;
         }
-
-        const normX = (e.clientX - rect.left + offsetX) / actualWidth;
-        const normY = (e.clientY - rect.top + offsetY) / actualHeight;
-
-        statusText.innerText = "CAPTURING...";
-        setTimeout(() => captureAndDecode(normX, normY), 400);
+        return {
+            x: ((screenX + offX) / aW) * video.videoWidth,
+            y: ((screenY + offY) / aH) * video.videoHeight
+        };
     }
 
-    function captureAndDecode(nX, nY) {
+    function captureAndProcessSwipe() {
         const vw = video.videoWidth, vh = video.videoHeight;
         staticCanvas.width = vw; staticCanvas.height = vh;
         const ctx = staticCanvas.getContext('2d');
         ctx.drawImage(video, 0, 0);
-        
-        const tapPX = nX * vw, tapPY = nY * vh;
 
-        // Wide search window (98% of width)
-        const sW = vw * 0.98, sH = 400, sX = (vw - sW) / 2, sY = Math.max(0, tapPY - (sH / 2));
-        const imgData = ctx.getImageData(sX, sY, sW, sH);
+        const p1 = getNativeCoords(startX, startY);
+        const p2 = getNativeCoords(endX, endY);
+
+        // Define Box based on swipe bounds
+        const boxL = Math.min(p1.x, p2.x) - 40;
+        const boxR = Math.max(p1.x, p2.x) + 40;
+        const boxCenterY = (p1.y + p2.y) / 2;
+        const boxH = 130;
+        const boxT = boxCenterY - (boxH / 2);
+
+        // Draw the Swipe Rectangle
+        ctx.strokeStyle = "#00ff00";
+        ctx.lineWidth = 5;
+        ctx.strokeRect(boxL, boxT, boxR - boxL, boxH);
         
-        const result = processWithWideGrid(imgData, ctx, sX, sY, tapPY);
+        // Draw Strips
+        ctx.lineWidth = 1;
+        ctx.setLineDash([10, 5]);
+        for(let i=1; i<5; i++) {
+            const ly = boxT + (i * (boxH/5));
+            ctx.beginPath(); ctx.moveTo(boxL, ly); ctx.lineTo(boxR, ly); ctx.stroke();
+        }
 
         staticCanvas.style.display = 'block';
         isFrozen = true;
 
+        // Process Area
+        const imgData = ctx.getImageData(boxL, boxT, boxR - boxL, boxH);
+        const result = decodeFADT(imgData, boxH/2);
+
         if (result.length === 65) {
-            fadtBuffer = result;
-            fadtDisplay.innerText = fadtBuffer;
+            fadtDisplay.innerText = result;
             statusText.innerText = "SUCCESS: 65 BARS";
             statusText.style.color = "#00ff00";
         } else {
-            statusText.innerText = `FOUND ${result.length} BARS - TRY AGAIN`;
+            statusText.innerText = `FOUND ${result.length} BARS - RETRY`;
             statusText.style.color = "#ff4444";
         }
     }
 
-    function processWithWideGrid(img, ctx, offX, offY, tapNativeY) {
+    function decodeFADT(img, localCenterY) {
         const d = img.data, w = img.width, h = img.height;
-        const localY = Math.floor(tapNativeY - offY);
-
-        // Thresholding
+        // Simple Threshold
         let br = [];
-        for (let x = 0; x < w; x += 15) {
-            const i = (localY * w + x) * 4;
-            if (i < d.length) br.push(d[i]);
-        }
-        br.sort((a,b) => a - b);
-        const threshold = br[Math.floor(br.length * 0.2)] + 35;
+        for (let i = 0; i < d.length; i += 40) br.push(d[i]);
+        br.sort((a,b) => a-b);
+        const thresh = br[Math.floor(br.length * 0.25)] + 30;
 
-        // Find horizontal bounds
-        let bars = [], inBar = false, startX = 0;
+        // Find bars horizontally along the center
+        let bars = [], inB = false, sX = 0;
+        const centerY = Math.floor(localCenterY);
         for (let x = 0; x < w; x++) {
-            const idx = (localY * w + x) * 4;
-            const isDark = d[idx] < threshold;
-            if (isDark && !inBar) { inBar = true; startX = x; }
-            else if (!isDark && inBar) { inBar = false; if (x - startX > 1) bars.push({s: startX, e: x}); }
+            const isDark = d[(centerY * w + x) * 4] < thresh;
+            if (isDark && !inB) { inB = true; sX = x; }
+            else if (!isDark && inB) { inB = false; if (x-sX > 1) bars.push({s: sX, e: x}); }
         }
 
-        if (bars.length === 0) return "";
-
-        // GRID DIMENSIONS: Increased Padding and Height
-        const boxL = bars[0].s, boxR = bars[bars.length-1].e;
-        const boxH = 120; // Increased from 100 for better bar coverage
-        const stripH = boxH / 5;
-        const boxT_Native = tapNativeY - (boxH / 2);
-
-        // Visual Grid: Draw with 40px horizontal padding so edges aren't touching
-        ctx.strokeStyle = "rgba(0, 255, 0, 1.0)";
-        ctx.lineWidth = 4;
-        const drawX = offX + boxL - 40;
-        const drawW = (boxR - boxL) + 80;
-        ctx.strokeRect(drawX, boxT_Native, drawW, boxH);
-        
-        // Strip Dividers
-        ctx.lineWidth = 1;
-        ctx.setLineDash([10, 5]);
-        for (let i = 1; i < 5; i++) {
-            const ly = boxT_Native + (i * stripH);
-            ctx.beginPath();
-            ctx.moveTo(drawX, ly);
-            ctx.lineTo(drawX + drawW, ly);
-            ctx.stroke();
-        }
-        ctx.setLineDash([]);
-
+        const stripH = h / 5;
         return bars.map(b => {
             const mx = Math.floor((b.s + b.e) / 2);
-            let presence = []; 
+            let p = [];
             for (let s = 0; s < 5; s++) {
                 let ink = false;
-                const sStart = Math.floor((boxT_Native - offY) + (s * stripH));
-                const sEnd = sStart + stripH;
-                for (let y = Math.max(0, sStart); y < Math.min(h, sEnd); y++) {
-                    if (d[(y * w + mx) * 4] < threshold) { ink = true; break; }
+                for (let y = Math.floor(s * stripH); y < Math.floor((s+1) * stripH); y++) {
+                    if (d[(y * w + mx) * 4] < thresh) { ink = true; break; }
                 }
-                presence.push(ink);
+                p.push(ink);
             }
-            const hasTop = presence[0] || presence[1];
-            const hasBottom = presence[3] || presence[4];
-            if (hasTop && hasBottom) return 'F';
-            if (hasTop) return 'A';
-            if (hasBottom) return 'D';
+            if ((p[0]||p[1]) && (p[3]||p[4])) return 'F';
+            if (p[0]||p[1]) return 'A';
+            if (p[3]||p[4]) return 'D';
             return 'T';
         }).join('');
     }
@@ -185,11 +172,10 @@
         staticCanvas.style.display = 'none';
         isFrozen = false;
         fadtDisplay.innerText = "---";
-        statusText.innerText = "TAP CENTER OF BARCODE";
+        statusText.innerText = "SWIPE ALONG THE BARCODE";
         statusText.style.color = "#00ff00";
     }
 
-    function copyString() { if (fadtBuffer) navigator.clipboard.writeText(fadtBuffer); }
     window.addEventListener('load', startCamera);
 </script>
 </body>
