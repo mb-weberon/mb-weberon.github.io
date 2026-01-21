@@ -3,22 +3,41 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>IMB v2.1 Anchor-Fix</title>
+    <title>IMB Scanner v2.2</title>
     <style>
-        :root { --line-color: #00ff00; }
-        body { font-family: monospace; margin: 0; background: #000; color: var(--line-color); overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
+        :root { --accent: #00ff00; --bg: #0a0a0a; --panel: rgba(20, 20, 20, 0.95); }
+        body { font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; background: #000; color: var(--accent); overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
+        
         #camera-container { position: relative; flex-grow: 1; overflow: hidden; touch-action: none; background: #000; }
         video, #static-frame { width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; }
         #static-frame { display: none; z-index: 2; }
+        
         #results-area {
-            background: rgba(10, 10, 10, 0.98); padding: 15px; border-top: 2px solid var(--line-color);
-            z-index: 10; pointer-events: auto;
+            background: var(--panel); padding: 20px; border-top: 1px solid #333;
+            z-index: 10; box-shadow: 0 -10px 30px rgba(0,0,0,0.5);
         }
-        .control-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-        #status { font-size: 0.8rem; font-weight: bold; color: #00ff00; }
-        #accept-btn { background: #008000; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; display: none; cursor: pointer; }
-        #fadt-text { font-size: 1rem; word-break: break-all; color: #fff; background: #000; padding: 12px; border-radius: 4px; margin-bottom: 10px; letter-spacing: 2.5px; text-align: center; border: 1px solid #333; min-height: 1.2em; }
-        .reset-btn { background: #333; color: #fff; border: none; padding: 12px; border-radius: 8px; width: 100%; cursor: pointer; font-size: 0.8rem; }
+        
+        .control-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px; }
+        #status { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+        
+        #accept-btn { 
+            background: #008000; color: white; border: none; padding: 12px 28px; 
+            border-radius: 8px; font-weight: bold; display: none; cursor: pointer;
+            box-shadow: 0 4px 14px rgba(0,128,0,0.4);
+        }
+        
+        #fadt-text { 
+            font-family: 'Courier New', monospace; font-size: 1.1rem; word-break: break-all; 
+            color: #fff; background: #000; padding: 15px; border-radius: 6px; 
+            margin-bottom: 15px; letter-spacing: 3px; text-align: center; 
+            border: 1px solid #444; min-height: 1.2em; user-select: all; -webkit-user-select: all;
+        }
+        
+        .reset-btn { 
+            background: #222; color: #aaa; border: 1px solid #444; padding: 12px; 
+            border-radius: 8px; width: 100%; cursor: pointer; font-size: 0.8rem; font-weight: 600;
+        }
+        .reset-btn:active { background: #333; }
     </style>
 </head>
 <body>
@@ -30,11 +49,11 @@
         
     <div id="results-area">
         <div class="control-row">
-            <div id="status">v2.1 | TAP TO FREEZE</div>
+            <div id="status">v2.2 | Tap to Capture</div>
             <button id="accept-btn" onclick="decodeSelection()">ACCEPT</button>
         </div>
         <div id="fadt-text">---</div>
-        <button class="reset-btn" onclick="resetScanner()">RESET / LIVE VIDEO</button>
+        <button class="reset-btn" onclick="resetScanner()">RESET CAMERA</button>
     </div>
 
 <script>
@@ -49,21 +68,20 @@
 
     async function startCamera() {
         try {
-            const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1920 } } });
+            const s = await navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } } 
+            });
             video.srcObject = s;
-        } catch (e) { statusText.innerText = "CAMERA ACCESS DENIED"; }
+        } catch (e) { statusText.innerText = "Error: Camera Access"; }
     }
 
     document.getElementById('camera-container').addEventListener('pointerdown', (e) => {
-        // IMPORTANT: Get the bounding rect of the container to handle UI offsets
         const rect = e.currentTarget.getBoundingClientRect();
-        
         if (!isFrozen) { 
             captureFrame(); 
         } else { 
             restoreCleanImage(); 
             isSwiping = true; 
-            // Localize start coordinates to the container
             startX = e.clientX - rect.left; 
             startY = e.clientY - rect.top; 
         }
@@ -77,12 +95,12 @@
         drawAngledSpine(startX, startY, endX, endY);
     });
 
-    window.addEventListener('pointerup', (e) => {
+    window.addEventListener('pointerup', () => {
         if (!isSwiping) return;
         isSwiping = false;
         if (Math.hypot(endX - startX, endY - startY) > 15) {
             acceptBtn.style.display = 'block';
-            statusText.innerText = "v2.1 | ALIGNMENT LOCKED";
+            statusText.innerText = "v2.2 | Spine Locked";
         }
     });
 
@@ -94,7 +112,7 @@
         cleanImageBuffer = ctx.getImageData(0, 0, staticCanvas.width, staticCanvas.height);
         staticCanvas.style.display = 'block';
         isFrozen = true;
-        statusText.innerText = "v2.1 | SWIPE TRACKER LINE";
+        statusText.innerText = "v2.2 | Swipe Tracker Line";
     }
 
     function restoreCleanImage() {
@@ -113,10 +131,15 @@
 
         ctx.save();
         ctx.translate(p1.x, p1.y); ctx.rotate(angle);
-        ctx.strokeStyle = "#ff0000"; ctx.lineWidth = 5;
+        
+        ctx.shadowBlur = 4; ctx.shadowColor = "black";
+        
+        ctx.strokeStyle = "#ff0000"; ctx.lineWidth = 6;
         ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(dist, 0); ctx.stroke();
+        
         ctx.strokeStyle = "#00ff00"; ctx.lineWidth = 3;
         ctx.strokeRect(0, -H/2, dist, H);
+        
         ctx.setLineDash([15, 15]);
         for (let i = 1; i < 7; i++) {
             let ly = -H/2 + (i * (H/7));
@@ -127,9 +150,10 @@
 
     function screenToNative(sx, sy) {
         const r = staticCanvas.getBoundingClientRect();
-        const scaleX = staticCanvas.width / r.width;
-        const scaleY = staticCanvas.height / r.height;
-        return { x: sx * scaleX, y: sy * scaleY };
+        return { 
+            x: sx * (staticCanvas.width / r.width), 
+            y: sy * (staticCanvas.height / r.height) 
+        };
     }
 
     function decodeSelection() {
@@ -148,7 +172,7 @@
             const px = Math.floor(p1.x + Math.cos(angle) * i);
             const py = Math.floor(p1.y + Math.sin(angle) * i);
             const idx = (py * W_nat + px) * 4;
-            lums.push((fullData[idx] + fullData[idx+1] + fullData[idx+2])/3);
+            if (idx >=0 && idx < fullData.length) lums.push((fullData[idx] + fullData[idx+1] + fullData[idx+2])/3);
         }
         lums.sort((a,b)=>a-b);
         const thresh = lums[Math.floor(lums.length * 0.35)] + 25;
@@ -166,8 +190,7 @@
                 inB = false;
                 if (i - tempS > 1) {
                     bars.push({s: tempS, e: i});
-                    ctx.fillStyle = "cyan";
-                    ctx.fillRect(px, py, 4, 4);
+                    ctx.fillStyle = "cyan"; ctx.fillRect(px, py, 4, 4);
                 }
             }
         }
@@ -182,14 +205,13 @@
                 const idx = (py * W_nat + px) * 4;
                 if (idx >= 0 && idx < fullData.length && ((fullData[idx] + fullData[idx+1] + fullData[idx+2])/3) < thresh) zones[z] = true;
             }
-            if ((zones[0]||zones[1]) && (zones[5]||zones[6])) return 'F';
-            if (zones[0]||zones[1]) return 'A';
-            if (zones[5]||zones[6]) return 'D';
-            return 'T';
+            const hasA = zones[0] || zones[1];
+            const hasD = zones[5] || zones[6];
+            return (hasA && hasD) ? 'F' : hasA ? 'A' : hasD ? 'D' : 'T';
         }).join('');
 
         fadtDisplay.innerText = fadt;
-        statusText.innerText = `v2.1 | ${fadt.length} BARS FOUND`;
+        statusText.innerText = `v2.2 | ${fadt.length} Bars Found`;
         statusText.style.color = fadt.length === 65 ? "#00ff00" : "#ff4444";
         acceptBtn.style.display = 'none';
     }
@@ -198,8 +220,8 @@
         staticCanvas.style.display = 'none';
         isFrozen = false; acceptBtn.style.display = 'none';
         fadtDisplay.innerText = "---";
-        statusText.innerText = "v2.1 | TAP TO FREEZE";
-        statusText.style.color = "#00ff00";
+        statusText.innerText = "v2.2 | Tap to Capture";
+        statusText.style.color = "var(--accent)";
     }
     window.addEventListener('load', startCamera);
 </script>
