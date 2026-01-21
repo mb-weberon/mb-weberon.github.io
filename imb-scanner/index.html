@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>IMB Robust Decoder</title>
+    <title>IMB Auto-Track Decoder</title>
     <style>
         :root { --line-color: #00ff00; }
         body { font-family: monospace; margin: 0; background: #000; color: var(--line-color); overflow: hidden; height: 100vh; width: 100vw; }
@@ -12,7 +12,7 @@
         #static-frame { display: none; z-index: 2; pointer-events: none; border: 4px solid var(--line-color); box-sizing: border-box; }
         #overlay-layer { position: relative; z-index: 3; height: 100%; pointer-events: none; display: flex; flex-direction: column; align-items: center; }
         #viewfinder {
-            position: absolute; top: 40%; width: 92%; height: 120px;
+            position: absolute; top: 40%; width: 92%; height: 140px;
             border: 2px solid var(--line-color); transform: translateY(-50%);
             box-shadow: 0 0 0 5000px rgba(0,0,0,0.7);
         }
@@ -25,7 +25,7 @@
         #status { font-size: 0.8rem; color: var(--line-color); margin-bottom: 12px; font-weight: bold; text-transform: uppercase; }
         .btn-group { display: flex; gap: 10px; }
         button { flex: 1; padding: 15px; background: #222; color: white; border: 1px solid #555; border-radius: 8px; font-weight: bold; cursor: pointer; }
-        @media (orientation: landscape) { #viewfinder { width: 75%; height: 80px; } #results-area { width: 50%; left: 25%; } }
+        @media (orientation: landscape) { #viewfinder { width: 75%; height: 100px; } #results-area { width: 50%; left: 25%; } }
     </style>
 </head>
 <body>
@@ -36,7 +36,7 @@
     <div id="overlay-layer">
         <div id="viewfinder"></div>
         <div id="results-area">
-            <div id="status">TAP ANYWHERE TO CAPTURE</div>
+            <div id="status">TAP TO SCAN</div>
             <div id="fadt-text">---</div>
             <div class="btn-group">
                 <button onclick="copyString()" style="background:#007bff;">COPY</button>
@@ -69,43 +69,63 @@
         sCtx.drawImage(video, 0, 0);
         staticCanvas.style.display = 'block';
         
-        // Multi-Pass Analysis
-        const zones = [0.35, 0.40, 0.45]; // Top, Middle, Bottom of viewfinder area
-        let bestResult = "";
+        // Window parameters
+        const scanW = staticCanvas.width * 0.94;
+        const scanH = 200; // Large sampling window
+        const scanX = staticCanvas.width * 0.03;
+        const scanY = (staticCanvas.height * 0.40) - (scanH / 2);
+        
+        procCanvas.width = scanW;
+        procCanvas.height = scanH;
+        const pCtx = procCanvas.getContext('2d');
+        pCtx.drawImage(staticCanvas, scanX, scanY, scanW, scanH, 0, 0, scanW, scanH);
+        
+        const result = decodeFADT(pCtx.getImageData(0, 0, scanW, scanH));
 
-        for (let passY of zones) {
-            const scanW = staticCanvas.width * 0.94;
-            const scanH = 100;
-            const scanX = staticCanvas.width * 0.03;
-            const scanY = (staticCanvas.height * passY) - (scanH / 2);
-            
-            procCanvas.width = scanW;
-            procCanvas.height = scanH;
-            const pCtx = procCanvas.getContext('2d');
-            pCtx.drawImage(staticCanvas, scanX, scanY, scanW, scanH, 0, 0, scanW, scanH);
-            
-            const result = decodeFADT(pCtx.getImageData(0, 0, scanW, scanH));
-            if (result.length > bestResult.length) bestResult = result;
-            if (result.length === 65) break; 
-        }
-
-        fadtBuffer = bestResult.replace(/[^FADT]/g, '');
-        fadtDisplay.innerText = fadtBuffer || "0 BARS - TRY AGAIN";
+        fadtBuffer = result.replace(/[^FADT]/g, '');
+        fadtDisplay.innerText = fadtBuffer || "0 BARS - RETRY";
         statusText.innerText = fadtBuffer.length === 65 ? "SUCCESS" : `FOUND ${fadtBuffer.length}/65`;
         statusText.style.color = fadtBuffer.length === 65 ? "#00ff00" : "#ff4444";
     }
 
     function decodeFADT(imgData) {
         const d = imgData.data, w = imgData.width, h = imgData.height;
-        // Auto-Threshold: find the darkest pixels in this strip
-        let brightnesses = [];
-        for (let i = 0; i < d.length; i += 40) brightnesses.push((d[i]+d[i+1]+d[i+2])/3);
-        brightnesses.sort((a, b) => a - b);
-        const threshold = brightnesses[Math.floor(brightnesses.length * 0.2)] + 20; // 20th percentile + margin
+        
+        // 1. Vertical Histogram to find the Barcode's "Y-Belt"
+        // This ignores text by finding where high-density vertical transitions happen
+        let rowDensity = new Array(h).fill(0);
+        for (let y = 1; y < h; y++) {
+            for (let x = 0; x < w; x+=2) {
+                const i = (y * w + x) * 4;
+                const prevI = ((y-1) * w + x) * 4;
+                const curr = (d[i]+d[i+1]+d[i+2])/3;
+                const prev = (d[prevI]+d[prevI+1]+d[prevI+2])/3;
+                if (Math.abs(curr - prev) > 40) rowDensity[y]++;
+            }
+        }
 
+        // Find the "belt" (center of the barcode)
+        let maxVal = 0, bestY = Math.floor(h/2);
+        for (let y = 5; y < h - 5; y++) {
+            if (rowDensity[y] > maxVal) { maxVal = rowDensity[y]; bestY = y; }
+        }
+
+        // 2. Dynamic Thresholding at the detected Y-Belt
+        let brightnesses = [];
+        for (let x = 0; x < w; x+=10) {
+            const i = (bestY * w + x) * 4;
+            brightnesses.push((d[i]+d[i+1]+d[i+2])/3);
+        }
+        brightnesses.sort((a,b) => a - b);
+        const threshold = brightnesses[Math.floor(brightnesses.length * 0.25)] + 25;
+
+        // 3. Scan Across the Y-Belt
         let projection = new Array(w).fill(0);
+        // Look 15px up and down from the "bestY" to ensure we hit all bar types
         for (let x = 0; x < w; x++) {
-            for (let y = 0; y < h; y++) {
+            for (let dy = -20; dy <= 20; dy++) {
+                const y = bestY + dy;
+                if (y < 0 || y >= h) continue;
                 const i = (y * w + x) * 4;
                 if ((d[i] + d[i+1] + d[i+2]) / 3 < threshold) projection[x]++;
             }
@@ -113,23 +133,31 @@
 
         let bars = [], inBar = false, start = 0;
         for (let x = 0; x < w; x++) {
-            const active = projection[x] > (h * 0.1); 
+            const active = projection[x] > 4; // Bar must be present in at least 5 pixels vertically
             if (active && !inBar) { inBar = true; start = x; }
-            else if (!active && inBar) { inBar = false; bars.push({s: start, e: x}); }
+            else if (!active && inBar) { inBar = false; if(x-start > 1) bars.push({s: start, e: x}); }
         }
 
         return bars.map(b => {
             const midX = Math.floor((b.s + b.e) / 2);
             let minY = h, maxY = 0;
+            // Search full height at this X to find bar bounds
             for (let y = 0; y < h; y++) {
                 const i = (y * w + midX) * 4;
                 if ((d[i] + d[i+1] + d[i+2]) / 3 < threshold) {
                     if (y < minY) minY = y; if (y > maxY) maxY = y;
                 }
             }
-            if (minY < (h * 0.42) && maxY > (h * 0.58)) return 'F';
-            if (minY < (h * 0.42)) return 'A';
-            if (maxY > (h * 0.58)) return 'D';
+            const barHeight = maxY - minY;
+            const center = minY + (barHeight / 2);
+            
+            // Logic: Compare top/bottom relative to the bar's own center
+            const isTallTop = minY < (bestY - 4);
+            const isLowBottom = maxY > (bestY + 4);
+
+            if (isTallTop && isLowBottom) return 'F';
+            if (isTallTop) return 'A';
+            if (isLowBottom) return 'D';
             return 'T';
         }).join('');
     }
