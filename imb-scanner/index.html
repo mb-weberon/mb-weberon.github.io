@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>IMB Strict Toggle Decoder</title>
+    <title>IMB Focus-Lock Decoder</title>
     <style>
         :root { --line-color: #00ff00; }
         body { font-family: monospace; margin: 0; background: #000; color: var(--line-color); overflow: hidden; height: 100vh; width: 100vw; }
@@ -44,7 +44,7 @@
     <div id="overlay-layer">
         <div id="viewfinder"></div>
         <div id="results-area">
-            <div id="status">TAP SCREEN TO SCAN</div>
+            <div id="status">TAP SCREEN TO FOCUS & SCAN</div>
             <div id="fadt-text">---</div>
             <div class="btn-group">
                 <button onclick="copyString()" style="background:#007bff;">COPY</button>
@@ -64,20 +64,38 @@
     
     let isFrozen = false;
     let fadtBuffer = ""; 
+    let videoTrack = null;
 
     async function startCamera() {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ 
-                video: { facingMode: "environment", width: { ideal: 1920 } } 
+                video: { 
+                    facingMode: "environment", 
+                    width: { ideal: 1920 },
+                    // Set up for continuous focus initially
+                    focusMode: "continuous" 
+                } 
             });
             video.srcObject = stream;
+            videoTrack = stream.getVideoTracks()[0];
         } catch (e) { statusText.innerText = "CAMERA ERROR"; }
     }
 
-    function handleTap() {
+    async function handleTap() {
         if (isFrozen) {
             resetScanner();
         } else {
+            // 1. Attempt Focus Lock
+            if (videoTrack && videoTrack.getCapabilities().focusMode) {
+                statusText.innerText = "FOCUSING...";
+                try {
+                    await videoTrack.applyConstraints({
+                        advanced: [{ focusMode: "continuous" }]
+                    });
+                    // Brief delay to allow hardware to adjust
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                } catch (e) { console.warn("Focus failed, proceeding anyway"); }
+            }
             captureAndDecode();
         }
     }
@@ -85,7 +103,6 @@
     function captureAndDecode() {
         if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
 
-        // 1. Snapshot
         staticCanvas.width = video.videoWidth;
         staticCanvas.height = video.videoHeight;
         const sCtx = staticCanvas.getContext('2d');
@@ -95,7 +112,6 @@
         isFrozen = true;
         statusText.innerText = "DECODING...";
 
-        // 2. Crop Area
         const scanW = staticCanvas.width * 0.94;
         const scanH = 240; 
         const scanX = staticCanvas.width * 0.03;
@@ -106,7 +122,6 @@
         const pCtx = procCanvas.getContext('2d');
         pCtx.drawImage(staticCanvas, scanX, scanY, scanW, scanH, 0, 0, scanW, scanH);
 
-        // 3. Process
         const result = decodeStrict65(pCtx.getImageData(0, 0, scanW, scanH));
 
         if (result.length === 65) {
@@ -119,15 +134,12 @@
             fadtDisplay.innerText = "---";
             statusText.innerText = `RETRY: FOUND ${result.length} BARS`;
             statusText.style.color = "#ff4444";
-            // Optional: Auto-unfreeze on failure after 1 second
-            setTimeout(() => { if(isFrozen && fadtBuffer === "") resetScanner(); }, 1200);
+            setTimeout(() => { if(isFrozen && fadtBuffer === "") resetScanner(); }, 1500);
         }
     }
 
     function decodeStrict65(imgData) {
         const d = imgData.data, w = imgData.width, h = imgData.height;
-        
-        // Find Y-Belt (Area with highest vertical contrast)
         let rowDensity = new Array(h).fill(0);
         for (let y = 1; y < h; y++) {
             for (let x = 0; x < w; x+=4) {
@@ -138,7 +150,6 @@
         }
         let bestY = rowDensity.indexOf(Math.max(...rowDensity));
 
-        // Thresholding
         let brightnesses = [];
         for (let x = 0; x < w; x+=10) {
             const i = (bestY * w + x) * 4;
@@ -147,7 +158,6 @@
         brightnesses.sort((a,b) => a - b);
         const threshold = brightnesses[Math.floor(brightnesses.length * 0.2)] + 25;
 
-        // Scan Across
         let projection = new Array(w).fill(0);
         for (let x = 0; x < w; x++) {
             for (let dy = -25; dy <= 25; dy++) {
@@ -166,7 +176,6 @@
             else if (!active && inBar) { inBar = false; bars.push({s: start, e: x}); }
         }
 
-        // Return empty if clearly not a 65-bar IMB
         if (bars.length < 40 || bars.length > 80) return "";
 
         return bars.map(b => {
