@@ -3,40 +3,38 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>IMB v1.9 B&W-Logic</title>
+    <title>IMB v2.0 Full-Fix</title>
     <style>
         :root { --line-color: #00ff00; }
-        body { font-family: monospace; margin: 0; background: #000; color: var(--line-color); overflow: hidden; height: 100vh; }
-        #camera-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; touch-action: none; }
+        body { font-family: monospace; margin: 0; background: #000; color: var(--line-color); overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
+        #camera-container { position: relative; flex-grow: 1; overflow: hidden; touch-action: none; background: #111; }
         video, #static-frame { width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; }
         #static-frame { display: none; z-index: 2; }
-        #overlay-layer { position: relative; z-index: 3; height: 100%; pointer-events: none; display: flex; flex-direction: column; align-items: center; }
         #results-area {
-            position: absolute; bottom: 20px; width: 95%;
-            background: rgba(10, 10, 10, 0.95); padding: 12px; box-sizing: border-box;
-            border: 1px solid #00ff00; border-radius: 12px; pointer-events: auto;
+            background: rgba(10, 10, 10, 0.95); padding: 15px; border-top: 2px solid var(--line-color);
+            z-index: 10; pointer-events: auto;
         }
-        .control-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; gap: 8px; }
-        #status { font-size: 0.7rem; color: #00ff00; font-weight: bold; }
-        #accept-btn { background: #008000; color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; display: none; cursor: pointer; }
-        #fadt-text { font-size: 0.9rem; word-break: break-all; color: #fff; background: #000; padding: 12px; border-radius: 4px; margin-bottom: 10px; letter-spacing: 2px; text-align: center; border: 1px solid #444; }
-        .reset-btn { background: #222; color: #888; border: 1px solid #444; padding: 10px; border-radius: 6px; width: 100%; cursor: pointer; font-size: 0.7rem; }
+        .control-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+        #status { font-size: 0.8rem; font-weight: bold; color: #00ff00; }
+        #accept-btn { background: #008000; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; display: none; cursor: pointer; }
+        #fadt-text { font-size: 1rem; word-break: break-all; color: #fff; background: #000; padding: 12px; border-radius: 4px; margin-bottom: 10px; letter-spacing: 2px; text-align: center; border: 1px solid #333; min-height: 1.2em; }
+        .reset-btn { background: #333; color: #fff; border: none; padding: 12px; border-radius: 8px; width: 100%; cursor: pointer; font-size: 0.8rem; }
     </style>
 </head>
 <body>
+
     <div id="camera-container">
         <video id="video" autoplay playsinline muted></video>
         <canvas id="static-frame"></canvas>
     </div>
-    <div id="overlay-layer">
-        <div id="results-area">
-            <div class="control-row">
-                <div id="status">v1.9 | TAP TO CAPTURE</div>
-                <button id="accept-btn" onclick="decodeSelection()">ACCEPT</button>
-            </div>
-            <div id="fadt-text">---</div>
-            <button class="reset-btn" onclick="resetScanner()">RESET LIVE VIDEO</button>
+        
+    <div id="results-area">
+        <div class="control-row">
+            <div id="status">v2.0 | TAP SCREEN TO CAPTURE</div>
+            <button id="accept-btn" onclick="decodeSelection()">ACCEPT</button>
         </div>
+        <div id="fadt-text">---</div>
+        <button class="reset-btn" onclick="resetScanner()">RESET / LIVE VIDEO</button>
     </div>
 
 <script>
@@ -50,18 +48,19 @@
     let startX, startY, endX, endY;
 
     async function startCamera() {
-        try {
-            const s = await navigator.mediaDevices.getUserMedia({ 
-                video: { facingMode: "environment", width: { ideal: 1920 } } 
-            });
-            video.srcObject = s;
-        } catch (e) { statusText.innerText = "v1.9 | CAMERA ERROR"; }
+        const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1920 } } });
+        video.srcObject = s;
     }
 
     document.getElementById('camera-container').addEventListener('pointerdown', (e) => {
-        const r = video.getBoundingClientRect();
+        const r = staticCanvas.getBoundingClientRect();
         if (!isFrozen) { captureFrame(); }
-        else { clearCanvas(); isSwiping = true; startX = e.clientX - r.left; startY = e.clientY - r.top; }
+        else { 
+            restoreCleanImage(); 
+            isSwiping = true; 
+            startX = e.clientX - r.left; 
+            startY = e.clientY - r.top; 
+        }
     });
 
     window.addEventListener('pointermove', (e) => {
@@ -75,9 +74,9 @@
         isSwiping = false;
         const r = staticCanvas.getBoundingClientRect();
         endX = e.clientX - r.left; endY = e.clientY - r.top;
-        if (Math.hypot(endX - startX, endY - startY) > 20) {
+        if (Math.hypot(endX - startX, endY - startY) > 10) {
             acceptBtn.style.display = 'block';
-            statusText.innerText = "v1.9 | B&W ENGINE READY";
+            statusText.innerText = "v2.0 | READY TO DECODE";
         }
     });
 
@@ -89,33 +88,30 @@
         cleanImageBuffer = ctx.getImageData(0, 0, staticCanvas.width, staticCanvas.height);
         staticCanvas.style.display = 'block';
         isFrozen = true;
-        statusText.innerText = "v1.9 | SWIPE TRACKER SPINE";
+        statusText.innerText = "v2.0 | SWIPE CENTER SPINE";
     }
 
-    function clearCanvas() {
+    function restoreCleanImage() {
         if (!cleanImageBuffer) return;
         staticCanvas.getContext('2d').putImageData(cleanImageBuffer, 0, 0);
-        acceptBtn.style.display = 'none';
-        fadtDisplay.innerText = "---";
     }
 
     function drawAngledSpine(sx, sy, ex, ey) {
-        clearCanvas();
+        restoreCleanImage();
         const ctx = staticCanvas.getContext('2d');
-        const p1 = getNativeCoords(sx, sy);
-        const p2 = getNativeCoords(ex, ey);
+        const p1 = screenToNative(sx, sy);
+        const p2 = screenToNative(ex, ey);
         const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
         const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-        const H = 80; // Tightened height (reduced from 140)
+        const H = staticCanvas.height * 0.08; // Proportional height
 
         ctx.save();
-        ctx.translate(p1.x, p1.y);
-        ctx.rotate(angle);
-        ctx.strokeStyle = "#ff0000"; ctx.lineWidth = 3;
+        ctx.translate(p1.x, p1.y); ctx.rotate(angle);
+        ctx.strokeStyle = "#ff0000"; ctx.lineWidth = 5;
         ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(dist, 0); ctx.stroke();
-        ctx.strokeStyle = "#00ff00"; ctx.lineWidth = 2;
+        ctx.strokeStyle = "#00ff00"; ctx.lineWidth = 3;
         ctx.strokeRect(0, -H/2, dist, H);
-        ctx.setLineDash([5, 5]);
+        ctx.setLineDash([15, 15]);
         for (let i = 1; i < 7; i++) {
             let ly = -H/2 + (i * (H/7));
             ctx.beginPath(); ctx.moveTo(0, ly); ctx.lineTo(dist, ly); ctx.stroke();
@@ -123,87 +119,82 @@
         ctx.restore();
     }
 
-    function getNativeCoords(sX, sY) {
+    function screenToNative(sx, sy) {
         const r = staticCanvas.getBoundingClientRect();
-        const vR = staticCanvas.width / staticCanvas.height;
-        const dR = r.width / r.height;
-        let aW, aH, oX = 0, oY = 0;
-        if (dR > vR) { aW = r.width; aH = r.width / vR; oY = (aH - r.height) / 2; }
-        else { aH = r.height; aW = r.height * vR; oX = (aW - r.width) / 2; }
-        return { x: ((sX + oX) / aW) * staticCanvas.width, y: ((sY + oY) / aH) * staticCanvas.height };
+        const scaleX = staticCanvas.width / r.width;
+        const scaleY = staticCanvas.height / r.height;
+        return { x: sx * scaleX, y: sy * scaleY };
     }
 
     function decodeSelection() {
         const ctx = staticCanvas.getContext('2d');
-        const p1 = getNativeCoords(startX, startY);
-        const p2 = getNativeCoords(endX, endY);
+        const p1 = screenToNative(startX, startY);
+        const p2 = screenToNative(endX, endY);
         const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
         const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-        const H = 80;
+        const H = staticCanvas.height * 0.08;
         const stripH = H / 7;
+        const fullData = cleanImageBuffer.data;
+        const W_nat = staticCanvas.width;
 
-        const fullData = ctx.getImageData(0, 0, staticCanvas.width, staticCanvas.height).data;
-        const W_native = staticCanvas.width;
-
-        // 1. Calculate Threshold on Spine
+        // Adaptive sampling
         let lums = [];
-        for (let i = 0; i < dist; i+=2) {
+        for (let i = 0; i < dist; i += 5) {
             const px = Math.floor(p1.x + Math.cos(angle) * i);
             const py = Math.floor(p1.y + Math.sin(angle) * i);
-            const idx = (py * W_native + px) * 4;
+            const idx = (py * W_nat + px) * 4;
             lums.push((fullData[idx] + fullData[idx+1] + fullData[idx+2])/3);
         }
         lums.sort((a,b)=>a-b);
-        // Otsu-inspired thresholding: find a hard cut between ink and paper
-        const thresh = lums[Math.floor(lums.length * 0.4)] + 20;
+        const thresh = lums[Math.floor(lums.length * 0.35)] + 25;
 
-        // 2. Bar Detection with B&W Logic
         let bars = [], inB = false, tempS = 0;
         for (let i = 0; i < dist; i++) {
             const px = Math.floor(p1.x + Math.cos(angle) * i);
             const py = Math.floor(p1.y + Math.sin(angle) * i);
-            const idx = (py * W_native + px) * 4;
-            const isBlack = ((fullData[idx] + fullData[idx+1] + fullData[idx+2])/3) < thresh;
+            const idx = (py * W_nat + px) * 4;
+            const isInk = ((fullData[idx] + fullData[idx+1] + fullData[idx+2])/3) < thresh;
 
-            if (isBlack && !inB) { inB = true; tempS = i; }
-            else if (!isBlack && inB) { inB = false; if (i - tempS > 1) bars.push({s: tempS, e: i}); }
+            if (isInk && !inB) { inB = true; tempS = i; }
+            else if (!isInk && inB) {
+                inB = false;
+                if (i - tempS > 1) {
+                    bars.push({s: tempS, e: i});
+                    // DEBUG DOTS
+                    ctx.fillStyle = "cyan";
+                    ctx.fillRect(px, py, 4, 4);
+                }
+            }
         }
 
-        // 3. 7-Zone Mapping
         const fadt = bars.map(b => {
-            const centerDist = (b.s + b.e) / 2;
+            const mDist = (b.s + b.e) / 2;
             let zones = new Array(7).fill(false);
             for (let z = 0; z < 7; z++) {
-                const zStart = -H/2 + (z * stripH);
-                const zEnd = zStart + stripH;
-                // Sample center of each zone
-                const midHOff = (zStart + zEnd) / 2;
-                const px = Math.floor(p1.x + Math.cos(angle) * centerDist - Math.sin(angle) * midHOff);
-                const py = Math.floor(p1.y + Math.sin(angle) * centerDist + Math.cos(angle) * midHOff);
-                const idx = (py * W_native + px) * 4;
+                const midHOff = (-H/2 + (z * stripH)) + (stripH/2);
+                const px = Math.floor(p1.x + Math.cos(angle) * mDist - Math.sin(angle) * midHOff);
+                const py = Math.floor(p1.y + Math.sin(angle) * mDist + Math.cos(angle) * midHOff);
+                const idx = (py * W_nat + px) * 4;
                 if (((fullData[idx] + fullData[idx+1] + fullData[idx+2])/3) < thresh) zones[z] = true;
             }
-            // Logic: Ascender (zones 0-1), Tracker (2-4), Descender (5-6)
-            const hasAsc = zones[0] || zones[1];
-            const hasDesc = zones[5] || zones[6];
-            if (hasAsc && hasDesc) return 'F';
-            if (hasAsc) return 'A';
-            if (hasDesc) return 'D';
+            if ((zones[0]||zones[1]) && (zones[5]||zones[6])) return 'F';
+            if (zones[0]||zones[1]) return 'A';
+            if (zones[5]||zones[6]) return 'D';
             return 'T';
         }).join('');
 
         fadtDisplay.innerText = fadt;
-        statusText.innerText = `v1.9 | ${fadt.length} BARS`;
+        statusText.innerText = `v2.0 | ${fadt.length} BARS`;
         statusText.style.color = fadt.length === 65 ? "#00ff00" : "#ff4444";
         acceptBtn.style.display = 'none';
     }
 
     function resetScanner() {
         staticCanvas.style.display = 'none';
-        isFrozen = false;
-        acceptBtn.style.display = 'none';
+        isFrozen = false; acceptBtn.style.display = 'none';
         fadtDisplay.innerText = "---";
-        statusText.innerText = "v1.9 | TAP TO CAPTURE";
+        statusText.innerText = "v2.0 | TAP SCREEN TO CAPTURE";
+        statusText.style.color = "#00ff00";
     }
     window.addEventListener('load', startCamera);
 </script>
