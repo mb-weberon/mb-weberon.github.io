@@ -3,19 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>IMB Scanner v2.3</title>
+    <title>IMB Scanner v2.4</title>
     <style>
-        :root { --accent: #00ff00; --panel: rgba(20, 20, 20, 0.95); }
-        body { font-family: 'Segoe UI', system-ui, sans-serif; margin: 0; background: #000; color: var(--accent); overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
+        :root { --accent: #00ff00; --handle: #ff0000; }
+        body { font-family: system-ui, sans-serif; margin: 0; background: #000; color: var(--accent); overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
         #camera-container { position: relative; flex-grow: 1; overflow: hidden; touch-action: none; background: #000; }
         video, #static-frame { width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; }
         #static-frame { display: none; z-index: 2; }
-        #results-area { background: var(--panel); padding: 20px; border-top: 1px solid #333; z-index: 10; }
+        #results-area { background: rgba(15, 15, 15, 0.98); padding: 20px; border-top: 1px solid #333; z-index: 10; }
         .control-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px; }
-        #status { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
-        #accept-btn { background: #008000; color: white; border: none; padding: 12px 28px; border-radius: 8px; font-weight: bold; display: none; cursor: pointer; }
-        #fadt-text { font-family: monospace; font-size: 1.1rem; word-break: break-all; color: #fff; background: #000; padding: 15px; border-radius: 6px; margin-bottom: 15px; letter-spacing: 3px; text-align: center; border: 1px solid #444; min-height: 1.2em; user-select: all; }
-        .reset-btn { background: #222; color: #aaa; border: 1px solid #444; padding: 12px; border-radius: 8px; width: 100%; cursor: pointer; font-size: 0.8rem; }
+        #status { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; }
+        #accept-btn { background: #008000; color: white; border: none; padding: 12px 28px; border-radius: 8px; font-weight: bold; cursor: pointer; }
+        #fadt-text { font-family: monospace; font-size: 1.1rem; color: #fff; background: #000; padding: 15px; border-radius: 6px; margin-bottom: 15px; letter-spacing: 3px; text-align: center; border: 1px solid #444; user-select: all; }
+        .reset-btn { background: #222; color: #aaa; border: 1px solid #444; padding: 12px; border-radius: 8px; width: 100%; cursor: pointer; }
     </style>
 </head>
 <body>
@@ -27,8 +27,8 @@
         
     <div id="results-area">
         <div class="control-row">
-            <div id="status">v2.3 | Tap to Capture</div>
-            <button id="accept-btn" onclick="decodeSelection()">ACCEPT</button>
+            <div id="status">v2.4 | Tap to Capture</div>
+            <button id="accept-btn" style="display:none" onclick="decodeSelection()">DECODE</button>
         </div>
         <div id="fadt-text">---</div>
         <button class="reset-btn" onclick="resetScanner()">RESET CAMERA</button>
@@ -41,46 +41,55 @@
     const statusText = document.getElementById('status');
     const acceptBtn = document.getElementById('accept-btn');
     
-    let isFrozen = false, isSwiping = false, cleanImageBuffer = null;
-    let startX, startY, endX, endY;
+    let isFrozen = false, cleanImageBuffer = null;
+    let p1 = {x:0, y:0}, p2 = {x:0, y:0}; // Native coords
+    let activeHandle = null; // 1 or 2
 
     async function startCamera() {
-        try {
-            const s = await navigator.mediaDevices.getUserMedia({ 
-                video: { facingMode: "environment", width: { ideal: 1920 } } 
-            });
-            video.srcObject = s;
-        } catch (e) { statusText.innerText = "Camera Error"; }
+        const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1920 } } });
+        video.srcObject = s;
     }
 
     document.getElementById('camera-container').addEventListener('pointerdown', (e) => {
-        const rect = e.currentTarget.getBoundingClientRect();
+        const rect = staticCanvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+
         if (!isFrozen) { 
             captureFrame(); 
-        } else { 
-            restoreCleanImage(); 
-            isSwiping = true; 
-            startX = e.clientX - rect.left; 
-            startY = e.clientY - rect.top; 
-            // V2.3: Initial "Target Line" anchor on first touch
-            drawAngledSpine(startX, startY, startX + 1, startY); 
+            return;
+        }
+
+        const sP1 = nativeToScreen(p1.x, p1.y);
+        const sP2 = nativeToScreen(p2.x, p2.y);
+
+        // Check if touching handles (40px radius for fingers)
+        if (Math.hypot(mouseX - sP1.x, mouseY - sP1.y) < 40) { activeHandle = 1; }
+        else if (Math.hypot(mouseX - sP2.x, mouseY - sP2.y) < 40) { activeHandle = 2; }
+        else {
+            // New swipe start
+            const native = screenToNative(mouseX, mouseY);
+            p1 = { ...native }; p2 = { ...native };
+            activeHandle = 2;
         }
     });
 
     window.addEventListener('pointermove', (e) => {
-        if (!isSwiping) return;
-        const rect = document.getElementById('camera-container').getBoundingClientRect();
-        endX = e.clientX - rect.left;
-        endY = e.clientY - rect.top;
-        drawAngledSpine(startX, startY, endX, endY);
+        if (!activeHandle) return;
+        const rect = staticCanvas.getBoundingClientRect();
+        const native = screenToNative(e.clientX - rect.left, e.clientY - rect.top);
+        
+        if (activeHandle === 1) p1 = native;
+        else if (activeHandle === 2) p2 = native;
+        
+        drawInterface();
     });
 
     window.addEventListener('pointerup', () => {
-        if (!isSwiping) return;
-        isSwiping = false;
-        if (Math.hypot(endX - startX, endY - startY) > 10) {
+        activeHandle = null;
+        if (Math.hypot(p2.x - p1.x, p2.y - p1.y) > 20) {
             acceptBtn.style.display = 'block';
-            statusText.innerText = "v2.3 | Spine Aligned";
+            statusText.innerText = "v2.4 | Adjust Handles or Decode";
         }
     });
 
@@ -92,53 +101,48 @@
         cleanImageBuffer = ctx.getImageData(0, 0, staticCanvas.width, staticCanvas.height);
         staticCanvas.style.display = 'block';
         isFrozen = true;
-        statusText.innerText = "v2.3 | Anchor Touch to Start";
+        statusText.innerText = "v2.4 | Swipe to place spine";
     }
 
-    function restoreCleanImage() {
+    function drawInterface() {
         if (!cleanImageBuffer) return;
-        staticCanvas.getContext('2d').putImageData(cleanImageBuffer, 0, 0);
-    }
-
-    function drawAngledSpine(sx, sy, ex, ey) {
-        restoreCleanImage();
         const ctx = staticCanvas.getContext('2d');
-        const p1 = screenToNative(sx, sy);
-        const p2 = screenToNative(ex, ey);
-        
-        let angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
-        let dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-        
-        // V2.3 Enhancement: If drag is tiny, show a full-width level guide
-        let isInitialAnchor = dist < 10;
-        if (isInitialAnchor) {
-            angle = 0;
-            dist = staticCanvas.width;
-            ctx.save();
-            ctx.translate(0, p1.y);
-        } else {
-            ctx.save();
-            ctx.translate(p1.x, p1.y);
-            ctx.rotate(angle);
-        }
+        ctx.putImageData(cleanImageBuffer, 0, 0);
 
-        const H = staticCanvas.height * 0.08; 
-        ctx.shadowBlur = 4; ctx.shadowColor = "black";
+        const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+        const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+        const H = staticCanvas.height * 0.08;
+        const stripH = H / 7;
+
+        ctx.save();
+        ctx.translate(p1.x, p1.y); ctx.rotate(angle);
         
-        // Red Spine
+        // Spine and Grid
+        ctx.shadowBlur = 5; ctx.shadowColor = "black";
         ctx.strokeStyle = "#ff0000"; ctx.lineWidth = 6;
         ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(dist, 0); ctx.stroke();
         
-        // Green Box & Stripes
         ctx.strokeStyle = "#00ff00"; ctx.lineWidth = 3;
         ctx.strokeRect(0, -H/2, dist, H);
-        
         ctx.setLineDash([15, 15]);
         for (let i = 1; i < 7; i++) {
             let ly = -H/2 + (i * (H/7));
             ctx.beginPath(); ctx.moveTo(0, ly); ctx.lineTo(dist, ly); ctx.stroke();
         }
         ctx.restore();
+
+        // Draw Handles
+        drawHandle(ctx, p1.x, p1.y);
+        drawHandle(ctx, p2.x, p2.y);
+    }
+
+    function drawHandle(ctx, x, y) {
+        ctx.fillStyle = "white";
+        ctx.strokeStyle = "red";
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(x, y, 15, 0, Math.PI * 2);
+        ctx.fill(); ctx.stroke();
     }
 
     function screenToNative(sx, sy) {
@@ -146,10 +150,13 @@
         return { x: sx * (staticCanvas.width / r.width), y: sy * (staticCanvas.height / r.height) };
     }
 
+    function nativeToScreen(nx, ny) {
+        const r = staticCanvas.getBoundingClientRect();
+        return { x: nx / (staticCanvas.width / r.width), y: ny / (staticCanvas.height / r.height) };
+    }
+
     function decodeSelection() {
         const ctx = staticCanvas.getContext('2d');
-        const p1 = screenToNative(startX, startY);
-        const p2 = screenToNative(endX, endY);
         const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
         const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
         const H = staticCanvas.height * 0.08;
@@ -200,16 +207,15 @@
         }).join('');
 
         fadtDisplay.innerText = fadt;
-        statusText.innerText = `v2.3 | ${fadt.length} Bars Found`;
+        statusText.innerText = `v2.4 | ${fadt.length} Bars Found`;
         statusText.style.color = fadt.length === 65 ? "#00ff00" : "#ff4444";
-        acceptBtn.style.display = 'none';
     }
 
     function resetScanner() {
         staticCanvas.style.display = 'none';
         isFrozen = false; acceptBtn.style.display = 'none';
         fadtDisplay.innerText = "---";
-        statusText.innerText = "v2.3 | Tap to Capture";
+        statusText.innerText = "v2.4 | Tap to Capture";
         statusText.style.color = "var(--accent)";
     }
     window.addEventListener('load', startCamera);
