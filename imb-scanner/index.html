@@ -3,35 +3,27 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>IMB Focus-Lock Decoder</title>
+    <title>IMB 5-Strip Precision</title>
     <style>
         :root { --line-color: #00ff00; }
-        body { font-family: monospace; margin: 0; background: #000; color: var(--line-color); overflow: hidden; height: 100vh; width: 100vw; }
-        
+        body { font-family: monospace; margin: 0; background: #000; color: var(--line-color); overflow: hidden; height: 100vh; }
         #camera-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; cursor: pointer; z-index: 1; }
         video, #static-frame { width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; }
-        #static-frame { display: none; z-index: 2; pointer-events: none; border: 4px solid #fff; box-sizing: border-box; }
-        
+        #static-frame { display: none; z-index: 2; pointer-events: none; }
         #overlay-layer { position: relative; z-index: 3; height: 100%; pointer-events: none; display: flex; flex-direction: column; align-items: center; }
         #viewfinder {
-            position: absolute; top: 40%; width: 92%; height: 140px;
-            border: 2px solid var(--line-color); transform: translateY(-50%);
+            position: absolute; top: 40%; width: 92%; height: 160px;
+            border: 1px solid rgba(0, 255, 0, 0.4); transform: translateY(-50%);
             box-shadow: 0 0 0 5000px rgba(0,0,0,0.8);
         }
-
         #results-area {
             position: absolute; bottom: 20px; width: 90%;
             background: rgba(15, 15, 15, 0.95); padding: 15px; box-sizing: border-box;
             border: 1px solid #444; border-radius: 12px; pointer-events: auto; text-align: center;
         }
-
-        #fadt-text { font-size: 1.1rem; word-break: break-all; color: #fff; min-height: 1.5em; margin-bottom: 10px; letter-spacing: 1px; font-weight: bold; }
+        #fadt-text { font-size: 1rem; word-break: break-all; color: #fff; min-height: 1.5em; margin-bottom: 10px; letter-spacing: 1px; font-weight: bold; }
         #status { font-size: 0.8rem; color: var(--line-color); margin-bottom: 12px; font-weight: bold; text-transform: uppercase; }
-
-        .btn-group { display: flex; gap: 10px; }
-        button { flex: 1; padding: 15px; background: #222; color: white; border: 1px solid #555; border-radius: 8px; font-weight: bold; cursor: pointer; }
-        
-        @media (orientation: landscape) { #viewfinder { width: 80%; height: 100px; } #results-area { width: 50%; left: 25%; } }
+        button { width: 100%; padding: 15px; background: #007bff; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; }
     </style>
 </head>
 <body>
@@ -44,85 +36,51 @@
     <div id="overlay-layer">
         <div id="viewfinder"></div>
         <div id="results-area">
-            <div id="status">TAP SCREEN TO FOCUS & SCAN</div>
+            <div id="status">TAP TO SCAN</div>
             <div id="fadt-text">---</div>
-            <div class="btn-group">
-                <button onclick="copyString()" style="background:#007bff;">COPY</button>
-                <button onclick="resetScanner()">RESET</button>
-            </div>
+            <button onclick="copyString()">COPY FADT</button>
         </div>
     </div>
-
-    <canvas id="procCanvas" style="display:none;"></canvas>
 
 <script>
     const video = document.getElementById('video');
     const staticCanvas = document.getElementById('static-frame');
-    const procCanvas = document.getElementById('procCanvas');
     const fadtDisplay = document.getElementById('fadt-text');
     const statusText = document.getElementById('status');
-    
-    let isFrozen = false;
-    let fadtBuffer = ""; 
-    let videoTrack = null;
+    let isFrozen = false, fadtBuffer = "", videoTrack = null;
 
     async function startCamera() {
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ 
-                video: { 
-                    facingMode: "environment", 
-                    width: { ideal: 1920 },
-                    // Set up for continuous focus initially
-                    focusMode: "continuous" 
-                } 
-            });
-            video.srcObject = stream;
-            videoTrack = stream.getVideoTracks()[0];
+            const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1920 } } });
+            video.srcObject = s;
+            videoTrack = s.getVideoTracks()[0];
         } catch (e) { statusText.innerText = "CAMERA ERROR"; }
     }
 
     async function handleTap() {
-        if (isFrozen) {
-            resetScanner();
-        } else {
-            // 1. Attempt Focus Lock
-            if (videoTrack && videoTrack.getCapabilities().focusMode) {
-                statusText.innerText = "FOCUSING...";
-                try {
-                    await videoTrack.applyConstraints({
-                        advanced: [{ focusMode: "continuous" }]
-                    });
-                    // Brief delay to allow hardware to adjust
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                } catch (e) { console.warn("Focus failed, proceeding anyway"); }
-            }
-            captureAndDecode();
+        if (isFrozen) { resetScanner(); return; }
+        statusText.innerText = "FOCUSING...";
+        // Briefly try to lock focus
+        if (videoTrack && videoTrack.getCapabilities().focusMode) {
+            try { await videoTrack.applyConstraints({ advanced: [{ focusMode: "continuous" }] }); } catch (e) {}
         }
+        setTimeout(captureAndDecode, 450);
     }
 
     function captureAndDecode() {
-        if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
-
-        staticCanvas.width = video.videoWidth;
-        staticCanvas.height = video.videoHeight;
-        const sCtx = staticCanvas.getContext('2d');
-        sCtx.drawImage(video, 0, 0);
+        const vw = video.videoWidth, vh = video.videoHeight;
+        staticCanvas.width = vw; staticCanvas.height = vh;
+        const ctx = staticCanvas.getContext('2d');
+        ctx.drawImage(video, 0, 0);
         
+        // Scan Window
+        const sW = vw * 0.94, sH = 300, sX = vw * 0.03, sY = (vh * 0.4) - (sH / 2);
+        const imgData = ctx.getImageData(sX, sY, sW, sH);
+        
+        const result = processWithStrips(imgData, ctx, sX, sY);
+
         staticCanvas.style.display = 'block';
         isFrozen = true;
-        statusText.innerText = "DECODING...";
-
-        const scanW = staticCanvas.width * 0.94;
-        const scanH = 240; 
-        const scanX = staticCanvas.width * 0.03;
-        const scanY = (staticCanvas.height * 0.40) - (scanH / 2);
-
-        procCanvas.width = scanW;
-        procCanvas.height = scanH;
-        const pCtx = procCanvas.getContext('2d');
-        pCtx.drawImage(staticCanvas, scanX, scanY, scanW, scanH, 0, 0, scanW, scanH);
-
-        const result = decodeStrict65(pCtx.getImageData(0, 0, scanW, scanH));
 
         if (result.length === 65) {
             fadtBuffer = result;
@@ -130,89 +88,92 @@
             statusText.innerText = "SUCCESS: 65 BARS";
             statusText.style.color = "#00ff00";
         } else {
-            fadtBuffer = "";
-            fadtDisplay.innerText = "---";
             statusText.innerText = `RETRY: FOUND ${result.length} BARS`;
             statusText.style.color = "#ff4444";
-            setTimeout(() => { if(isFrozen && fadtBuffer === "") resetScanner(); }, 1500);
         }
     }
 
-    function decodeStrict65(imgData) {
-        const d = imgData.data, w = imgData.width, h = imgData.height;
+    function processWithStrips(img, ctx, offX, offY) {
+        const d = img.data, w = img.width, h = img.height;
+        
+        // 1. Locate Y-Belt (Center of barcode)
         let rowDensity = new Array(h).fill(0);
         for (let y = 1; y < h; y++) {
-            for (let x = 0; x < w; x+=4) {
-                const i = (y * w + x) * 4;
-                const prevI = ((y-1) * w + x) * 4;
-                if (Math.abs(d[i] - d[prevI]) > 40) rowDensity[y]++;
+            for (let x = 0; x < w; x += 10) {
+                const i = (y * w + x) * 4, pi = ((y-1) * w + x) * 4;
+                if (Math.abs(d[i] - d[pi]) > 35) rowDensity[y]++;
             }
         }
-        let bestY = rowDensity.indexOf(Math.max(...rowDensity));
+        const bestY = rowDensity.indexOf(Math.max(...rowDensity));
 
-        let brightnesses = [];
-        for (let x = 0; x < w; x+=10) {
-            const i = (bestY * w + x) * 4;
-            brightnesses.push((d[i]+d[i+1]+d[i+2])/3);
-        }
-        brightnesses.sort((a,b) => a - b);
-        const threshold = brightnesses[Math.floor(brightnesses.length * 0.2)] + 25;
+        // 2. Find ink threshold
+        let br = [];
+        for (let x = 0; x < w; x += 20) br.push(d[(bestY * w + x) * 4]);
+        br.sort((a,b) => a - b);
+        const threshold = br[Math.floor(br.length * 0.2)] + 30;
 
-        let projection = new Array(w).fill(0);
+        // 3. Find horizontal bounds (The 65 Bars)
+        let bars = [], inBar = false, startX = 0;
         for (let x = 0; x < w; x++) {
-            for (let dy = -25; dy <= 25; dy++) {
-                const y = bestY + dy;
-                if (y >= 0 && y < h) {
-                    const i = (y * w + x) * 4;
-                    if ((d[i]+d[i+1]+d[i+2])/3 < threshold) projection[x]++;
-                }
-            }
+            const isDark = d[(bestY * w + x) * 4] < threshold;
+            if (isDark && !inBar) { inBar = true; startX = x; }
+            else if (!isDark && inBar) { inBar = false; if (x - startX > 1) bars.push({s: startX, e: x}); }
         }
 
-        let bars = [], inBar = false, start = 0;
-        for (let x = 0; x < w; x++) {
-            const active = projection[x] > 5;
-            if (active && !inBar) { inBar = true; start = x; }
-            else if (!active && inBar) { inBar = false; bars.push({s: start, e: x}); }
-        }
+        if (bars.length === 0) return "";
 
-        if (bars.length < 40 || bars.length > 80) return "";
+        // 4. Draw bounding box and the 5 detection strips
+        const boxL = bars[0].s, boxR = bars[bars.length-1].e;
+        const boxT = bestY - 40, boxB = bestY + 40, boxH = 80;
+        
+        ctx.strokeStyle = "#00ff00";
+        ctx.lineWidth = 4;
+        ctx.strokeRect(offX + boxL - 5, offY + boxT, (boxR - boxL) + 10, boxH);
 
+        // 5. Divide box into 5 strips and analyze presence of ink in each
+        const stripHeight = boxH / 5;
         return bars.map(b => {
-            const midX = Math.floor((b.s + b.e) / 2);
-            let minY = h, maxY = 0;
-            for (let y = 0; y < h; y++) {
-                const i = (y * w + midX) * 4;
-                if ((d[i]+d[i+1]+d[i+2])/3 < threshold) {
-                    if (y < minY) minY = y; if (y > maxY) maxY = y;
+            const mx = Math.floor((b.s + b.e) / 2);
+            let presence = []; // Boolean for each of the 5 strips
+
+            for (let s = 0; s < 5; s++) {
+                let stripInk = false;
+                const stripStart = Math.floor(boxT + (s * stripHeight));
+                const stripEnd = Math.floor(stripStart + stripHeight);
+                
+                // Check if any part of the bar exists in this specific vertical strip
+                for (let y = stripStart; y < stripEnd; y++) {
+                    const idx = (y * w + mx) * 4;
+                    if (d[idx] < threshold) { stripInk = true; break; }
                 }
+                presence.push(stripInk);
             }
-            const isTallTop = minY < (bestY - 5);
-            const isLowBottom = maxY > (bestY + 5);
-            if (isTallTop && isLowBottom) return 'F';
-            if (isTallTop) return 'A';
-            if (isLowBottom) return 'D';
+
+            // Presence logic:
+            // Full: [1,1,1,1,1]
+            // Ascender: [1,1,1,0,0] (Top 3)
+            // Descender: [0,0,1,1,1] (Bottom 3)
+            // Tracker: [0,0,1,0,0] (Middle)
+            const top = presence[0] || presence[1];
+            const bottom = presence[3] || presence[4];
+            const middle = presence[2];
+
+            if (top && bottom) return 'F';
+            if (top) return 'A';
+            if (bottom) return 'D';
             return 'T';
         }).join('');
     }
 
-    function resetScanner() { 
+    function resetScanner() {
         staticCanvas.style.display = 'none';
         isFrozen = false;
-        fadtBuffer = "";
         fadtDisplay.innerText = "---";
-        statusText.innerText = "TAP SCREEN TO SCAN";
-        statusText.style.color = "var(--line-color)";
+        statusText.innerText = "TAP TO SCAN";
+        statusText.style.color = "#00ff00";
     }
 
-    function copyString() {
-        if (fadtBuffer.length === 65) {
-            navigator.clipboard.writeText(fadtBuffer);
-            statusText.innerText = "COPIED!";
-            setTimeout(() => { if(isFrozen) statusText.innerText = "SUCCESS: 65 BARS"; }, 1500);
-        }
-    }
-
+    function copyString() { if (fadtBuffer) navigator.clipboard.writeText(fadtBuffer); }
     window.addEventListener('load', startCamera);
 </script>
 </body>
