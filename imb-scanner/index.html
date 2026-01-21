@@ -3,42 +3,53 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>IMB v1.1 Corner-Selection</title>
+    <title>IMB v1.2 Top-Control</title>
     <style>
         :root { --line-color: #00ff00; }
         body { font-family: monospace; margin: 0; background: #000; color: var(--line-color); overflow: hidden; height: 100vh; }
-        #camera-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; touch-action: none; }
+        
+        /* Top Control Bar */
+        #header-bar {
+            position: absolute; top: 0; left: 0; width: 100%; height: 60px;
+            background: rgba(20, 20, 20, 0.9); border-bottom: 1px solid #444;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 15px; box-sizing: border-box; z-index: 10;
+        }
+        #status { font-size: 0.75rem; color: var(--line-color); font-weight: bold; }
+        #accept-btn { 
+            background: #008000; color: white; border: none; padding: 10px 20px; 
+            border-radius: 5px; font-weight: bold; display: none; cursor: pointer;
+        }
+
+        #camera-container { position: absolute; top: 60px; left: 0; width: 100%; height: calc(100% - 60px); z-index: 1; touch-action: none; }
         video, #static-frame { width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; }
         #static-frame { display: none; z-index: 2; }
-        #overlay-layer { position: relative; z-index: 3; height: 100%; pointer-events: none; display: flex; flex-direction: column; align-items: center; }
+        
         #results-area {
-            position: absolute; bottom: 20px; width: 90%;
-            background: rgba(15, 15, 15, 0.95); padding: 15px; box-sizing: border-box;
-            border: 1px solid #444; border-radius: 12px; pointer-events: auto; text-align: center;
+            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+            width: 90%; background: rgba(15, 15, 15, 0.95); padding: 15px; 
+            box-sizing: border-box; border: 1px solid #444; border-radius: 12px; 
+            z-index: 10; pointer-events: auto; text-align: center;
         }
-        #fadt-text { font-size: 0.9rem; word-break: break-all; color: #fff; min-height: 1.5em; margin-bottom: 10px; letter-spacing: 1px; font-weight: bold; }
-        #status { font-size: 0.8rem; color: var(--line-color); margin-bottom: 12px; font-weight: bold; }
-        .btn-group { display: flex; gap: 10px; }
-        button { flex: 1; padding: 15px; background: #222; color: white; border: 1px solid #555; border-radius: 8px; font-weight: bold; cursor: pointer; }
-        #accept-btn { background: #006400; display: none; }
+        #fadt-text { font-size: 0.9rem; word-break: break-all; color: #fff; margin-bottom: 10px; letter-spacing: 1px; font-weight: bold; }
+        .reset-btn { background: #444; color: white; border: none; padding: 10px; border-radius: 5px; width: 100%; cursor: pointer; }
     </style>
 </head>
 <body>
+
+    <div id="header-bar">
+        <div id="status">v1.2 | TAP TO CAPTURE</div>
+        <button id="accept-btn" onclick="decodeSelection()">ACCEPT BOX</button>
+    </div>
 
     <div id="camera-container">
         <video id="video" autoplay playsinline muted></video>
         <canvas id="static-frame"></canvas>
     </div>
         
-    <div id="overlay-layer">
-        <div id="results-area">
-            <div id="status">v1.1 | TAP TO CAPTURE</div>
-            <div id="fadt-text">---</div>
-            <div class="btn-group">
-                <button id="accept-btn" onclick="decodeSelection()">ACCEPT & DECODE</button>
-                <button onclick="resetScanner()">RESET / LIVE</button>
-            </div>
-        </div>
+    <div id="results-area">
+        <div id="fadt-text">---</div>
+        <button class="reset-btn" onclick="resetScanner()">RESET / LIVE VIDEO</button>
     </div>
 
 <script>
@@ -57,10 +68,11 @@
                 video: { facingMode: "environment", width: { ideal: 1920 } } 
             });
             video.srcObject = s;
-        } catch (e) { statusText.innerText = "v1.1 | CAMERA ERROR"; }
+        } catch (e) { statusText.innerText = "v1.2 | ERROR"; }
     }
 
-    video.parentElement.addEventListener('pointerdown', (e) => {
+    // Handle touch logic on the container
+    document.getElementById('camera-container').addEventListener('pointerdown', (e) => {
         const r = video.getBoundingClientRect();
         const x = e.clientX - r.left;
         const y = e.clientY - r.top;
@@ -68,20 +80,18 @@
         if (!isFrozen) {
             captureFrame();
         } else {
-            // Start defining diagonal corners
             clearCanvas();
             isSwiping = true;
             startX = x;
             startY = y;
+            statusText.innerText = "v1.2 | DRAWING...";
         }
     });
 
     window.addEventListener('pointermove', (e) => {
         if (!isSwiping) return;
         const r = staticCanvas.getBoundingClientRect();
-        const curX = e.clientX - r.left;
-        const curY = e.clientY - r.top;
-        drawPreview(startX, startY, curX, curY);
+        drawPreview(startX, startY, e.clientX - r.left, e.clientY - r.top);
     });
 
     window.addEventListener('pointerup', (e) => {
@@ -90,7 +100,7 @@
         const r = staticCanvas.getBoundingClientRect();
         rectCoords = { sX: startX, sY: startY, eX: e.clientX - r.left, eY: e.clientY - r.top };
         acceptBtn.style.display = 'block';
-        statusText.innerText = "v1.1 | ADJUST OR TAP ACCEPT";
+        statusText.innerText = "v1.2 | BOX DEFINED";
     });
 
     function captureFrame() {
@@ -101,7 +111,7 @@
         cleanImageBuffer = ctx.getImageData(0, 0, staticCanvas.width, staticCanvas.height);
         staticCanvas.style.display = 'block';
         isFrozen = true;
-        statusText.innerText = "v1.1 | SWIPE DIAGONALLY OVER BARCODE";
+        statusText.innerText = "v1.2 | SWIPE ACROSS BARS";
     }
 
     function clearCanvas() {
@@ -119,11 +129,12 @@
         const L = Math.min(p1.x, p2.x), T = Math.min(p1.y, p2.y);
         const W = Math.abs(p1.x - p2.x), H = Math.abs(p1.y - p2.y);
         
-        ctx.strokeStyle = "#00ff00"; ctx.lineWidth = 4;
+        ctx.strokeStyle = "#00ff00"; ctx.lineWidth = 5;
         ctx.strokeRect(L, T, W, H);
         
-        // Draw 5 strip guides
-        ctx.setLineDash([10, 10]); ctx.lineWidth = 2;
+        // Dash guides for the 5 stripes
+        ctx.setLineDash([15, 15]); ctx.lineWidth = 2;
+        ctx.strokeStyle = "rgba(0, 255, 0, 0.5)";
         for (let i = 1; i < 5; i++) {
             const ly = T + (i * (H/5));
             ctx.beginPath(); ctx.moveTo(L, ly); ctx.lineTo(L+W, ly); ctx.stroke();
@@ -153,13 +164,11 @@
         const d = imgData.data;
         const stripH = H / 5;
 
-        // Auto-thresholding for this specific box
         let br = [];
         for (let i = 0; i < d.length; i += 40) br.push(d[i]);
         br.sort((a,b) => a-b);
         const thresh = br[Math.floor(br.length * 0.25)] + 35;
 
-        // Find bars in middle strip
         let bars = [], inB = false, tempS = 0;
         const midY = Math.floor(H / 2);
         for (let x = 0; x < W; x++) {
@@ -182,8 +191,9 @@
         }).join('');
 
         fadtDisplay.innerText = fadt;
-        statusText.innerText = `v1.1 | ${fadt.length} BARS FOUND`;
+        statusText.innerText = `v1.2 | ${fadt.length} BARS`;
         statusText.style.color = fadt.length === 65 ? "#00ff00" : "#ff4444";
+        acceptBtn.style.display = 'none';
     }
 
     function resetScanner() {
@@ -191,7 +201,8 @@
         isFrozen = false;
         acceptBtn.style.display = 'none';
         fadtDisplay.innerText = "---";
-        statusText.innerText = "v1.1 | TAP TO CAPTURE";
+        statusText.innerText = "v1.2 | TAP TO CAPTURE";
+        statusText.style.color = "var(--line-color)";
     }
     window.addEventListener('load', startCamera);
 </script>
