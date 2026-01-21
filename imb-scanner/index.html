@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>IMB Adaptive Swipe</title>
+    <title>IMB Shrink-Wrap Decoder</title>
     <style>
         :root { --line-color: #00ff00; }
         body { font-family: monospace; margin: 0; background: #000; color: var(--line-color); overflow: hidden; height: 100vh; }
@@ -30,9 +30,9 @@
         
     <div id="overlay-layer">
         <div id="results-area">
-            <div id="status">TAP TO FREEZE (TRY TO STAY PARALLEL)</div>
+            <div id="status">TAP TO CAPTURE</div>
             <div id="fadt-text">---</div>
-            <button onclick="resetScanner()">RESET / LIVE VIDEO</button>
+            <button onclick="resetScanner()">RESET / LIVE</button>
         </div>
     </div>
 
@@ -42,31 +42,24 @@
     const fadtDisplay = document.getElementById('fadt-text');
     const statusText = document.getElementById('status');
     
-    let isFrozen = false, startX, startY, isSwiping = false;
-    let cleanImageBuffer = null, videoTrack = null;
+    let isFrozen = false, startX, startY, isSwiping = false, cleanImageBuffer = null;
 
     async function startCamera() {
         try {
             const s = await navigator.mediaDevices.getUserMedia({ 
-                video: { facingMode: "environment", width: { ideal: 1920 }, focusMode: "continuous" } 
+                video: { facingMode: "environment", width: { ideal: 1920 } } 
             });
             video.srcObject = s;
-            videoTrack = s.getVideoTracks()[0];
         } catch (e) { statusText.innerText = "CAMERA ERROR"; }
     }
 
-    video.parentElement.addEventListener('pointerdown', async (e) => {
+    video.parentElement.addEventListener('pointerdown', (e) => {
+        const r = video.getBoundingClientRect();
         if (!isFrozen) {
-            // Force focus on tap before freezing
-            statusText.innerText = "AUTO-FOCUSING...";
-            if (videoTrack && videoTrack.getCapabilities().focusMode) {
-                try { await videoTrack.applyConstraints({ advanced: [{ focusMode: "continuous" }] }); } catch(err){}
-            }
-            setTimeout(captureFrame, 500);
+            captureFrame();
         } else {
             clearOldGrid();
             isSwiping = true;
-            const r = staticCanvas.getBoundingClientRect();
             startX = e.clientX - r.left;
             startY = e.clientY - r.top;
         }
@@ -76,7 +69,7 @@
         if (!isSwiping) return;
         isSwiping = false;
         const r = staticCanvas.getBoundingClientRect();
-        processAdaptiveSwipe(startX, startY, e.clientX - r.left, e.clientY - r.top);
+        processShrinkWrapSwipe(startX, startY, e.clientX - r.left, e.clientY - r.top);
     });
 
     function captureFrame() {
@@ -87,122 +80,114 @@
         cleanImageBuffer = ctx.getImageData(0, 0, staticCanvas.width, staticCanvas.height);
         staticCanvas.style.display = 'block';
         isFrozen = true;
-        statusText.innerText = "SWIPE ALONG THE ENTIRE BARCODE";
+        statusText.innerText = "SWIPE EXACTLY OVER THE BARS";
     }
 
     function clearOldGrid() {
         if (!cleanImageBuffer) return;
-        const ctx = staticCanvas.getContext('2d');
-        ctx.putImageData(cleanImageBuffer, 0, 0);
+        staticCanvas.getContext('2d').putImageData(cleanImageBuffer, 0, 0);
         fadtDisplay.innerText = "---";
     }
 
-    function getNativeCoords(screenX, screenY) {
+    function getNativeCoords(sX, sY) {
         const r = staticCanvas.getBoundingClientRect();
-        const vRatio = staticCanvas.width / staticCanvas.height;
-        const dRatio = r.width / r.height;
-        let aW, aH, offX = 0, offY = 0;
-
-        if (dRatio > vRatio) {
-            aW = r.width; aH = r.width / vRatio;
-            offY = (aH - r.height) / 2;
-        } else {
-            aH = r.height; aW = r.height * vRatio;
-            offX = (aW - r.width) / 2;
-        }
-        return {
-            x: ((screenX + offX) / aW) * staticCanvas.width,
-            y: ((screenY + offY) / aH) * staticCanvas.height
-        };
+        const vR = staticCanvas.width / staticCanvas.height;
+        const dR = r.width / r.height;
+        let aW, aH, oX = 0, oY = 0;
+        if (dR > vR) { aW = r.width; aH = r.width / vR; oY = (aH - r.height) / 2; }
+        else { aH = r.height; aW = r.height * vR; oX = (aW - r.width) / 2; }
+        return { x: ((sX + oX) / aW) * staticCanvas.width, y: ((sY + oY) / aH) * staticCanvas.height };
     }
 
-    function processAdaptiveSwipe(sX, sY, eX, eY) {
+    function processShrinkWrapSwipe(sX, sY, eX, eY) {
         const ctx = staticCanvas.getContext('2d');
         const p1 = getNativeCoords(sX, sY);
         const p2 = getNativeCoords(eX, eY);
 
-        const left = Math.min(p1.x, p2.x);
-        const right = Math.max(p1.x, p2.x);
+        const left = Math.min(p1.x, p2.x), right = Math.max(p1.x, p2.x);
         const centerY = (p1.y + p2.y) / 2;
-        
-        // Scan a tall area to find ink
-        const searchH = 250; 
+        const searchH = 200; 
+
         const imgData = ctx.getImageData(Math.max(0, left), Math.max(0, centerY - (searchH/2)), right - left, searchH);
         const d = imgData.data, w = imgData.width, h = imgData.height;
 
-        // --- ADAPTIVE THRESHOLDING ---
-        // Instead of one threshold, we calculate the average brightness
-        // to detect dark vertical segments.
-        let bars = [], inB = false, tempStartX = 0;
-        const midRow = Math.floor(h/2);
+        // 1. Threshold
+        let br = [];
+        for (let i = 0; i < d.length; i += 40) br.push(d[i]);
+        br.sort((a,b) => a-b);
+        const thresh = br[Math.floor(br.length * 0.2)] + 35;
 
+        // 2. Find Horizontal Bars
+        let bars = [], inB = false, tempS = 0;
+        const mid = Math.floor(h/2);
         for (let x = 0; x < w; x++) {
-            // Local brightness check
-            const idx = (midRow * w + x) * 4;
-            const brightness = (d[idx] + d[idx+1] + d[idx+2]) / 3;
-            
-            // If the pixel is significantly darker than the average of its neighbors
-            // it helps handle the "one end out of focus" problem.
-            if (brightness < 100 && !inB) { inB = true; tempStartX = x; }
-            else if (brightness > 130 && inB) { 
-                inB = false; 
-                if (x - tempStartX > 1) bars.push({s: tempStartX, e: x}); 
+            if (d[(mid * w + x) * 4] < thresh && !inB) { inB = true; tempS = x; }
+            else if (d[(mid * w + x) * 4] >= thresh && inB) { inB = false; if (x-tempS > 1) bars.push({s: tempS, e: x}); }
+        }
+
+        if (bars.length < 10) { statusText.innerText = "MISS! SWIPE THROUGH THE BARS"; return; }
+
+        // 3. VERTICAL SHRINK-WRAP: Find the absolute top and bottom ink across all bars
+        let minInkY = h, maxInkY = 0;
+        bars.forEach(b => {
+            const mx = Math.floor((b.s + b.e) / 2);
+            for (let y = 0; y < h; y++) {
+                if (d[(y * w + mx) * 4] < thresh) {
+                    if (y < minInkY) minInkY = y;
+                    if (y > maxInkY) maxInkY = y;
+                }
             }
-        }
+        });
 
-        if (bars.length < 50) {
-            statusText.innerText = `ONLY ${bars.length} BARS FOUND. TRY SWIPING SLIGHTLY HIGHER/LOWER.`;
-            return;
-        }
+        // 4. Set Grid to exactly cover the ink (plus tiny 2px buffer)
+        const boxT_Local = minInkY - 2;
+        const boxB_Local = maxInkY + 2;
+        const boxH = boxB_Local - boxT_Local;
+        const stripH = boxH / 5;
 
-        const detL = left + bars[0].s - 50;
-        const detR = left + bars[bars.length-1].e + 50;
-        const boxH = 160, boxT = centerY - (boxH / 2), stripH = boxH / 5;
+        // Final Native Coordinates
+        const finalL = left + bars[0].s - 10;
+        const finalR = left + bars[bars.length-1].e + 10;
+        const finalT = (centerY - (searchH/2)) + boxT_Local;
 
-        // Draw Perspective-Corrected Grid
-        ctx.strokeStyle = "#00ff00"; ctx.lineWidth = 6;
-        ctx.strokeRect(detL, boxT, detR - detL, boxH);
+        // Draw Tight Grid
+        ctx.strokeStyle = "#00ff00"; ctx.lineWidth = 4;
+        ctx.strokeRect(finalL, finalT, finalR - finalL, boxH);
         
-        ctx.lineWidth = 2; ctx.setLineDash([15, 8]);
+        ctx.lineWidth = 1; ctx.setLineDash([5, 5]);
         for (let i = 1; i < 5; i++) {
-            const ly = boxT + (i * stripH);
-            ctx.beginPath(); ctx.moveTo(detL, ly); ctx.lineTo(detR, ly); ctx.stroke();
+            const ly = finalT + (i * stripH);
+            ctx.beginPath(); ctx.moveTo(finalL, ly); ctx.lineTo(finalR, ly); ctx.stroke();
         }
+        ctx.setLineDash([]);
 
-        // Final Decode
+        // 5. Decode using the TIGHT strips
         const fadt = bars.map(b => {
             const mx = Math.floor((b.s + b.e) / 2);
-            let p = [];
+            let p = new Array(5).fill(false);
             for (let s = 0; s < 5; s++) {
-                let ink = false;
-                const sStart = Math.floor(s * stripH);
-                const sEnd = Math.floor((s+1) * stripH);
+                const sStart = Math.floor(boxT_Local + (s * stripH));
+                const sEnd = Math.floor(sStart + stripH);
                 for (let y = sStart; y < sEnd; y++) {
-                    const checkY = Math.floor(centerY - (boxH/2) + y - (centerY - searchH/2));
-                    const idx = (checkY * w + mx) * 4;
-                    if (d[idx] < 120) { ink = true; break; }
+                    if (d[(y * w + mx) * 4] < thresh) { p[s] = true; break; }
                 }
-                p.push(ink);
             }
-            if ((p[0]||p[1]) && (p[3]||p[4])) return 'F';
-            if (p[0]||p[1]) return 'A';
-            if (p[3]||p[4]) return 'D';
+            if (p[0] && p[4]) return 'F';
+            if (p[0]) return 'A';
+            if (p[4]) return 'D';
             return 'T';
         }).join('');
 
         fadtDisplay.innerText = fadt;
-        statusText.innerText = fadt.length === 65 ? "65 BARS DETECTED" : `FOUND ${fadt.length} BARS`;
-        statusText.style.color = fadt.length === 65 ? "#00ff00" : "#ff4444";
+        statusText.innerText = fadt.length === 65 ? "65 BARS" : `FOUND ${fadt.length}`;
     }
 
     function resetScanner() {
         staticCanvas.style.display = 'none';
         isFrozen = false;
-        cleanImageBuffer = null;
         fadtDisplay.innerText = "---";
-        statusText.innerText = "TAP TO FREEZE";
+        statusText.innerText = "TAP TO CAPTURE";
     }
-
     window.addEventListener('load', startCamera);
 </script>
 </body>
