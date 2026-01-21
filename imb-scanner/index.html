@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>IMB Freeze-Swipe Decoder</title>
+    <title>IMB Clean-Swipe Decoder</title>
     <style>
         :root { --line-color: #00ff00; }
         body { font-family: monospace; margin: 0; background: #000; color: var(--line-color); overflow: hidden; height: 100vh; }
-        #camera-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; cursor: pointer; z-index: 1; touch-action: none; }
+        #camera-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; touch-action: none; }
         video, #static-frame { width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; }
-        #static-frame { display: none; z-index: 2; pointer-events: auto; touch-action: none; }
+        #static-frame { display: none; z-index: 2; cursor: crosshair; }
         #overlay-layer { position: relative; z-index: 3; height: 100%; pointer-events: none; display: flex; flex-direction: column; align-items: center; }
         #results-area {
             position: absolute; bottom: 20px; width: 90%;
@@ -30,7 +30,7 @@
         
     <div id="overlay-layer">
         <div id="results-area">
-            <div id="status">TAP SCREEN TO FREEZE FRAME</div>
+            <div id="status">TAP TO FREEZE</div>
             <div id="fadt-text">---</div>
             <button onclick="resetScanner()">RESET / LIVE VIDEO</button>
         </div>
@@ -42,37 +42,39 @@
     const fadtDisplay = document.getElementById('fadt-text');
     const statusText = document.getElementById('status');
     
-    let isFrozen = false, startX, startY;
+    let isFrozen = false, startX, startY, isSwiping = false;
+    let cleanImageBuffer = null; // To store the clean capture
 
     async function startCamera() {
         try {
-            const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1920 } } });
+            const s = await navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: "environment", width: { ideal: 1920 } } 
+            });
             video.srcObject = s;
         } catch (e) { statusText.innerText = "CAMERA ERROR"; }
     }
 
-    // Step 1: Capture and Freeze
     video.parentElement.addEventListener('pointerdown', (e) => {
+        const r = video.getBoundingClientRect();
+        const x = e.clientX - r.left;
+        const y = e.clientY - r.top;
+
         if (!isFrozen) {
             captureFrame();
         } else {
-            // Start of Step 2 (Swipe on frozen frame)
-            const r = staticCanvas.getBoundingClientRect();
-            startX = e.clientX - r.left;
-            startY = e.clientY - r.top;
+            // New swipe detected: Clear the old grid first
+            clearOldGrid();
+            isSwiping = true;
+            startX = x;
+            startY = y;
         }
     });
 
-    staticCanvas.addEventListener('pointerup', (e) => {
-        if (!isFrozen) return;
+    window.addEventListener('pointerup', (e) => {
+        if (!isSwiping) return;
+        isSwiping = false;
         const r = staticCanvas.getBoundingClientRect();
-        const endX = e.clientX - r.left;
-        const endY = e.clientY - r.top;
-        
-        // Only process if it was a swipe, not just a tap
-        if (Math.abs(endX - startX) > 10) {
-            processSwipeOnStatic(startX, startY, endX, endY);
-        }
+        processSwipeOnStatic(startX, startY, e.clientX - r.left, e.clientY - r.top);
     });
 
     function captureFrame() {
@@ -80,9 +82,22 @@
         staticCanvas.height = video.videoHeight;
         const ctx = staticCanvas.getContext('2d');
         ctx.drawImage(video, 0, 0);
+        
+        // Save the raw clean image data
+        cleanImageBuffer = ctx.getImageData(0, 0, staticCanvas.width, staticCanvas.height);
+        
         staticCanvas.style.display = 'block';
         isFrozen = true;
         statusText.innerText = "SWIPE OVER THE BARCODE";
+    }
+
+    function clearOldGrid() {
+        if (!cleanImageBuffer) return;
+        const ctx = staticCanvas.getContext('2d');
+        ctx.putImageData(cleanImageBuffer, 0, 0);
+        fadtDisplay.innerText = "---";
+        statusText.innerText = "SWIPE OVER THE BARCODE";
+        statusText.style.color = "var(--line-color)";
     }
 
     function getNativeCoords(screenX, screenY) {
@@ -112,45 +127,50 @@
         const left = Math.min(p1.x, p2.x);
         const right = Math.max(p1.x, p2.x);
         const centerY = (p1.y + p2.y) / 2;
-        const searchH = 150; 
+        const searchH = 200; 
 
-        const imgData = ctx.getImageData(left, centerY - (searchH/2), right - left, searchH);
+        const imgData = ctx.getImageData(Math.max(0, left), Math.max(0, centerY - (searchH/2)), right - left, searchH);
         const d = imgData.data, w = imgData.width, h = imgData.height;
 
-        // Thresholding
         let br = [];
         for (let i = 0; i < d.length; i += 40) br.push(d[i]);
         br.sort((a,b) => a-b);
-        const thresh = br[Math.floor(br.length * 0.25)] + 30;
+        const thresh = br[Math.floor(br.length * 0.25)] + 35;
 
-        // Find exact bars within the swiped area
         let bars = [], inB = false, tempStartX = 0;
         const localCenterY = Math.floor(h/2);
         for (let x = 0; x < w; x++) {
-            if (d[(localCenterY * w + x) * 4] < thresh && !inB) { inB = true; tempStartX = x; }
-            else if (d[(localCenterY * w + x) * 4] >= thresh && inB) { inB = false; if (x-tempStartX > 1) bars.push({s: tempStartX, e: x}); }
+            const idx = (localCenterY * w + x) * 4;
+            if (d[idx] < thresh && !inB) { inB = true; tempStartX = x; }
+            else if (d[idx] >= thresh && inB) { inB = false; if (x-tempStartX > 1) bars.push({s: tempStartX, e: x}); }
         }
 
-        if (bars.length === 0) { statusText.innerText = "NO BARS FOUND - SWIPE AGAIN"; return; }
+        if (bars.length === 0) { statusText.innerText = "RETRY SWIPE"; return; }
 
-        // Final Bounding Logic: Center grid on the detected bars
-        const detectedL = left + bars[0].s;
-        const detectedR = left + bars[bars.length-1].e;
-        const boxH = 120, stripH = boxH / 5;
-        const boxT = centerY - (boxH / 2);
+        const detectedL = left + bars[0].s - 40;
+        const detectedR = left + bars[bars.length-1].e + 40;
+        const boxH = 150, boxT = centerY - (boxH / 2), stripH = boxH / 5;
 
-        // Draw Final Grid
-        ctx.strokeStyle = "#00ff00"; ctx.lineWidth = 5;
-        ctx.strokeRect(detectedL - 20, boxT, (detectedR - detectedL) + 40, boxH);
+        ctx.strokeStyle = "#00ff00"; ctx.lineWidth = 6;
+        ctx.strokeRect(detectedL, boxT, detectedR - detectedL, boxH);
         
-        // Decoding
+        ctx.lineWidth = 2; ctx.setLineDash([15, 8]); ctx.strokeStyle = "rgba(0, 255, 0, 0.6)";
+        for (let i = 1; i < 5; i++) {
+            const ly = boxT + (i * stripH);
+            ctx.beginPath(); ctx.moveTo(detectedL, ly); ctx.lineTo(detectedR, ly); ctx.stroke();
+        }
+        ctx.setLineDash([]);
+
         const fadt = bars.map(b => {
             const mx = Math.floor((b.s + b.e) / 2);
             let p = [];
             for (let s = 0; s < 5; s++) {
                 let ink = false;
-                for (let y = Math.floor(s * stripH); y < Math.floor((s+1) * stripH); y++) {
-                    if (d[(y * w + mx) * 4] < thresh) { ink = true; break; }
+                const sStart = Math.floor(s * stripH);
+                const sEnd = Math.floor((s+1) * stripH);
+                for (let y = sStart; y < sEnd; y++) {
+                    const checkY = Math.floor(centerY - (boxH/2) + y - (centerY - searchH/2));
+                    if (d[(checkY * w + mx) * 4] < thresh) { ink = true; break; }
                 }
                 p.push(ink);
             }
@@ -161,15 +181,16 @@
         }).join('');
 
         fadtDisplay.innerText = fadt;
-        statusText.innerText = fadt.length === 65 ? "SUCCESS: 65 BARS" : `FOUND ${fadt.length} BARS`;
+        statusText.innerText = fadt.length === 65 ? "65 BARS DETECTED" : `FOUND ${fadt.length} BARS`;
         statusText.style.color = fadt.length === 65 ? "#00ff00" : "#ff4444";
     }
 
     function resetScanner() {
         staticCanvas.style.display = 'none';
         isFrozen = false;
+        cleanImageBuffer = null;
         fadtDisplay.innerText = "---";
-        statusText.innerText = "TAP SCREEN TO FREEZE FRAME";
+        statusText.innerText = "TAP TO FREEZE";
         statusText.style.color = "var(--line-color)";
     }
 
