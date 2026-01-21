@@ -3,42 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>IMB v1.3</title>
+    <title>IMB v1.5 Red-Spine</title>
     <style>
-        :root { --line-color: #00ff00; }
+        :root { --line-color: #00ff00; --spine-color: #ff0000; }
         body { font-family: monospace; margin: 0; background: #000; color: var(--line-color); overflow: hidden; height: 100vh; }
-        
         #camera-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; touch-action: none; }
         video, #static-frame { width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; }
         #static-frame { display: none; z-index: 2; }
-        
         #overlay-layer { position: relative; z-index: 3; height: 100%; pointer-events: none; display: flex; flex-direction: column; align-items: center; }
-        
         #results-area {
             position: absolute; bottom: 20px; width: 95%;
             background: rgba(15, 15, 15, 0.85); padding: 12px; box-sizing: border-box;
             border: 1px solid #444; border-radius: 12px; pointer-events: auto;
         }
-
         .control-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; gap: 8px; }
-        
         #status { font-size: 0.7rem; color: var(--line-color); font-weight: bold; flex-grow: 1; }
-        
         #accept-btn { 
-            background: #008000; color: white; border: none; padding: 8px 15px; 
-            border-radius: 6px; font-weight: bold; display: none; cursor: pointer; font-size: 0.75rem;
+            background: #008000; color: white; border: none; padding: 10px 20px; 
+            border-radius: 6px; font-weight: bold; display: none; cursor: pointer; font-size: 0.8rem;
         }
-
         #fadt-text { 
-            font-size: 0.85rem; word-break: break-all; color: #fff; 
-            background: rgba(0,0,0,0.3); padding: 8px; border-radius: 4px;
-            margin-bottom: 10px; letter-spacing: 1px; min-height: 1em; text-align: center;
+            font-size: 0.85rem; word-break: break-all; color: #fff; background: rgba(0,0,0,0.5); 
+            padding: 10px; border-radius: 4px; margin-bottom: 10px; letter-spacing: 1px; text-align: center;
         }
-
-        .reset-btn { 
-            background: #333; color: #ccc; border: 1px solid #555; padding: 8px; 
-            border-radius: 6px; width: 100%; cursor: pointer; font-size: 0.7rem; font-weight: bold;
-        }
+        .reset-btn { background: #333; color: #ccc; border: 1px solid #555; padding: 10px; border-radius: 6px; width: 100%; cursor: pointer; font-size: 0.7rem; }
     </style>
 </head>
 <body>
@@ -51,7 +39,7 @@
     <div id="overlay-layer">
         <div id="results-area">
             <div class="control-row">
-                <div id="status">v1.3 | TAP TO CAPTURE</div>
+                <div id="status">v1.5 | TAP TO CAPTURE</div>
                 <button id="accept-btn" onclick="decodeSelection()">ACCEPT</button>
             </div>
             <div id="fadt-text">---</div>
@@ -75,22 +63,18 @@
                 video: { facingMode: "environment", width: { ideal: 1920 } } 
             });
             video.srcObject = s;
-        } catch (e) { statusText.innerText = "v1.3 | ERROR"; }
+        } catch (e) { statusText.innerText = "v1.5 | ERROR"; }
     }
 
     document.getElementById('camera-container').addEventListener('pointerdown', (e) => {
         const r = video.getBoundingClientRect();
-        const x = e.clientX - r.left;
-        const y = e.clientY - r.top;
-
         if (!isFrozen) {
             captureFrame();
         } else {
             clearCanvas();
             isSwiping = true;
-            startX = x;
-            startY = y;
-            statusText.innerText = "v1.3 | DRAWING BOX...";
+            startX = e.clientX - r.left;
+            startY = e.clientY - r.top;
         }
     });
 
@@ -104,12 +88,18 @@
         if (!isSwiping) return;
         isSwiping = false;
         const r = staticCanvas.getBoundingClientRect();
-        rectCoords = { sX: startX, sY: startY, eX: e.clientX - r.left, eY: e.clientY - r.top };
         
-        // Only show button if a box was actually drawn
+        const rawEndX = e.clientX - r.left;
+        const rawEndY = e.clientY - r.top;
+        const adjEndX = rawEndX > startX ? rawEndX + 15 : rawEndX - 15;
+        const adjEndY = rawEndY > startY ? rawEndY + 15 : rawEndY - 15;
+
+        rectCoords = { sX: startX, sY: startY, eX: adjEndX, eY: adjEndY };
+        
         if (Math.abs(rectCoords.eX - rectCoords.sX) > 10) {
+            drawPreview(rectCoords.sX, rectCoords.sY, rectCoords.eX, rectCoords.eY);
             acceptBtn.style.display = 'block';
-            statusText.innerText = "v1.3 | BOX READY";
+            statusText.innerText = "v1.5 | ALIGN RED LINE TO TRACKERS";
         }
     });
 
@@ -121,7 +111,7 @@
         cleanImageBuffer = ctx.getImageData(0, 0, staticCanvas.width, staticCanvas.height);
         staticCanvas.style.display = 'block';
         isFrozen = true;
-        statusText.innerText = "v1.3 | SWIPE DIAGONALLY";
+        statusText.innerText = "v1.5 | SWIPE OVER BARCODE";
     }
 
     function clearCanvas() {
@@ -136,17 +126,26 @@
         const ctx = staticCanvas.getContext('2d');
         const p1 = getNativeCoords(sx, sy);
         const p2 = getNativeCoords(ex, ey);
-        
         const L = Math.min(p1.x, p2.x), T = Math.min(p1.y, p2.y);
         const W = Math.abs(p1.x - p2.x), H = Math.abs(p1.y - p2.y);
         
-        ctx.strokeStyle = "#00ff00"; ctx.lineWidth = 5;
+        ctx.strokeStyle = "#00ff00"; ctx.lineWidth = 6;
         ctx.strokeRect(L, T, W, H);
         
-        ctx.setLineDash([15, 15]); ctx.lineWidth = 2;
-        ctx.strokeStyle = "rgba(0, 255, 0, 0.4)";
+        const stripH = H / 5;
         for (let i = 1; i < 5; i++) {
-            const ly = T + (i * (H/5));
+            // Set middle guide (i=2 is the line between Strip 2 and 3, i=3 is Strip 3 and 4)
+            // We want the line passing THROUGH Strip 3 (the vertical center)
+            if (i === 2 || i === 3) {
+                ctx.strokeStyle = "rgba(255, 0, 0, 0.8)"; // Red for center area
+                ctx.lineWidth = 3;
+            } else {
+                ctx.strokeStyle = "rgba(0, 255, 0, 0.4)";
+                ctx.lineWidth = 2;
+            }
+            
+            const ly = T + (i * stripH);
+            ctx.setLineDash([10, 10]);
             ctx.beginPath(); ctx.moveTo(L, ly); ctx.lineTo(L+W, ly); ctx.stroke();
         }
         ctx.setLineDash([]);
@@ -166,23 +165,25 @@
         const ctx = staticCanvas.getContext('2d');
         const p1 = getNativeCoords(rectCoords.sX, rectCoords.sY);
         const p2 = getNativeCoords(rectCoords.eX, rectCoords.eY);
-        const L = Math.min(p1.x, p2.x), T = Math.min(p1.y, p2.y);
-        const W = Math.abs(p1.x - p2.x), H = Math.abs(p1.y - p2.y);
+        const L = Math.max(0, Math.min(p1.x, p2.x)), T = Math.max(0, Math.min(p1.y, p2.y));
+        const W = Math.min(staticCanvas.width - L, Math.abs(p1.x - p2.x));
+        const H = Math.min(staticCanvas.height - T, Math.abs(p1.y - p2.y));
 
         const imgData = ctx.getImageData(L, T, W, H);
         const d = imgData.data;
         const stripH = H / 5;
 
-        let br = [];
-        for (let i = 0; i < d.length; i += 40) br.push(d[i]);
-        br.sort((a,b) => a-b);
-        const thresh = br[Math.floor(br.length * 0.25)] + 35;
+        let allBr = [];
+        for (let i = 0; i < d.length; i += 40) allBr.push((d[i] + d[i+1] + d[i+2]) / 3);
+        allBr.sort((a,b) => a-b);
+        const thresh = allBr[Math.floor(allBr.length * 0.3)] + 40;
 
         let bars = [], inB = false, tempS = 0;
         const midY = Math.floor(H / 2);
         for (let x = 0; x < W; x++) {
-            if (d[(midY * W + x) * 4] < thresh && !inB) { inB = true; tempS = x; }
-            else if (d[(midY * W + x) * 4] >= thresh && inB) { inB = false; if (x-tempS > 1) bars.push({s: tempS, e: x}); }
+            const lum = (d[(midY * W + x) * 4] + d[(midY * W + x) * 4 + 1] + d[(midY * W + x) * 4 + 2]) / 3;
+            if (lum < thresh && !inB) { inB = true; tempS = x; }
+            else if (lum >= thresh && inB) { inB = false; if (x-tempS > 1) bars.push({s: tempS, e: x}); }
         }
 
         const fadt = bars.map(b => {
@@ -190,7 +191,8 @@
             let p = new Array(5).fill(false);
             for (let s = 0; s < 5; s++) {
                 for (let y = Math.floor(s*stripH); y < Math.floor((s+1)*stripH); y++) {
-                    if (d[(y * W + mx) * 4] < thresh) { p[s] = true; break; }
+                    const lumY = (d[(y * W + mx) * 4] + d[(y * W + mx) * 4 + 1] + d[(y * W + mx) * 4 + 2]) / 3;
+                    if (lumY < thresh) { p[s] = true; break; }
                 }
             }
             if (p[0] && p[4]) return 'F';
@@ -200,7 +202,7 @@
         }).join('');
 
         fadtDisplay.innerText = fadt;
-        statusText.innerText = `v1.3 | ${fadt.length} BARS`;
+        statusText.innerText = `v1.5 | ${fadt.length} BARS`;
         statusText.style.color = fadt.length === 65 ? "#00ff00" : "#ff4444";
         acceptBtn.style.display = 'none';
     }
@@ -210,7 +212,7 @@
         isFrozen = false;
         acceptBtn.style.display = 'none';
         fadtDisplay.innerText = "---";
-        statusText.innerText = "v1.3 | TAP TO CAPTURE";
+        statusText.innerText = "v1.5 | TAP TO CAPTURE";
         statusText.style.color = "var(--line-color)";
     }
     window.addEventListener('load', startCamera);
