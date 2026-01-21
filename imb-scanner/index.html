@@ -3,76 +3,82 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>IMB Snapshot Decoder</title>
+    <title>IMB Tap Decoder</title>
     <style>
         :root { --line-color: #00ff00; }
-        body { font-family: monospace; margin: 0; background: #000; color: var(--line-color); overflow: hidden; height: 100vh; }
-        #camera-container { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; }
-        video, #static-frame { width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; z-index: 1; }
-        #static-frame { display: none; z-index: 2; border: 4px solid #fff; box-sizing: border-box; }
+        body { font-family: monospace; margin: 0; background: #000; color: var(--line-color); overflow: hidden; height: 100vh; width: 100vw; }
         
+        /* Camera & Capture Layer */
+        #camera-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; cursor: pointer; }
+        video, #static-frame { width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; }
+        #static-frame { display: none; z-index: 2; border: 5px solid #fff; box-sizing: border-box; }
+        
+        /* UI Overlay */
         #overlay-layer { position: relative; z-index: 3; height: 100%; pointer-events: none; display: flex; flex-direction: column; align-items: center; }
+        
         #viewfinder {
-            position: absolute; top: 35%; width: 90%; height: 80px;
+            position: absolute; top: 40%; width: 90%; height: 80px;
             border: 2px solid var(--line-color); transform: translateY(-50%);
-            box-shadow: 0 0 0 2000px rgba(0,0,0,0.7);
+            box-shadow: 0 0 0 5000px rgba(0,0,0,0.7); /* Deep dimming around focus */
         }
 
         #results-area {
-            position: absolute; top: calc(35% + 50px); width: 95%;
-            background: rgba(15, 15, 15, 0.95); padding: 12px; box-sizing: border-box;
-            border: 1px solid #444; border-radius: 8px; pointer-events: auto; text-align: center;
+            position: absolute; bottom: 20px; width: 90%;
+            background: rgba(15, 15, 15, 0.9); padding: 15px; box-sizing: border-box;
+            border: 1px solid #444; border-radius: 12px; pointer-events: auto; text-align: center;
         }
 
-        #fadt-text { font-size: 1.1rem; word-break: break-all; color: #fff; min-height: 1.5em; margin-bottom: 8px; letter-spacing: 1px; font-weight: bold; }
-        #status { font-size: 0.75rem; color: var(--line-color); margin-bottom: 12px; font-weight: bold; text-transform: uppercase; }
+        #fadt-text { font-size: 1.2rem; word-break: break-all; color: #fff; min-height: 1.5em; margin-bottom: 10px; letter-spacing: 1px; font-weight: bold; }
+        #status { font-size: 0.8rem; color: var(--line-color); margin-bottom: 12px; font-weight: bold; text-transform: uppercase; }
 
-        .btn-group { display: flex; gap: 8px; flex-wrap: wrap; }
-        button { flex: 1; padding: 15px; background: #222; color: white; border: 1px solid #555; border-radius: 4px; font-weight: bold; font-size: 0.85rem; cursor: pointer; }
-        #capture-btn { background: #aa0000; border-color: #ff0000; flex: 2; }
+        .btn-group { display: flex; gap: 10px; }
+        button { flex: 1; padding: 15px; background: #222; color: white; border: 1px solid #555; border-radius: 8px; font-weight: bold; cursor: pointer; }
         #copy-btn { background: #007bff; border-color: #0056b3; }
-
-        #history-panel {
-            position: absolute; bottom: 0; width: 100%; max-height: 25vh;
-            background: rgba(20, 20, 20, 0.95); border-top: 2px solid #333;
-            overflow-y: auto; pointer-events: auto; padding: 10px; box-sizing: border-box;
+        
+        /* History Overlay (Hidden by Default) */
+        #history-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.95); z-index: 10; display: none;
+            flex-direction: column; padding: 20px; box-sizing: border-box; pointer-events: auto;
         }
         .history-item {
             display: flex; align-items: center; gap: 10px; background: #111;
-            padding: 8px; border-radius: 4px; margin-bottom: 6px; border-left: 3px solid var(--line-color);
+            padding: 12px; border-radius: 6px; margin-bottom: 10px; border-left: 4px solid var(--line-color);
         }
-        .history-text { flex: 1; font-size: 0.7rem; color: #ccc; word-break: break-all; text-align: left; }
-        .mini-btn { flex: 0 0 60px; padding: 6px; font-size: 0.65rem; background: #444; border: none; color: white; border-radius: 3px; }
-
+        .history-text { flex: 1; font-size: 0.8rem; color: #ccc; word-break: break-all; }
+        
         @media (orientation: landscape) { 
-            #viewfinder { width: 65%; height: 60px; top: 30%; } 
-            #results-area { width: 60%; top: calc(30% + 40px); left: 2%; }
-            #history-panel { width: 35%; height: 100%; right: 0; top: 0; border-top: none; border-left: 2px solid #333; max-height: none; }
+            #viewfinder { width: 70%; height: 60px; } 
+            #results-area { width: 50%; left: 25%; }
         }
     </style>
 </head>
 <body>
 
-    <div id="camera-container">
+    <div id="camera-container" onclick="captureAndDecode()">
         <video id="video" autoplay playsinline muted></video>
         <canvas id="static-frame"></canvas>
+    </div>
         
-        <div id="overlay-layer">
-            <div id="viewfinder"></div>
-            <div id="results-area">
-                <div id="status">Align & Capture</div>
-                <div id="fadt-text">---</div>
-                <div class="btn-group">
-                    <button id="capture-btn" onclick="captureAndDecode()">CAPTURE & DECODE</button>
-                    <button id="copy-btn" onclick="copyString()">COPY</button>
-                    <button onclick="resetScanner()">CLEAR</button>
-                </div>
-            </div>
-            <div id="history-panel">
-                <div style="font-size: 0.7rem; color: #888; margin-bottom: 8px;">HISTORY</div>
-                <div id="history-list"></div>
+    <div id="overlay-layer">
+        <div id="viewfinder"></div>
+        <div id="results-area">
+            <div id="status">TAP SCREEN TO CAPTURE</div>
+            <div id="fadt-text">---</div>
+            <div class="btn-group">
+                <button id="copy-btn" onclick="copyString()">COPY</button>
+                <button onclick="resetScanner()">CLEAR</button>
+                <button onclick="toggleHistory(true)" style="background:#444;">HISTORY</button>
             </div>
         </div>
+    </div>
+
+    <div id="history-overlay">
+        <div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h2 style="color:var(--line-color); margin:0;">SCAN HISTORY</h2>
+            <button onclick="toggleHistory(false)" style="flex:0; padding: 10px 20px; background:#aa0000;">CLOSE</button>
+        </div>
+        <div id="history-list" style="overflow-y:auto;"></div>
     </div>
 
     <canvas id="procCanvas" style="display:none;"></canvas>
@@ -84,6 +90,7 @@
     const fadtDisplay = document.getElementById('fadt-text');
     const statusText = document.getElementById('status');
     const historyList = document.getElementById('history-list');
+    const historyOverlay = document.getElementById('history-overlay');
     
     let fadtBuffer = ""; 
     let historyData = [];
@@ -103,82 +110,69 @@
 
     function captureAndDecode() {
         if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
+        if (staticCanvas.style.display === 'block') return; // Prevent double taps during processing
 
-        // 1. Freeze the frame visually
+        // 1. Snapshot
         staticCanvas.width = video.videoWidth;
         staticCanvas.height = video.videoHeight;
         const sCtx = staticCanvas.getContext('2d');
         sCtx.drawImage(video, 0, 0);
         staticCanvas.style.display = 'block';
-        statusText.innerText = "PROCESSING...";
+        statusText.innerText = "DECODING SNAPSHOT...";
 
-        // 2. Extract and Process the Viewfinder Area
+        // 2. Crop
         const scanW = staticCanvas.width * 0.9;
-        const scanH = 120; // Increased height for better tolerance
+        const scanH = 120;
         const scanX = staticCanvas.width * 0.05;
-        const scanY = (staticCanvas.height * 0.35) - (scanH / 2);
+        const scanY = (staticCanvas.height * 0.40) - (scanH / 2);
 
         procCanvas.width = scanW;
         procCanvas.height = scanH;
         const pCtx = procCanvas.getContext('2d', { willReadFrequently: true });
         pCtx.drawImage(staticCanvas, scanX, scanY, scanW, scanH, 0, 0, scanW, scanH);
 
+        // 3. Logic
         const imgData = pCtx.getImageData(0, 0, scanW, scanH);
         const result = decodeFADT(imgData);
 
-        // 3. Display Results
         fadtBuffer = result.replace(/[^FADT]/g, '');
-        fadtDisplay.innerText = fadtBuffer || "NO BARS DETECTED";
+        fadtDisplay.innerText = fadtBuffer || "NO BARCODE FOUND";
         
         if (fadtBuffer.length === 65) {
-            statusText.innerText = "SUCCESS: 65 BARS";
+            statusText.innerText = "SUCCESS (65 BARS)";
             addToHistory(fadtBuffer);
         } else {
-            statusText.innerText = `FAILED: ${fadtBuffer.length}/65 BARS`;
+            statusText.innerText = `ERROR: FOUND ${fadtBuffer.length} BARS`;
         }
     }
 
     function decodeFADT(imgData) {
         const d = imgData.data; const w = imgData.width; const h = imgData.height;
         let projection = new Array(w).fill(0);
-        
-        // Use a stricter threshold for a static image
         for (let x = 0; x < w; x++) {
             for (let y = 0; y < h; y++) {
                 const i = (y * w + x) * 4;
-                const brightness = (d[i] + d[i+1] + d[i+2]) / 3;
-                if (brightness < 100) projection[x]++;
+                if ((d[i] + d[i+1] + d[i+2]) / 3 < 100) projection[x]++;
             }
         }
-
         let bars = []; let inBar = false; let start = 0;
         for (let x = 0; x < w; x++) {
             const active = projection[x] > (h * 0.15); 
             if (active && !inBar) { inBar = true; start = x; }
-            else if (!active && inBar) { 
-                inBar = false; 
-                if(x - start > 1) bars.push({s: start, e: x}); 
-            }
+            else if (!active && inBar) { inBar = false; if(x - start > 1) bars.push({s: start, e: x}); }
         }
-
         return bars.map(b => {
             const midX = Math.floor((b.s + b.e) / 2);
             let minY = h, maxY = 0;
             for (let y = 0; y < h; y++) {
                 const i = (y * w + midX) * 4;
                 if ((d[i] + d[i+1] + d[i+2]) / 3 < 100) {
-                    if (y < minY) minY = y;
-                    if (y > maxY) maxY = y;
+                    if (y < minY) minY = y; if (y > maxY) maxY = y;
                 }
             }
-            // Vertical 4-state logic
-            const barH = maxY - minY;
-            const isTallTop = minY < (h * 0.4);
-            const isLowBottom = maxY > (h * 0.6);
-
-            if (isTallTop && isLowBottom) return 'F';
-            if (isTallTop) return 'A';
-            if (isLowBottom) return 'D';
+            if (minY < (h * 0.4) && maxY > (h * 0.6)) return 'F';
+            if (minY < (h * 0.4)) return 'A';
+            if (maxY > (h * 0.6)) return 'D';
             return 'T';
         }).join('');
     }
@@ -186,7 +180,7 @@
     function addToHistory(str) {
         if (historyData[0] === str) return;
         historyData.unshift(str);
-        if (historyData.length > 5) historyData.pop();
+        if (historyData.length > 20) historyData.pop();
         renderHistory();
     }
 
@@ -194,9 +188,13 @@
         historyList.innerHTML = historyData.map(item => `
             <div class="history-item">
                 <div class="history-text">${item}</div>
-                <button class="mini-btn" onclick="copySpecific('${item}')">COPY</button>
+                <button style="flex:0; background:#007bff; border:none; padding:8px;" onclick="copySpecific('${item}')">COPY</button>
             </div>
         `).join('');
+    }
+
+    function toggleHistory(show) {
+        historyOverlay.style.display = show ? 'flex' : 'none';
     }
 
     function copySpecific(str) {
@@ -207,7 +205,7 @@
         staticCanvas.style.display = 'none';
         fadtBuffer = ""; 
         fadtDisplay.innerText = "---";
-        statusText.innerText = "ALIGN & CAPTURE"; 
+        statusText.innerText = "TAP SCREEN TO CAPTURE"; 
     }
 
     function copyString() {
