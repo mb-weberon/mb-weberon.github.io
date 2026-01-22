@@ -1,0 +1,29 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <rect width="512" height="512" rx="100" fill="#0a0a0a"/>
+  
+  <g fill="#00ff00">
+    <rect x="106" y="236" width="12" height="40" rx="2"/>
+    <rect x="136" y="236" width="12" height="40" rx="2"/>
+    <rect x="166" y="236" width="12" height="40" rx="2"/>
+    <rect x="196" y="236" width="12" height="40" rx="2"/>
+    <rect x="226" y="236" width="12" height="40" rx="2"/>
+    <rect x="256" y="236" width="12" height="40" rx="2"/>
+    <rect x="286" y="236" width="12" height="40" rx="2"/>
+    <rect x="316" y="236" width="12" height="40" rx="2"/>
+    <rect x="346" y="236" width="12" height="40" rx="2"/>
+    <rect x="376" y="236" width="12" height="40" rx="2"/>
+    
+    <rect x="121" y="196" width="12" height="80" rx="2"/>
+    <rect x="151" y="236" width="12" height="80" rx="2"/>
+    <rect x="211" y="196" width="12" height="120" rx="2"/>
+    <rect x="271" y="196" width="12" height="80" rx="2"/>
+    <rect x="331" y="236" width="12" height="80" rx="2"/>
+    <rect x="391" y="196" width="12" height="120" rx="2"/>
+  </g>
+
+  <rect x="80" y="254" width="352" height="4" fill="#ff0000" opacity="0.8">
+    <animate attributeName="opacity" values="0.4;1;0.4" dur="2s" repeatCount="indefinite" />
+  </rect>
+
+  <text x="256" y="420" font-family="monospace" font-size="50" font-weight="bold" fill="#00ff00" text-anchor="middle">IMB v2.6</text>
+</svg>

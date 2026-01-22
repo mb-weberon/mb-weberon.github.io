@@ -2,15 +2,19 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <link rel="manifest" href="manifest.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>IMB Scanner v2.6 Auto-Seed</title>
+    
+    <title>IMB Scanner v2.6</title>
     <style>
         :root { --accent: #00ff00; }
         body { font-family: system-ui, sans-serif; margin: 0; background: #000; color: var(--accent); overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
         #camera-container { position: relative; flex-grow: 1; overflow: hidden; touch-action: none; }
         video, #static-frame { width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; }
         #static-frame { display: none; z-index: 2; }
-        #results-area { background: rgba(15, 15, 15, 0.98); padding: 20px; border-top: 1px solid #333; z-index: 10; }
+        #results-area { background: rgba(15, 15, 15, 0.98); padding: 20px; border-top: 1px solid #333; z-index: 10; padding-bottom: env(safe-area-inset-bottom); }
         .control-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
         #status { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; }
         #fadt-text { font-family: 'Courier New', monospace; font-size: 2.4vw; color: #fff; background: #000; padding: 12px 5px; border-radius: 6px; margin-bottom: 15px; letter-spacing: 1px; text-align: center; border: 1px solid #444; white-space: nowrap; overflow-x: auto; user-select: all; }
@@ -25,15 +29,19 @@
     <div id="results-area">
         <div class="control-row">
             <div id="status">v2.6 | Tap to Capture</div>
-            <div id="btn-group">
-                <button id="accept-btn" style="background:#008000; color:white; border:none; padding:10px 24px; border-radius:8px; font-weight:bold; cursor:pointer;" onclick="decodeSelection()">DECODE</button>
-            </div>
+            <button id="accept-btn" style="background:#008000; color:white; border:none; padding:10px 24px; border-radius:8px; font-weight:bold; cursor:pointer;" onclick="decodeSelection()">DECODE</button>
         </div>
         <div id="fadt-text">---</div>
         <button class="reset-btn" onclick="resetScanner()">RESET CAMERA</button>
     </div>
 
 <script>
+    // PWA Service Worker Registration
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('sw.js');
+    }
+
+    /* ... (KEEP ALL THE JAVASCRIPT FROM v2.6 HERE) ... */
     const video = document.getElementById('video');
     const staticCanvas = document.getElementById('static-frame');
     const fadtDisplay = document.getElementById('fadt-text');
@@ -179,3 +187,5 @@
 </script>
 </body>
 </html>
+
+<script>
