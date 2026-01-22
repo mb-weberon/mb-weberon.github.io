@@ -9,16 +9,38 @@
     
     <title>IMB Scanner v2.6</title>
     <style>
-        :root { --accent: #00ff00; }
-        body { font-family: system-ui, sans-serif; margin: 0; background: #000; color: var(--accent); overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
-        #camera-container { position: relative; flex-grow: 1; overflow: hidden; touch-action: none; }
-        video, #static-frame { width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; }
-        #static-frame { display: none; z-index: 2; }
-        #results-area { background: rgba(15, 15, 15, 0.98); padding: 20px; border-top: 1px solid #333; z-index: 10; padding-bottom: env(safe-area-inset-bottom); }
-        .control-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-        #status { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; }
-        #fadt-text { font-family: 'Courier New', monospace; font-size: 2.4vw; color: #fff; background: #000; padding: 12px 5px; border-radius: 6px; margin-bottom: 15px; letter-spacing: 1px; text-align: center; border: 1px solid #444; white-space: nowrap; overflow-x: auto; user-select: all; }
-        .reset-btn { background: #222; color: #aaa; border: 1px solid #444; padding: 12px; border-radius: 8px; width: 100%; cursor: pointer; }
+            /* Updated for Landscape and Single Line Visibility */
+        #fadt-text { 
+            font-family: 'Courier New', monospace; 
+            /* Use clamp to keep font between 12px and a reasonable scale */
+            font-size: clamp(12px, 3.5vh, 2.2vw); 
+            color: #fff; 
+            background: #000; 
+            padding: 10px 5px; 
+            border-radius: 6px; 
+            margin-bottom: 10px; 
+            letter-spacing: 1px; 
+            text-align: center; 
+            border: 1px solid #444; 
+            white-space: nowrap; 
+            overflow-x: auto;
+            min-height: 1.2em;
+            user-select: all;
+        }
+
+        /* Specific Landscape Fix: Reduce padding to save vertical space */
+        @media (orientation: landscape) {
+            #results-area {
+                padding: 10px 20px;
+            }
+            #fadt-text {
+                margin-bottom: 8px;
+                font-size: 4vh; /* Scales better when the height is short */
+            }
+            .control-row {
+                margin-bottom: 8px;
+            }
+        }
     </style>
 </head>
 <body>
