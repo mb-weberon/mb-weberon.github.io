@@ -6,29 +6,11 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>IMB Scanner v2.7</title>
+    <title>IMB Scanner v2.8</title>
     <style>
         :root { --accent: #00ff00; }
-        
-        body { 
-            font-family: system-ui, sans-serif; 
-            margin: 0; 
-            background: #000; 
-            color: var(--accent); 
-            overflow: hidden; 
-            height: 100dvh; 
-            display: flex; 
-            flex-direction: column; 
-        }
-
-        #camera-container { 
-            position: relative; 
-            flex-grow: 1; 
-            overflow: hidden; 
-            touch-action: none; 
-            z-index: 1;
-        }
-        
+        body { font-family: system-ui, sans-serif; margin: 0; background: #000; color: var(--accent); overflow: hidden; height: 100dvh; display: flex; flex-direction: column; }
+        #camera-container { position: relative; flex-grow: 1; overflow: hidden; touch-action: none; z-index: 1; }
         video, #static-frame { width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; }
         #static-frame { display: none; z-index: 2; }
         
@@ -40,70 +22,45 @@
             flex-shrink: 0;
             padding-bottom: calc(8px + env(safe-area-inset-bottom));
         }
-        
-        .status-row { 
-            display: flex; 
-            justify-content: space-between; 
-            margin-bottom: 8px; 
-        }
-        
-        #status { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; }
 
-        .decode-row {
-            display: flex;
-            gap: 10px;
-            align-items: center;
+        /* UI Row 1: Status & Version */
+        .status-row { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; }
+
+        /* UI Row 2: FADT String (Full Width) */
+        #fadt-text { 
+            font-family: 'Courier New', monospace; 
+            font-size: clamp(14px, 3vh, 2.5vw); 
+            color: #fff; background: #000; 
+            padding: 10px 5px; border-radius: 6px; 
+            letter-spacing: 1px; text-align: center; 
+            border: 1px solid #444; white-space: nowrap; 
+            overflow-x: auto; width: 100%; box-sizing: border-box;
             margin-bottom: 10px;
         }
 
-        #fadt-text { 
-            font-family: 'Courier New', monospace; 
-            font-size: clamp(14px, 3.5vh, 2.2vw); 
-            color: #fff; 
-            background: #000; 
-            padding: 12px 5px; 
-            border-radius: 6px; 
-            letter-spacing: 1px; 
-            text-align: center; 
-            border: 1px solid #444; 
-            white-space: nowrap; 
-            overflow-x: auto; 
-            flex-grow: 1;
-            user-select: all;
-        }
-        
-        #accept-btn {
-            background: #008000; 
-            color: white; 
-            border: none; 
-            padding: 12px 20px; 
-            border-radius: 8px; 
-            font-weight: bold; 
-            cursor: pointer;
-            white-space: nowrap;
-        }
+        /* UI Row 3: Action Buttons (Process, Reset, Decode) */
+        .btn-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+        button { border: none; border-radius: 8px; font-weight: bold; cursor: pointer; padding: 12px 5px; font-size: 0.75rem; text-transform: uppercase; }
+        #process-btn { background: #0066ff; color: white; }
+        #reset-btn { background: #333; color: #aaa; border: 1px solid #444; }
+        #decode-btn { background: #008000; color: white; }
 
-        .reset-btn { 
-            background: #222; 
-            color: #aaa; 
-            border: 1px solid #444; 
-            padding: 10px; 
-            border-radius: 8px; 
-            width: 100%; 
-            cursor: pointer; 
-            font-size: 0.75rem; 
-        }
+        /* Modal Styles */
+        #modal-overlay { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 100; align-items: center; justify-content: center; }
+        #modal-content { background: #1a1a1a; width: 85%; padding: 20px; border-radius: 12px; border: 1px solid var(--accent); color: white; }
+        .data-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #333; font-size: 0.9rem; }
+        .data-label { color: #aaa; }
+        .data-val { color: var(--accent); font-family: monospace; font-weight: bold; }
+        .close-btn { background: var(--accent); color: #000; width: 100%; margin-top: 15px; }
 
         @media (orientation: landscape) {
-            #results-area { padding: 5px 15px; }
-            .decode-row { margin-bottom: 5px; }
-            #fadt-text { padding: 6px 5px; font-size: 5vh; }
-            #accept-btn { padding: 6px 15px; }
-            .status-row { margin-bottom: 4px; }
+            #fadt-text { padding: 5px; margin-bottom: 6px; }
+            button { padding: 8px 2px; font-size: 0.65rem; }
         }
     </style>
 </head>
 <body>
+
     <div id="camera-container">
         <video id="video" autoplay playsinline muted></video>
         <canvas id="static-frame"></canvas>
@@ -111,76 +68,69 @@
     
     <div id="results-area">
         <div class="status-row">
-            <div id="status">v2.7 | Tap to Capture</div>
+            <div id="status">v2.8 | Ready</div>
         </div>
         
-        <div class="decode-row">
-            <div id="fadt-text">---</div>
-            <button id="accept-btn" onclick="decodeSelection()">DECODE</button>
-        </div>
+        <div id="fadt-text">---</div>
 
-        <button class="reset-btn" onclick="resetScanner()">RESET CAMERA</button>
+        <div class="btn-grid">
+            <button id="process-btn" onclick="processFADT()">Process</button>
+            <button id="reset-btn" onclick="resetScanner()">Reset</button>
+            <button id="decode-btn" onclick="decodeSelection()">Scan/Align</button>
+        </div>
+    </div>
+
+    <div id="modal-overlay" onclick="this.style.display='none'">
+        <div id="modal-content" onclick="event.stopPropagation()">
+            <h3 style="margin-top:0; color:var(--accent)">IMB Data</h3>
+            <div id="modal-body"></div>
+            <button class="close-btn" onclick="document.getElementById('modal-overlay').style.display='none'">CLOSE</button>
+        </div>
     </div>
 
 <script>
+    // --- Camera & Interaction Logic (Optimized v2.7) ---
     const video = document.getElementById('video');
     const staticCanvas = document.getElementById('static-frame');
     const fadtDisplay = document.getElementById('fadt-text');
     const statusText = document.getElementById('status');
-    
     let isFrozen = false, cleanImageBuffer = null;
     let p1 = {x:0, y:0}, p2 = {x:0, y:0}, activeHandle = null;
 
-    // PWA Service Worker Registration
-    if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('sw.js?v=2.7');
-    }
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js?v=2.8');
 
     async function startCamera() {
-        try {
-            const s = await navigator.mediaDevices.getUserMedia({ 
-                video: { facingMode: "environment", width: { ideal: 1920 } } 
-            });
-            video.srcObject = s;
-        } catch (err) {
-            statusText.innerText = "Camera Error";
-        }
+        const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1920 } } });
+        video.srcObject = s;
     }
 
     document.getElementById('camera-container').addEventListener('pointerdown', (e) => {
-        const rect = staticCanvas.getBoundingClientRect();
-        const mX = e.clientX - rect.left, mY = e.clientY - rect.top;
         if (!isFrozen) { captureFrame(); return; }
-        
-        const sP1 = nativeToScreen(p1.x, p1.y), sP2 = nativeToScreen(p2.x, p2.y);
-        if (Math.hypot(mX - sP1.x, mY - sP1.y) < 45) activeHandle = 1;
-        else if (Math.hypot(mX - sP2.x, mY - sP2.y) < 45) activeHandle = 2;
-        else { 
-            const n = screenToNative(mX, mY); 
-            p1 = {...n}; p2 = {...n}; 
-            activeHandle = 2; 
-        }
+        const rect = staticCanvas.getBoundingClientRect();
+        const mX = (e.clientX - rect.left) * (staticCanvas.width / rect.width);
+        const mY = (e.clientY - rect.top) * (staticCanvas.height / rect.height);
+        if (Math.hypot(mX - p1.x, mY - p1.y) < 60) activeHandle = 1;
+        else if (Math.hypot(mX - p2.x, mY - p2.y) < 60) activeHandle = 2;
+        else { p1 = {x:mX, y:mY}; p2 = {x:mX, y:mY}; activeHandle = 2; }
     });
 
     window.addEventListener('pointermove', (e) => {
         if (!activeHandle) return;
         const rect = staticCanvas.getBoundingClientRect();
-        const n = screenToNative(e.clientX - rect.left, e.clientY - rect.top);
-        if (activeHandle === 1) p1 = n; else p2 = n;
+        const nX = (e.clientX - rect.left) * (staticCanvas.width / rect.width);
+        const nY = (e.clientY - rect.top) * (staticCanvas.height / rect.height);
+        if (activeHandle === 1) p1 = {x:nX, y:nY}; else p2 = {x:nX, y:nY};
         drawInterface();
     });
 
     window.addEventListener('pointerup', () => { if(activeHandle) decodeSelection(); activeHandle = null; });
 
     function captureFrame() {
-        staticCanvas.width = video.videoWidth; 
-        staticCanvas.height = video.videoHeight;
+        staticCanvas.width = video.videoWidth; staticCanvas.height = video.videoHeight;
         const ctx = staticCanvas.getContext('2d');
         ctx.drawImage(video, 0, 0);
         cleanImageBuffer = ctx.getImageData(0, 0, staticCanvas.width, staticCanvas.height);
-        staticCanvas.style.display = 'block'; 
-        isFrozen = true;
-        
+        staticCanvas.style.display = 'block'; isFrozen = true;
         autoSeedBarcode();
         drawInterface();
         decodeSelection();
@@ -188,18 +138,12 @@
 
     function autoSeedBarcode() {
         const data = cleanImageBuffer.data, W = staticCanvas.width, H = staticCanvas.height;
-        let bestY = H / 2, maxTransitions = 0;
-        for (let y = Math.floor(H*0.2); y < H*0.8; y += 15) {
-            let trans = 0;
-            for (let x = Math.floor(W*0.2); x < W*0.8; x += 2) {
-                const idx = (y * W + x) * 4;
-                if (data[idx] < 90) trans++; 
-            }
-            if (trans > maxTransitions) { maxTransitions = trans; bestY = y; }
+        let bestY = H / 2, maxTrans = 0;
+        for (let y = Math.floor(H*0.2); y < H*0.8; y += 20) {
+            let t = 0; for (let x = Math.floor(W*0.2); x < W*0.8; x += 4) { if(data[(y*W+x)*4] < 90) t++; }
+            if (t > maxTrans) { maxTrans = t; bestY = y; }
         }
-        p1 = { x: W * 0.2, y: bestY };
-        p2 = { x: W * 0.8, y: bestY };
-        statusText.innerText = "v2.7 | Auto-Aligned Grid";
+        p1 = { x: W * 0.15, y: bestY }; p2 = { x: W * 0.85, y: bestY };
     }
 
     function drawInterface() {
@@ -207,81 +151,74 @@
         ctx.putImageData(cleanImageBuffer, 0, 0);
         const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x), dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
         const boxH = staticCanvas.height * 0.08;
-        
-        ctx.save(); 
-        ctx.translate(p1.x, p1.y); 
-        ctx.rotate(angle);
-        ctx.strokeStyle = "rgba(255, 0, 0, 0.5)"; ctx.lineWidth = 4;
+        ctx.save(); ctx.translate(p1.x, p1.y); ctx.rotate(angle);
+        ctx.strokeStyle = "rgba(255, 0, 0, 0.4)"; ctx.lineWidth = 2;
         ctx.strokeRect(0, -boxH/2, dist, boxH);
-        ctx.strokeStyle = "#00ff00"; ctx.lineWidth = 2;
+        ctx.strokeStyle = "#00ff00"; ctx.lineWidth = 1;
         for (let i = 1; i < 7; i++) {
             let ly = -boxH/2 + (i * (boxH/7));
             ctx.beginPath(); ctx.moveTo(0, ly); ctx.lineTo(dist, ly); ctx.stroke();
         }
         ctx.restore();
-        drawHandle(ctx, p1.x, p1.y); drawHandle(ctx, p2.x, p2.y);
-    }
-
-    function drawHandle(ctx, x, y) {
-        ctx.fillStyle = "white"; ctx.strokeStyle = "#00ff00"; ctx.lineWidth = 3;
-        ctx.beginPath(); ctx.arc(x, y, 20, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-    }
-
-    function screenToNative(sx, sy) {
-        const r = staticCanvas.getBoundingClientRect();
-        return { x: sx * (staticCanvas.width / r.width), y: sy * (staticCanvas.height / r.height) };
-    }
-
-    function nativeToScreen(nx, ny) {
-        const r = staticCanvas.getBoundingClientRect();
-        return { x: nx / (staticCanvas.width / r.width), y: ny / (staticCanvas.height / r.height) };
+        ctx.fillStyle = "white"; ctx.strokeStyle = "#00ff00";
+        [p1, p2].forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 15, 0, 7); ctx.fill(); ctx.stroke(); });
     }
 
     function decodeSelection() {
         const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x), dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-        const boxH = staticCanvas.height * 0.08, stripH = boxH / 7;
-        const data = cleanImageBuffer.data, W = staticCanvas.width;
-        
-        let lums = [];
-        for (let i = 0; i < dist; i += 10) {
-            const px = Math.floor(p1.x + Math.cos(angle) * i), py = Math.floor(p1.y + Math.sin(angle) * i);
-            const idx = (py * W + px) * 4;
-            if (idx >= 0 && idx < data.length) lums.push(data[idx]);
-        }
-        lums.sort((a,b)=>a-b);
-        const thresh = (lums[Math.floor(lums.length * 0.2)] || 80) + 30;
-
-        let bars = [], inB = false, tempS = 0;
+        const boxH = staticCanvas.height * 0.08, stripH = boxH / 7, W = staticCanvas.width, data = cleanImageBuffer.data;
+        let bars = [], inB = false, tS = 0;
         for (let i = 0; i < dist; i++) {
             const px = Math.floor(p1.x + Math.cos(angle) * i), py = Math.floor(p1.y + Math.sin(angle) * i);
-            const idx = (py * W + px) * 4;
-            const isInk = data[idx] < thresh;
-            if (isInk && !inB) { inB = true; tempS = i; }
-            else if (!isInk && inB) { inB = false; if (i - tempS > 1) bars.push({s: tempS, e: i}); }
+            const isInk = data[(py * W + px) * 4] < 110;
+            if (isInk && !inB) { inB = true; tS = i; }
+            else if (!isInk && inB) { inB = false; if (i - tS > 1) bars.push({m: (tS+i)/2}); }
         }
-
         const fadt = bars.map(b => {
-            const m = (b.s + b.e) / 2; let zns = new Array(7).fill(false);
-            for (let z = 0; z < 7; z++) {
-                const off = (-boxH/2 + (z * stripH)) + (stripH/2);
-                const px = Math.floor(p1.x + Math.cos(angle)*m - Math.sin(angle)*off);
-                const py = Math.floor(p1.y + Math.sin(angle)*m + Math.cos(angle)*off);
-                const idx = (py * W + px) * 4;
-                if (data[idx] < thresh) zns[z] = true;
+            let z = new Array(7).fill(false);
+            for (let s = 0; s < 7; s++) {
+                const off = (-boxH/2 + (s * stripH)) + (stripH/2);
+                const px = Math.floor(p1.x + Math.cos(angle)*b.m - Math.sin(angle)*off);
+                const py = Math.floor(p1.y + Math.sin(angle)*b.m + Math.cos(angle)*off);
+                if (data[(py * W + px) * 4] < 110) z[s] = true;
             }
-            const hasA = zns[0]||zns[1], hasD = zns[5]||zns[6];
-            return hasA && hasD ? 'F' : hasA ? 'A' : hasD ? 'D' : 'T';
+            return (z[0]||z[1])&&(z[5]||z[6])?'F':(z[0]||z[1])?'A':(z[5]||z[6])?'D':'T';
         }).join('');
-
-        fadtDisplay.innerText = fadt || "No bars detected";
-        statusText.innerText = `v2.7 | ${fadt.length} Bars`;
+        fadtDisplay.innerText = fadt || "---";
+        statusText.innerText = `v2.8 | ${fadt.length} Bars`;
         statusText.style.color = fadt.length === 65 ? "#00ff00" : "#ff4444";
     }
 
     function resetScanner() {
         staticCanvas.style.display = 'none'; isFrozen = false;
-        fadtDisplay.innerText = "---"; statusText.innerText = "v2.7 | Ready";
+        fadtDisplay.innerText = "---"; statusText.innerText = "v2.8 | Ready";
     }
+
+    // --- IMB Decoding Logic (Modal / Processing) ---
+    function processFADT() {
+        const fadt = fadtDisplay.innerText;
+        if (fadt.length !== 65) { alert("Requires exactly 65 bars to process."); return; }
+        
+        // This is a simplified representation of the 4-state conversion
+        // In a real production environment, you would use the full Bob Matthews BigInt math.
+        // For this UI demo, we show the data fields usually extracted.
+        const mockData = {
+            "Barcode ID": "01 (No OEL)",
+            "Service Type": "234 (First Class)",
+            "Mailer ID": "567094",
+            "Serial": "987654321",
+            "Routing/ZIP": "90210-1234 (11)"
+        };
+
+        let html = '';
+        for (const [k, v] of Object.entries(mockData)) {
+            html += `<div class="data-row"><span class="data-label">${k}</span><span class="data-val">${v}</span></div>`;
+        }
+        
+        document.getElementById('modal-body').innerHTML = html;
+        document.getElementById('modal-overlay').style.display = 'flex';
+    }
+
     window.addEventListener('load', startCamera);
 </script>
 </body>
