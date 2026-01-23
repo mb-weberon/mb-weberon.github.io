@@ -6,7 +6,7 @@
     <link rel="manifest" href="manifest.json">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>IMB Scanner v4.3.8</title>
+    <title>IMB Scanner v4.3.9</title>
     <style>
         :root {
             --accent: #00ff00;
@@ -112,12 +112,6 @@
             margin-bottom: 10px;
         }
 
-        .card-time {
-            font-size: 0.75rem;
-            color: #888;
-            font-family: monospace;
-        }
-
         .data-grid {
             display: flex;
             flex-wrap: wrap;
@@ -196,21 +190,12 @@
             margin-top: 10px;
         }
 
-        .clear-btn {
-            background: #300;
-            color: #f55;
-            border: 1px solid #622;
-            padding: 5px 10px;
-            border-radius: 4px;
-            font-size: 0.7rem;
-            font-weight: bold;
-        }
-
         #results-area {
             background: #000;
             padding: 0 15px 15px 15px;
             border-top: 2px solid #222;
             z-index: 500;
+            position: relative;
         }
 
         #fadt-text {
@@ -227,11 +212,26 @@
             min-height: 40px;
         }
 
+        .footer-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 8px;
+        }
+
+        .refresh-btn {
+            background: #222;
+            color: #888;
+            border: 1px solid #444;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: bold;
+        }
+
         .version-info {
             font-size: 12px;
             color: var(--accent);
-            text-align: right;
-            margin-top: 6px;
             font-weight: 900;
             letter-spacing: 1px;
         }
@@ -258,7 +258,8 @@
             </div>
             <div class="history-header">
                 <span style="font-weight:900; color:#fff;">LOG (<span id="history-count">0</span>)</span>
-                <button class="clear-btn" onclick="clearAllHistory()">CLEAR ALL</button>
+                <button class="close-btn" style="width:auto; margin:0; padding:5px 10px;"
+                    onclick="clearAllHistory()">CLEAR</button>
             </div>
             <div id="history-list"></div>
         </div>
@@ -269,7 +270,10 @@
             <div class="ui-handle"></div>
         </div>
         <div id="fadt-text">READY</div>
-        <div class="version-info">BUILD v4.3.8</div>
+        <div class="footer-row">
+            <button class="refresh-btn" onclick="location.reload()">RELOAD APP</button>
+            <div class="version-info">BUILD v4.3.9</div>
+        </div>
     </div>
 
     <script>
@@ -302,16 +306,21 @@
 
         // --- MAIN ---
         const v = document.getElementById('video'), ov = document.getElementById('overlay-canvas'), pc = document.getElementById('proc-canvas'), fd = document.getElementById('fadt-text'), hp = document.getElementById('history-panel'), flash = document.getElementById('flash-overlay');
-        let isModalActive = false, h1 = 0, h2 = 0, activeHandle = null, scanHistory = [];
+        let isModalActive = false, h1 = 0, h2 = 0, activeHandle = null, scanHistory = [], stream = null;
 
         function sync() { localStorage.setItem('imb_history_v1', JSON.stringify(scanHistory)); }
         try { const s = localStorage.getItem('imb_history_v1'); if (s) scanHistory = JSON.parse(s); } catch (e) { }
 
+        async function stopCamera() {
+            if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+            v.srcObject = null;
+        }
+
         async function start() {
+            await stopCamera();
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1280 } } });
+                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1280 } } });
                 v.srcObject = stream;
-                v.setAttribute('autoplay', ''); v.setAttribute('muted', ''); v.setAttribute('playsinline', '');
                 v.onloadedmetadata = () => {
                     v.play();
                     ov.width = pc.width = v.videoWidth;
@@ -321,6 +330,11 @@
                 };
             } catch (e) { fd.innerText = "CAMERA FAIL: " + e.message; }
         }
+
+        // PWA RESUME FIX
+        document.addEventListener("visibilitychange", () => {
+            if (document.visibilityState === "visible") { start(); }
+        });
 
         function scanLoop() {
             if (!isModalActive && v.readyState === v.HAVE_ENOUGH_DATA) {
@@ -374,9 +388,9 @@
                 let grid = document.createElement('div'); grid.className = "data-grid";
                 const f = [["ID", item.res.barcode_id], ["Type", item.res.service_type], ["MID", item.res.mailer_id], ["Serial", item.res.serial_num], ["ZIP", item.res.zip], ["+4", item.res.plus4], ["DP", item.res.delivery_pt]];
                 f.forEach(([l, v]) => { if (v) grid.innerHTML += `<div class="data-row"><span class="data-label">${l}</span><span class="data-val">${v}</span></div>` });
-                card.innerHTML = `<div class="card-top"><span class="card-time">${item.time}</span></div>`;
+                card.innerHTML = `<div class="card-top"><span style="font-size:0.75rem; color:#888; font-family:monospace;">${item.time}</span></div>`;
                 card.appendChild(grid);
-                card.innerHTML += `<div class="card-footer-daft">${item.fadt}</div>`;
+                card.innerHTML += `<div style="font-family:monospace; font-size:0.6rem; color:#444; word-break:break-all; padding-top:6px; margin-top:6px; border-top:1px solid #222;">${item.fadt}</div>`;
                 list.appendChild(card);
             });
             hp.style.display = 'flex';
@@ -386,9 +400,7 @@
         function clearAllHistory() { if (confirm("Clear logs?")) { scanHistory = []; sync(); openHistory(); } }
         function resumeScan() { isModalActive = false; document.getElementById('modal-overlay').style.display = 'none'; }
 
-        // Close Handle ONLY (Swipe removed)
         document.getElementById('history-close-handle').onclick = closeHistory;
-
         ov.addEventListener('pointerdown', e => { const r = ov.getBoundingClientRect(), mx = (e.clientX - r.left) * (ov.width / r.width); if (Math.abs(mx - h1) < 80) activeHandle = 1; else if (Math.abs(mx - h2) < 80) activeHandle = 2; });
         window.addEventListener('pointermove', e => { if (!activeHandle) return; const r = ov.getBoundingClientRect(), mx = (e.clientX - r.left) * (ov.width / r.width); if (activeHandle === 1) h1 = Math.max(0, Math.min(ov.width, mx)); else h2 = Math.max(0, Math.min(ov.width, mx)); });
         window.addEventListener('pointerup', () => activeHandle = null);
