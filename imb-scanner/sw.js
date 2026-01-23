@@ -1,4 +1,4 @@
-const CACHE_NAME = 'imb-scanner-v4.3.6';
+const CACHE_NAME = 'imb-scanner-v4.3.7';
 const ASSETS = [
   './',
   './index.html',
