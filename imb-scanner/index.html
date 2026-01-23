@@ -1,73 +1,199 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <link rel="manifest" href="manifest.json">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>IMB Scanner v4.3</title>
+    <title>IMB Scanner v4.3.1</title>
     <style>
-        :root { --accent: #00ff00; }
-        body { 
-            font-family: system-ui, sans-serif; margin: 0; background: #000; 
-            color: var(--accent); overflow: hidden; height: 100dvh; 
-            display: flex; flex-direction: column; 
-        }
-        #camera-container { position: relative; flex: 1; overflow: hidden; background: #111; }
-        video, #overlay-canvas { width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; }
-        #proc-canvas { display: none; }
-
-        /* Modal Styles */
-        .modal-overlay { 
-            display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
-            background: rgba(0,0,0,0.85); z-index: 1000; align-items: center; justify-content: center; 
-        }
-        .modal-content { 
-            background: #1a1a1a; width: 90%; padding: 15px; border-radius: 12px; 
-            border: 1px solid var(--accent); color: white; display: flex; flex-direction: column;
+        :root {
+            --accent: #00ff00;
         }
 
-        /* Result Card Styles (used in Modal and History) */
-        .history-card { border-bottom: 2px solid #333; padding-bottom: 15px; margin-bottom: 20px; }
-        .data-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
-        .data-row { flex: 1 1 120px; background: #222; padding: 8px; border-radius: 6px; border: 1px solid #333; }
-        .data-label { color: #aaa; font-size: 0.6rem; text-transform: uppercase; display: block; }
-        .data-val { color: var(--accent); font-family: monospace; font-weight: bold; font-size: 1rem; }
-        .card-footer-daft { font-family: monospace; font-size: 0.65rem; color: #777; word-break: break-all; text-align: center; border-top: 1px solid #333; padding-top: 8px; }
+        body {
+            font-family: system-ui, sans-serif;
+            margin: 0;
+            background: #000;
+            color: var(--accent);
+            overflow: hidden;
+            height: 100dvh;
+            display: flex;
+            flex-direction: column;
+        }
 
-        .close-btn { background: var(--accent); color: #000; padding: 15px; border: none; border-radius: 8px; font-weight: 900; width: 100%; cursor: pointer; }
+        #camera-container {
+            position: relative;
+            flex: 1;
+            overflow: hidden;
+            background: #111;
+        }
 
-        /* History Panel */
+        video,
+        #overlay-canvas {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+
+        #proc-canvas {
+            display: none;
+        }
+
+        /* Modal & History Styles */
+        .modal-overlay {
+            display: none;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-content {
+            background: #1a1a1a;
+            width: 90%;
+            padding: 15px;
+            border-radius: 12px;
+            border: 1px solid var(--accent);
+            color: white;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .history-card {
+            border-bottom: 2px solid #333;
+            padding-bottom: 15px;
+            margin-bottom: 20px;
+        }
+
+        .data-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .data-row {
+            flex: 1 1 120px;
+            background: #222;
+            padding: 8px;
+            border-radius: 6px;
+            border: 1px solid #333;
+        }
+
+        .data-label {
+            color: #aaa;
+            font-size: 0.6rem;
+            text-transform: uppercase;
+            display: block;
+        }
+
+        .data-val {
+            color: var(--accent);
+            font-family: monospace;
+            font-weight: bold;
+            font-size: 0.95rem;
+        }
+
+        .card-footer-daft {
+            font-family: monospace;
+            font-size: 0.65rem;
+            color: #777;
+            word-break: break-all;
+            text-align: center;
+            border-top: 1px solid #333;
+            padding-top: 8px;
+            margin-top: 8px;
+        }
+
+        .close-btn {
+            background: var(--accent);
+            color: #000;
+            padding: 15px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 900;
+            width: 100%;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+
         #history-panel {
-            display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: #000; z-index: 2000; flex-direction: column; padding: 20px; box-sizing: border-box;
+            display: none;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            z-index: 2000;
+            flex-direction: column;
+            padding: 20px;
+            box-sizing: border-box;
         }
-        #history-list { flex: 1; overflow-y: auto; padding-right: 5px; }
 
-        /* Bottom UI */
-        #results-area { 
-            background: #000; padding: 10px 15px; border-top: 1px solid #222; z-index: 500;
-            padding-bottom: calc(10px + env(safe-area-inset-bottom)); 
+        #history-list {
+            flex: 1;
+            overflow-y: auto;
         }
-        #history-slider { 
-            width: 40px; height: 4px; background: #444; border-radius: 2px; 
-            margin: 0 auto 10px auto; cursor: pointer;
+
+        #results-area {
+            background: #000;
+            padding: 10px 15px;
+            border-top: 1px solid #222;
+            z-index: 500;
+            padding-bottom: calc(10px + env(safe-area-inset-bottom));
         }
-        #history-slider:active { background: var(--accent); }
-        .version-info { font-size: 10px; color: #444; text-align: right; margin-bottom: 4px; font-weight: bold; }
-        #fadt-text { 
-            font-family: monospace; font-size: 14px; color: #fff; background: #111; 
-            padding: 12px; border-radius: 6px; text-align: center; border: 1px solid #333; 
-            width: 100%; box-sizing: border-box; overflow-x: auto; white-space: nowrap;
+
+        #history-slider {
+            width: 50px;
+            height: 6px;
+            background: #333;
+            border-radius: 3px;
+            margin: 0 auto 12px auto;
+            cursor: pointer;
+        }
+
+        .version-info {
+            font-size: 9px;
+            color: #444;
+            text-align: right;
+            margin-bottom: 4px;
+            font-weight: bold;
+        }
+
+        #fadt-text {
+            font-family: monospace;
+            font-size: 13px;
+            color: #fff;
+            background: #111;
+            padding: 12px;
+            border-radius: 6px;
+            text-align: center;
+            border: 1px solid #333;
+            width: 100%;
+            box-sizing: border-box;
+            overflow-x: auto;
+            white-space: nowrap;
         }
     </style>
 </head>
+
 <body>
     <div id="camera-container">
         <video id="video" autoplay playsinline muted></video>
         <canvas id="overlay-canvas"></canvas>
         <canvas id="proc-canvas"></canvas>
-        
+
         <div id="modal-overlay" class="modal-overlay">
             <div class="modal-content">
                 <div id="modal-body" class="data-grid"></div>
@@ -76,7 +202,7 @@
         </div>
 
         <div id="history-panel">
-            <h2 style="margin-top:0">SCAN HISTORY</h2>
+            <h3 style="color:var(--accent); margin-bottom:20px;">SCAN HISTORY</h3>
             <div id="history-list"></div>
             <button class="close-btn" onclick="closeHistory()">BACK TO SCANNER</button>
         </div>
@@ -84,116 +210,119 @@
 
     <div id="results-area">
         <div id="history-slider" onclick="openHistory()"></div>
-        <div class="version-info">IMB SCANNER v4.3</div>
+        <div class="version-info">IMB SCANNER v4.3.1</div>
         <div id="fadt-text" onclick="copyFADT()">---</div>
     </div>
 
-<script>
-    // --- DECODER CORE ---
-    var desc_char=[7,1,9,5,8,0,2,4,6,3,5,8,9,7,3,0,6,1,7,4,6,8,9,2,5,1,7,5,4,3,8,7,6,0,2,5,4,9,3,0,1,6,8,2,0,4,5,9,6,7,5,2,6,3,8,5,1,9,8,7,4,0,2,6,3],
-        desc_bit=[4,1024,4096,32,512,2,32,16,8,512,2048,32,1024,2,64,8,16,2,1024,1,4,2048,256,64,2,4096,8,256,64,16,16,2048,1,64,2,512,2048,32,8,128,8,1024,128,2048,256,4,1024,8,32,256,1,8,4096,2048,256,16,32,2,8,1,128,4096,512,256,1024],
-        asc_char=[4,0,2,6,3,5,1,9,8,7,1,2,0,6,4,8,2,9,5,3,0,1,3,7,4,6,8,9,2,0,5,1,9,4,3,8,6,7,1,2,4,3,9,5,7,8,3,0,2,1,4,0,9,1,7,0,2,4,6,3,7,1,9,5,8],
-        asc_bit=[8,1,256,2048,2,4096,256,2048,1024,64,16,4096,4,128,512,64,128,512,4,256,16,1,4096,128,1024,512,1,128,1024,32,128,512,64,256,4,4096,2,16,4,1,2,32,16,64,4096,2,1,512,16,128,32,1024,4,64,512,2048,4,4096,64,128,32,2048,1,8,4];
-    var decode_table=new Array(8192),fcs_table=new Array(8192);
-    function build_codewords(bits,low,hi){for(var fwd=0;fwd<8192;fwd++){var pop=0,rev=0,tmp=fwd;for(var bit=0;bit<13;bit++){pop+=tmp&1;rev=(rev<<1)|(tmp&1);tmp>>=1}if(pop!=bits)continue;if(fwd==rev){decode_table[fwd]=hi;fcs_table[fwd]=0;decode_table[fwd^8191]=hi;fcs_table[fwd^8191]=1;hi--}else if(fwd<rev){decode_table[fwd]=low;fcs_table[fwd]=0;decode_table[fwd^8191]=low;fcs_table[fwd^8191]=1;low++;decode_table[rev]=low;fcs_table[rev]=0;decode_table[rev^8191]=low;fcs_table[rev^8191]=1;low++}}}
-    build_codewords(5,0,1286);build_codewords(2,1287,1364);
-    function muladd(b,m,a){for(var n=b.length-1;n>=0;n--){var x=b[n]*m+a;a=x>>8;b[n]=x&0xff}}
-    function divmod(b,d){var m=0;for(var n=0;n<b.length;n++){var x=b[n]+(m<<8);b[n]=Math.floor(x/d);m=x-b[n]*d}return m}
-    function iszero(b){for(var n=b.length-1;n>=0;n--)if(b[n]!=0)return false;return true}
-    function calcfcs(b){var f=0x5a8;for(var n=0;n<b.length;n++){f^=b[n]<<3;for(var i=0;i<8;i++){f<<=1;if(f&0x800)f^=0xf35}}return f&0x7ff}
-    function decode_imb_string(s){
-        if(s.length!==65)return{error:"Short"};
-        var chars=[0,0,0,0,0,0,0,0,0,0];
-        for(var n=0;n<65;n++){if(s[n]=='D'||s[n]=='F')chars[desc_char[n]]|=desc_bit[n];if(s[n]=='A'||s[n]=='F')chars[asc_char[n]]|=asc_bit[n]}
-        var cw=new Array(10),fcs=0;
-        for(n=0;n<10;n++){cw[n]=decode_table[chars[n]];if(cw[n]===undefined)return{error:"Pattern"};fcs|=fcs_table[chars[n]]<<n}
-        if(cw[9]&1)return{error:"Flip"};cw[9]>>=1;if(cw[0]>658){cw[0]-=659;fcs|=1<<10}
-        var bytes=[0,0,0,0,0,0,0,0,0,0,0,0,cw[0]];
-        for(n=1;n<9;n++)muladd(bytes,1365,cw[n]);muladd(bytes,636,cw[9]);
-        if(calcfcs(bytes)!=fcs)return{error:"CRC"};
-        var track=new Array(20);for(n=19;n>=2;n--)track[n]=divmod(bytes,10);track[1]=divmod(bytes,5);track[0]=divmod(bytes,10);
-        var route=new Array(11),pos=11;for(var sz=5;sz>=2;sz--){if(sz==3)continue;if(iszero(bytes))break;var addV=-1;for(var n2=bytes.length-1;n2>=0&&addV!=0;n2--){var x=bytes[n2]+addV;addV=x>>8;bytes[n2]=x&0xff}for(n=0;n<sz;n++)route[--pos]=divmod(bytes,10)}
-        return{barcode_id:track.slice(0,2).join(''),service_type:track.slice(2,5).join(''),mailer_id:(track[5]==9?track.slice(5,14):track.slice(5,11)).join(''),serial_num:(track[5]==9?track.slice(14,20):track.slice(11,20)).join(''),zip:pos<=6?route.slice(pos,pos+5).join(''):"",plus4:pos<=2?route.slice(pos+5,pos+9).join(''):"",delivery_pt:pos==0?route.slice(9,11).join(''):""};
-    }
-
-    // --- SCANNER UI LOGIC ---
-    const v=document.getElementById('video'),ov=document.getElementById('overlay-canvas'),pc=document.getElementById('proc-canvas'),fd=document.getElementById('fadt-text');
-    let isModalActive=false, h1=0, h2=0, activeHandle=null, scanHistory=[];
-
-    async function start(){
-        const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment",width:{ideal:1280}}});
-        v.srcObject=stream;
-        v.onloadedmetadata=()=>{ ov.width=pc.width=v.videoWidth; ov.height=pc.height=v.videoHeight; h1=ov.width*0.1; h2=ov.width*0.9; requestAnimationFrame(scanLoop); };
-    }
-
-    function scanLoop(){
-        if(!isModalActive && v.readyState===v.HAVE_ENOUGH_DATA){
-            const ctx=pc.getContext('2d'); ctx.drawImage(v,0,0);
-            const d=ctx.getImageData(0,0,pc.width,pc.height).data, W=pc.width, cy=pc.height/2;
-            const bH=pc.height*0.08, sH=bH/7; let bars=[], inB=false, startX=0;
-            const left=Math.min(h1,h2), right=Math.max(h1,h2);
-            for(let x=left;x<right;x++){ if(d[(Math.floor(cy)*W+Math.floor(x))*4]<115){ if(!inB){inB=true;startX=x} } else if(inB){inB=false;bars.push({m:(startX+x)/2})} }
-            const fadt=bars.map(b=>{
-                let z=new Array(7).fill(false);
-                for(let s=0;s<7;s++){ let py=Math.floor(cy+((-bH/2+(s*sH))+(sH/2))); if(d[(py*W+Math.floor(b.m))*4]<115)z[s]true }
-                const A=z[0]||z[1], D=z[5]||z[6]; return A&&D?'F':A?'A':D?'D':'T';
-            }).join('');
-            if(fadt){ fd.innerText=fadt; if(fadt.length===65){ fd.style.color="var(--accent)"; const res=decode_imb_string(fadt); if(!res.error)showResult(res, fadt); } else fd.style.color="#fff"; }
+    <script>
+        // --- DECODER CORE (Unchanged, Fixed syntax) ---
+        var desc_char = [7, 1, 9, 5, 8, 0, 2, 4, 6, 3, 5, 8, 9, 7, 3, 0, 6, 1, 7, 4, 6, 8, 9, 2, 5, 1, 7, 5, 4, 3, 8, 7, 6, 0, 2, 5, 4, 9, 3, 0, 1, 6, 8, 2, 0, 4, 5, 9, 6, 7, 5, 2, 6, 3, 8, 5, 1, 9, 8, 7, 4, 0, 2, 6, 3],
+            desc_bit = [4, 1024, 4096, 32, 512, 2, 32, 16, 8, 512, 2048, 32, 1024, 2, 64, 8, 16, 2, 1024, 1, 4, 2048, 256, 64, 2, 4096, 8, 256, 64, 16, 16, 2048, 1, 64, 2, 512, 2048, 32, 8, 128, 8, 1024, 128, 2048, 256, 4, 1024, 8, 32, 256, 1, 8, 4096, 2048, 256, 16, 32, 2, 8, 1, 128, 4096, 512, 256, 1024],
+            asc_char = [4, 0, 2, 6, 3, 5, 1, 9, 8, 7, 1, 2, 0, 6, 4, 8, 2, 9, 5, 3, 0, 1, 3, 7, 4, 6, 8, 9, 2, 0, 5, 1, 9, 4, 3, 8, 6, 7, 1, 2, 4, 3, 9, 5, 7, 8, 3, 0, 2, 1, 4, 0, 9, 1, 7, 0, 2, 4, 6, 3, 7, 1, 9, 5, 8],
+            asc_bit = [8, 1, 256, 2048, 2, 4096, 256, 2048, 1024, 64, 16, 4096, 4, 128, 512, 64, 128, 512, 4, 256, 16, 1, 4096, 128, 1024, 512, 1, 128, 1024, 32, 128, 512, 64, 256, 4, 4096, 2, 16, 4, 1, 2, 32, 16, 64, 4096, 2, 1, 512, 16, 128, 32, 1024, 4, 64, 512, 2048, 4, 4096, 64, 128, 32, 2048, 1, 8, 4];
+        var decode_table = new Array(8192), fcs_table = new Array(8192);
+        function build_codewords(bits, low, hi) { for (var fwd = 0; fwd < 8192; fwd++) { var pop = 0, rev = 0, tmp = fwd; for (var bit = 0; bit < 13; bit++) { pop += tmp & 1; rev = (rev << 1) | (tmp & 1); tmp >>= 1 } if (pop != bits) continue; if (fwd == rev) { decode_table[fwd] = hi; fcs_table[fwd] = 0; decode_table[fwd ^ 8191] = hi; fcs_table[fwd ^ 8191] = 1; hi-- } else if (fwd < rev) { decode_table[fwd] = low; fcs_table[fwd] = 0; decode_table[fwd ^ 8191] = low; fcs_table[fwd ^ 8191] = 1; low++; decode_table[rev] = low; fcs_table[rev] = 0; decode_table[rev ^ 8191] = low; fcs_table[rev ^ 8191] = 1; low++ } } }
+        build_codewords(5, 0, 1286); build_codewords(2, 1287, 1364);
+        function muladd(b, m, a) { for (var n = b.length - 1; n >= 0; n--) { var x = b[n] * m + a; a = x >> 8; b[n] = x & 0xff } }
+        function divmod(b, d) { var m = 0; for (var n = 0; n < b.length; n++) { var x = b[n] + (m << 8); b[n] = Math.floor(x / d); m = x - b[n] * d } return m }
+        function iszero(b) { for (var n = b.length - 1; n >= 0; n--)if (b[n] != 0) return false; return true }
+        function calcfcs(b) { var f = 0x5a8; for (var n = 0; n < b.length; n++) { f ^= b[n] << 3; for (var i = 0; i < 8; i++) { f <<= 1; if (f & 0x800) f ^= 0xf35 } } return f & 0x7ff }
+        function decode_imb_string(s) {
+            if (s.length !== 65) return { error: "Short" };
+            var chars = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+            for (var n = 0; n < 65; n++) { if (s[n] == 'D' || s[n] == 'F') chars[desc_char[n]] |= desc_bit[n]; if (s[n] == 'A' || s[n] == 'F') chars[asc_char[n]] |= asc_bit[n] }
+            var cw = new Array(10), fcs = 0;
+            for (n = 0; n < 10; n++) { cw[n] = decode_table[chars[n]]; if (cw[n] === undefined) return { error: "Pattern" }; fcs |= fcs_table[chars[n]] << n }
+            if (cw[9] & 1) return { error: "Flip" }; cw[9] >>= 1; if (cw[0] > 658) { cw[0] -= 659; fcs |= 1 << 10 }
+            var bytes = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, cw[0]];
+            for (n = 1; n < 9; n++)muladd(bytes, 1365, cw[n]); muladd(bytes, 636, cw[9]);
+            if (calcfcs(bytes) != fcs) return { error: "CRC" };
+            var track = new Array(20); for (n = 19; n >= 2; n--)track[n] = divmod(bytes, 10); track[1] = divmod(bytes, 5); track[0] = divmod(bytes, 10);
+            var route = new Array(11), pos = 11; for (var sz = 5; sz >= 2; sz--) { if (sz == 3) continue; if (iszero(bytes)) break; var addV = -1; for (var n2 = bytes.length - 1; n2 >= 0 && addV != 0; n2--) { var x = bytes[n2] + addV; addV = x >> 8; bytes[n2] = x & 0xff } for (n = 0; n < sz; n++)route[--pos] = divmod(bytes, 10) }
+            return { barcode_id: track.slice(0, 2).join(''), service_type: track.slice(2, 5).join(''), mailer_id: (track[5] == 9 ? track.slice(5, 14) : track.slice(5, 11)).join(''), serial_num: (track[5] == 9 ? track.slice(14, 20) : track.slice(11, 20)).join(''), zip: pos <= 6 ? route.slice(pos, pos + 5).join('') : "", plus4: pos <= 2 ? route.slice(pos + 5, pos + 9).join('') : "", delivery_pt: pos == 0 ? route.slice(9, 11).join('') : "" };
         }
-        drawOverlay(); requestAnimationFrame(scanLoop);
-    }
 
-    function drawOverlay(){
-        const ctx=ov.getContext('2d'), cy=ov.height/2; ctx.clearRect(0,0,ov.width,ov.height);
-        ctx.strokeStyle="rgba(0,255,0,0.4)"; ctx.lineWidth=4; ctx.strokeRect(ov.width*0.05,ov.height*0.35,ov.width*0.9,ov.height*0.3);
-        ctx.strokeStyle="red"; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(0,cy); ctx.lineTo(ov.width,cy); ctx.stroke();
-        [h1,h2].forEach(h=>{ ctx.fillStyle="white"; ctx.beginPath(); ctx.arc(h,cy,35,0,7); ctx.fill(); ctx.strokeStyle="white"; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(h,cy-50); ctx.lineTo(h,cy+50); ctx.stroke(); });
-    }
+        // --- SCANNER UI LOGIC ---
+        const v = document.getElementById('video'), ov = document.getElementById('overlay-canvas'), pc = document.getElementById('proc-canvas'), fd = document.getElementById('fadt-text');
+        let isModalActive = false, h1 = 0, h2 = 0, activeHandle = null, scanHistory = [];
 
-    function showResult(res, fadt){
-        if(scanHistory.length > 0 && scanHistory[0].fadt === fadt) return; // Ignore duplicate consecutive scans
-        isModalActive=true;
-        const resultObj = { res, fadt, time: new Date().toLocaleTimeString() };
-        scanHistory.unshift(resultObj); // Add to history
-        
-        let html='';
-        const fields=[["Barcode ID",res.barcode_id],["Service Type",res.service_type],["Mailer ID",res.mailer_id],["Serial Num",res.serial_num],["ZIP Code",res.zip],["+4 Add-on",res.plus4],["Delivery Pt",res.delivery_pt]];
-        fields.forEach(([l,val])=>{if(val)html+=`<div class="data-row"><span class="data-label">${l}</span><span class="data-val">${val}</span></div>`});
-        
-        document.getElementById('modal-body').innerHTML=html;
-        document.getElementById('modal-overlay').style.display='flex';
-    }
+        async function start() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1280 } } });
+                v.srcObject = stream;
+                v.onloadedmetadata = () => {
+                    ov.width = pc.width = v.videoWidth;
+                    ov.height = pc.height = v.videoHeight;
+                    h1 = ov.width * 0.1; h2 = ov.width * 0.9;
+                    requestAnimationFrame(scanLoop);
+                };
+            } catch (e) { fd.innerText = "Camera Access Denied"; }
+        }
 
-    function openHistory() {
-        isModalActive = true;
-        const list = document.getElementById('history-list');
-        list.innerHTML = "";
-        
-        scanHistory.forEach(item => {
-            let card = document.createElement('div');
-            card.className = "history-card";
-            let grid = document.createElement('div');
-            grid.className = "data-grid";
-            
-            const fields=[["ID",item.res.barcode_id],["Type",item.res.service_type],["MID",item.res.mailer_id],["Serial",item.res.serial_num],["ZIP",item.res.zip],["+4",item.res.plus4],["DP",item.res.delivery_pt]];
-            fields.forEach(([l,val])=>{ if(val) grid.innerHTML+=`<div class="data-row"><span class="data-label">${l}</span><span class="data-val">${val}</span></div>` });
-            
-            card.appendChild(grid);
-            card.innerHTML += `<div class="card-footer-daft">${item.fadt}</div>`;
-            list.appendChild(card);
-        });
-        
-        document.getElementById('history-panel').style.display = 'flex';
-    }
+        function scanLoop() {
+            if (!isModalActive && v.readyState === v.HAVE_ENOUGH_DATA) {
+                const ctx = pc.getContext('2d'); ctx.drawImage(v, 0, 0);
+                const d = ctx.getImageData(0, 0, pc.width, pc.height).data, W = pc.width, cy = pc.height / 2;
+                const bH = pc.height * 0.08, sH = bH / 7; let bars = [], inB = false, startX = 0;
+                const left = Math.min(h1, h2), right = Math.max(h1, h2);
+                for (let x = left; x < right; x++) { if (d[(Math.floor(cy) * W + Math.floor(x)) * 4] < 115) { if (!inB) { inB = true; startX = x } } else if (inB) { inB = false; bars.push({ m: (startX + x) / 2 }) } }
+                const fadt = bars.map(b => {
+                    let z = new Array(7).fill(false);
+                    for (let s = 0; s < 7; s++) { let py = Math.floor(cy + ((-bH / 2 + (s * sH)) + (sH / 2))); if (d[(py * W + Math.floor(b.m)) * 4] < 115) z[s] = true; } // Fixed Syntax
+                    const A = z[0] || z[1], D = z[5] || z[6]; return A && D ? 'F' : A ? 'A' : D ? 'D' : 'T';
+                }).join('');
+                if (fadt) { fd.innerText = fadt; if (fadt.length === 65) { fd.style.color = "var(--accent)"; const res = decode_imb_string(fadt); if (!res.error) showResult(res, fadt); } else fd.style.color = "#fff"; }
+            }
+            drawOverlay(); requestAnimationFrame(scanLoop);
+        }
 
-    function closeHistory() { isModalActive = false; document.getElementById('history-panel').style.display = 'none'; }
-    function resumeScan(){ isModalActive=false; document.getElementById('modal-overlay').style.display='none'; }
-    function copyFADT(){ navigator.clipboard.writeText(fd.innerText); }
+        function drawOverlay() {
+            const ctx = ov.getContext('2d'), cy = ov.height / 2; ctx.clearRect(0, 0, ov.width, ov.height);
+            ctx.strokeStyle = "rgba(0,255,0,0.4)"; ctx.lineWidth = 4; ctx.strokeRect(ov.width * 0.05, ov.height * 0.35, ov.width * 0.9, ov.height * 0.3);
+            ctx.strokeStyle = "red"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, cy); ctx.lineTo(ov.width, cy); ctx.stroke();
+            [h1, h2].forEach(h => { ctx.fillStyle = "white"; ctx.beginPath(); ctx.arc(h, cy, 35, 0, 7); ctx.fill(); ctx.strokeStyle = "white"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(h, cy - 50); ctx.lineTo(h, cy + 50); ctx.stroke(); });
+        }
 
-    ov.addEventListener('pointerdown',e=>{ const r=ov.getBoundingClientRect(), mx=(e.clientX-r.left)*(ov.width/r.width); if(Math.abs(mx-h1)<80)activeHandle=1; else if(Math.abs(mx-h2)<80)activeHandle=2; });
-    window.addEventListener('pointermove',e=>{ if(!activeHandle)return; const r=ov.getBoundingClientRect(), mx=(e.clientX-r.left)*(ov.width/r.width); if(activeHandle===1)h1=Math.max(0,Math.min(ov.width,mx)); else h2=Math.max(0,Math.min(ov.width,mx)); });
-    window.addEventListener('pointerup',()=>activeHandle=null);
-    window.onload=start;
-</script>
+        function showResult(res, fadt) {
+            if (scanHistory.length > 0 && scanHistory[0].fadt === fadt) return;
+            isModalActive = true;
+            scanHistory.unshift({ res, fadt });
+
+            let html = '';
+            const fields = [["Barcode ID", res.barcode_id], ["Service Type", res.service_type], ["Mailer ID", res.mailer_id], ["Serial Num", res.serial_num], ["ZIP Code", res.zip], ["+4 Add-on", res.plus4], ["Delivery Pt", res.delivery_pt]];
+            fields.forEach(([l, val]) => { if (val) html += `<div class="data-row"><span class="data-label">${l}</span><span class="data-val">${val}</span></div>` });
+
+            document.getElementById('modal-body').innerHTML = html;
+            document.getElementById('modal-overlay').style.display = 'flex';
+        }
+
+        function openHistory() {
+            isModalActive = true;
+            const list = document.getElementById('history-list');
+            list.innerHTML = "";
+            scanHistory.forEach(item => {
+                let card = document.createElement('div');
+                card.className = "history-card";
+                let grid = document.createElement('div');
+                grid.className = "data-grid";
+                const fields = [["ID", item.res.barcode_id], ["Type", item.res.service_type], ["MID", item.res.mailer_id], ["Serial", item.res.serial_num], ["ZIP", item.res.zip], ["+4", item.res.plus4], ["DP", item.res.delivery_pt]];
+                fields.forEach(([l, val]) => { if (val) grid.innerHTML += `<div class="data-row"><span class="data-label">${l}</span><span class="data-val">${val}</span></div>` });
+                card.appendChild(grid);
+                card.innerHTML += `<div class="card-footer-daft">${item.fadt}</div>`;
+                list.appendChild(card);
+            });
+            document.getElementById('history-panel').style.display = 'flex';
+        }
+
+        function closeHistory() { isModalActive = false; document.getElementById('history-panel').style.display = 'none'; }
+        function resumeScan() { isModalActive = false; document.getElementById('modal-overlay').style.display = 'none'; }
+        function copyFADT() { navigator.clipboard.writeText(fd.innerText); }
+
+        ov.addEventListener('pointerdown', e => { const r = ov.getBoundingClientRect(), mx = (e.clientX - r.left) * (ov.width / r.width); if (Math.abs(mx - h1) < 80) activeHandle = 1; else if (Math.abs(mx - h2) < 80) activeHandle = 2; });
+        window.addEventListener('pointermove', e => { if (!activeHandle) return; const r = ov.getBoundingClientRect(), mx = (e.clientX - r.left) * (ov.width / r.width); if (activeHandle === 1) h1 = Math.max(0, Math.min(ov.width, mx)); else h2 = Math.max(0, Math.min(ov.width, mx)); });
+        window.addEventListener('pointerup', () => activeHandle = null);
+        window.onload = start;
+    </script>
 </body>
+
 </html>
