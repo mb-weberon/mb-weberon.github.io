@@ -1,386 +1,279 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <link rel="manifest" href="manifest.json">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>IMB Scanner v3.9.2</title>
+    <title>IMB Scanner v4.0</title>
     <style>
-        :root {
-            --accent: #00ff00;
+        :root { --accent: #00ff00; }
+        body { 
+            font-family: system-ui, sans-serif; margin: 0; background: #000; 
+            color: var(--accent); overflow: hidden; height: 100dvh; 
+            display: flex; flex-direction: column; 
+        }
+        #camera-container { 
+            position: relative; flex: 1 1 auto; overflow: hidden; 
+            touch-action: none; background: #111; 
+        }
+        video, #overlay-canvas { 
+            width: 100%; height: 100%; object-fit: cover; 
+            position: absolute; top: 0; left: 0; 
+        }
+        #proc-canvas { display: none; }
+
+        .modal-overlay { 
+            display: none; position: absolute; top: 0; left: 0; 
+            width: 100%; height: 100%; background: rgba(0,0,0,0.85); 
+            z-index: 100; align-items: center; justify-content: center; 
+        }
+        .modal-content { 
+            background: #1a1a1a; width: 95%; padding: 12px; 
+            border-radius: 12px; border: 1px solid var(--accent); 
+            color: white; max-height: 90%; box-sizing: border-box;
+            display: flex; flex-direction: column;
         }
 
-        body {
-            font-family: system-ui, sans-serif;
-            margin: 0;
-            background: #000;
-            color: var(--accent);
-            overflow: hidden;
-            height: 100dvh;
-            display: flex;
-            flex-direction: column;
+        #modal-body { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+        .data-row { 
+            flex: 1 1 120px; background: #222; padding: 6px 8px; 
+            border-radius: 6px; border: 1px solid #333;
+            display: flex; flex-direction: column;
         }
-
-        #camera-container {
-            position: relative;
-            flex: 1 1 auto;
-            overflow: hidden;
-            touch-action: none;
-            background: #111;
-        }
-
-        video,
-        #overlay-canvas {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            position: absolute;
-            top: 0;
-            left: 0;
-        }
-
-        #proc-canvas {
-            display: none;
-        }
-
-        .modal-overlay {
-            display: none;
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.85);
-            z-index: 100;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .modal-content {
-            background: #1a1a1a;
-            width: 95%;
-            padding: 12px;
-            border-radius: 12px;
-            border: 1px solid var(--accent);
-            color: white;
-            max-height: 90%;
-            box-sizing: border-box;
-            display: flex;
-            flex-direction: column;
-        }
-
-        #modal-body {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 6px;
-            margin-bottom: 12px;
-        }
-
-        .data-row {
-            flex: 1 1 100px;
-            background: #222;
-            padding: 6px 8px;
-            border-radius: 6px;
-            border: 1px solid #333;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .data-label {
-            color: #aaa;
-            font-size: 0.55rem;
-            text-transform: uppercase;
-        }
-
-        .data-val {
-            color: var(--accent);
-            font-family: monospace;
-            font-weight: bold;
-            font-size: 0.9rem;
-        }
+        .data-label { color: #aaa; font-size: 0.55rem; text-transform: uppercase; }
+        .data-val { color: var(--accent); font-family: monospace; font-weight: bold; font-size: 1rem; }
 
         .modal-footer {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-top: 1px solid #333;
-            padding-top: 10px;
+            display: flex; justify-content: space-between; align-items: center;
+            border-top: 1px solid #333; padding-top: 10px;
+        }
+        .close-btn { 
+            background: var(--accent); color: #000; padding: 12px 24px;
+            border: none; border-radius: 6px; font-weight: 800; font-size: 0.8rem; cursor: pointer;
         }
 
-        .modal-title {
-            margin: 0;
-            color: var(--accent);
-            font-size: 0.85rem;
+        #results-area { 
+            background: rgba(10,10,10,1); padding: 10px 15px; 
+            border-top: 1px solid #333; z-index: 110; 
+            padding-bottom: calc(10px + env(safe-area-inset-bottom)); 
         }
-
-        .close-btn {
-            background: var(--accent);
-            color: #000;
-            padding: 8px 16px;
-            border: none;
-            border-radius: 6px;
-            font-weight: 800;
-            font-size: 0.7rem;
-            cursor: pointer;
+        #fadt-text { 
+            font-family: 'Courier New', monospace; font-size: 14px; 
+            color: #fff; background: #000; padding: 10px; border-radius: 6px; 
+            text-align: center; border: 1px solid #444; width: 100%; 
+            box-sizing: border-box; margin-bottom: 12px; overflow-x: auto;
+            white-space: nowrap; cursor: pointer;
         }
+        #fadt-text:active { background: #222; }
 
-        #results-area {
-            background: rgba(15, 15, 15, 0.98);
-            padding: 10px 15px;
-            border-top: 1px solid #333;
-            z-index: 110;
-            padding-bottom: calc(8px + env(safe-area-inset-bottom));
-        }
-
-        .status-row {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 6px;
-            font-size: 0.7rem;
-        }
-
-        #fadt-text {
-            font-family: 'Courier New', monospace;
-            font-size: clamp(10px, 2vh, 1.8vw);
-            color: #fff;
-            background: #000;
-            padding: 6px;
-            border-radius: 6px;
-            text-align: center;
-            border: 1px solid #444;
-            width: 100%;
-            box-sizing: border-box;
-            margin-bottom: 10px;
-            overflow-x: auto;
-        }
-
-        .btn-grid {
-            display: grid;
-            grid-template-columns: 2fr 1fr 1fr 2fr;
-            gap: 8px;
-        }
-
-        button.ui-btn {
-            border: none;
-            border-radius: 8px;
-            font-weight: bold;
-            padding: 12px 2px;
-            font-size: 0.7rem;
-            text-transform: uppercase;
+        .btn-row { display: grid; grid-template-columns: 1fr 2fr; gap: 10px; }
+        button.ui-btn { 
+            border: none; border-radius: 8px; font-weight: bold; 
+            padding: 15px; font-size: 0.8rem; text-transform: uppercase; cursor: pointer;
         }
     </style>
 </head>
-
 <body>
     <div id="camera-container">
         <video id="video" autoplay playsinline muted></video>
         <canvas id="overlay-canvas"></canvas>
         <canvas id="proc-canvas"></canvas>
-
+        
         <div id="modal-overlay" class="modal-overlay">
-            <div class="modal-content" onclick="event.stopPropagation()">
+            <div class="modal-content">
                 <div id="modal-body"></div>
                 <div class="modal-footer">
-                    <h3 class="modal-title">USPS IMB RESULT</h3>
-                    <button class="close-btn" onclick="resumeScan()">RESUME</button>
+                    <span style="color:var(--accent); font-weight:bold">USPS IMB DECODED</span>
+                    <button class="close-btn" onclick="resumeScan()">RESUME SCAN</button>
                 </div>
             </div>
         </div>
     </div>
 
     <div id="results-area">
-        <div class="status-row">
-            <div id="status">v3.9.2 | Crosshair View</div>
-        </div>
-        <div id="fadt-text">---</div>
-        <div class="btn-grid">
-            <button class="ui-btn" style="background:#444;color:#fff" onclick="processFADT()">Manual</button>
-            <button class="ui-btn" style="background:#333;color:#aaa" onclick="location.reload()">Reset</button>
-            <button class="ui-btn" style="background:#444;color:#fff"
-                onclick="alert('Align barcode in the center box. Drag white handles to define edges.')">?</button>
-            <button class="ui-btn" style="background:#008000;color:#fff" id="freeze-toggle"
-                onclick="toggleFreeze()">Freeze</button>
+        <div id="fadt-text" onclick="copyFADT()">---</div>
+        <div class="btn-row">
+            <button class="ui-btn" style="background:#333;color:#aaa" onclick="location.reload()">Reload</button>
+            <button class="ui-btn" style="background:#008000;color:#fff" id="freeze-toggle" onclick="toggleFreeze()">Freeze Camera</button>
         </div>
     </div>
 
-    <script>
-        // --- IMB DECODER CORE (Unchanged logic) ---
-        var desc_char = [7, 1, 9, 5, 8, 0, 2, 4, 6, 3, 5, 8, 9, 7, 3, 0, 6, 1, 7, 4, 6, 8, 9, 2, 5, 1, 7, 5, 4, 3, 8, 7, 6, 0, 2, 5, 4, 9, 3, 0, 1, 6, 8, 2, 0, 4, 5, 9, 6, 7, 5, 2, 6, 3, 8, 5, 1, 9, 8, 7, 4, 0, 2, 6, 3];
-        var desc_bit = [4, 1024, 4096, 32, 512, 2, 32, 16, 8, 512, 2048, 32, 1024, 2, 64, 8, 16, 2, 1024, 1, 4, 2048, 256, 64, 2, 4096, 8, 256, 64, 16, 16, 2048, 1, 64, 2, 512, 2048, 32, 8, 128, 8, 1024, 128, 2048, 256, 4, 1024, 8, 32, 256, 1, 8, 4096, 2048, 256, 16, 32, 2, 8, 1, 128, 4096, 512, 256, 1024];
-        var asc_char = [4, 0, 2, 6, 3, 5, 1, 9, 8, 7, 1, 2, 0, 6, 4, 8, 2, 9, 5, 3, 0, 1, 3, 7, 4, 6, 8, 9, 2, 0, 5, 1, 9, 4, 3, 8, 6, 7, 1, 2, 4, 3, 9, 5, 7, 8, 3, 0, 2, 1, 4, 0, 9, 1, 7, 0, 2, 4, 6, 3, 7, 1, 9, 5, 8];
-        var asc_bit = [8, 1, 256, 2048, 2, 4096, 256, 2048, 1024, 64, 16, 4096, 4, 128, 512, 64, 128, 512, 4, 256, 16, 1, 4096, 128, 1024, 512, 1, 128, 1024, 32, 128, 512, 64, 256, 4, 4096, 2, 16, 4, 1, 2, 32, 16, 64, 4096, 2, 1, 512, 16, 128, 32, 1024, 4, 64, 512, 2048, 4, 4096, 64, 128, 32, 2048, 1, 8, 4];
-        var encode_table = new Array(1365), decode_table = new Array(8192), fcs_table = new Array(8192);
-        function build_codewords(bits, low, hi) {
-            for (var fwd = 0; fwd < 8192; fwd++) {
-                var pop = 0, rev = 0, tmp = fwd;
-                for (var bit = 0; bit < 13; bit++) { pop += tmp & 1; rev = (rev << 1) | (tmp & 1); tmp >>= 1; }
-                if (pop != bits) continue;
-                if (fwd == rev) { encode_table[hi] = fwd; decode_table[fwd] = hi; decode_table[fwd ^ 8191] = hi; fcs_table[fwd] = 0; fcs_table[fwd ^ 8191] = 1; hi--; }
-                else if (fwd < rev) { encode_table[low] = fwd; decode_table[fwd] = low; decode_table[fwd ^ 8191] = low; fcs_table[fwd] = 0; fcs_table[fwd ^ 8191] = 1; low++; encode_table[low] = rev; decode_table[rev] = low; decode_table[rev ^ 8191] = low; fcs_table[rev] = 0; fcs_table[rev ^ 8191] = 1; low++; }
-            }
+<script>
+    // --- IMB DECODER CORE (Optimized) ---
+    var desc_char = [7,1,9,5,8,0,2,4,6,3,5,8,9,7,3,0,6,1,7,4,6,8,9,2,5,1,7,5,4,3,8,7,6,0,2,5,4,9,3,0,1,6,8,2,0,4,5,9,6,7,5,2,6,3,8,5,1,9,8,7,4,0,2,6,3];
+    var desc_bit = [4,1024,4096,32,512,2,32,16,8,512,2048,32,1024,2,64,8,16,2,1024,1,4,2048,256,64,2,4096,8,256,64,16,16,2048,1,64,2,512,2048,32,8,128,8,1024,128,2048,256,4,1024,8,32,256,1,8,4096,2048,256,16,32,2,8,1,128,4096,512,256,1024];
+    var asc_char = [4,0,2,6,3,5,1,9,8,7,1,2,0,6,4,8,2,9,5,3,0,1,3,7,4,6,8,9,2,0,5,1,9,4,3,8,6,7,1,2,4,3,9,5,7,8,3,0,2,1,4,0,9,1,7,0,2,4,6,3,7,1,9,5,8];
+    var asc_bit = [8,1,256,2048,2,4096,256,2048,1024,64,16,4096,4,128,512,64,128,512,4,256,16,1,4096,128,1024,512,1,128,1024,32,128,512,64,256,4,4096,2,16,4,1,2,32,16,64,4096,2,1,512,16,128,32,1024,4,64,512,2048,4,4096,64,128,32,2048,1,8,4];
+    var encode_table = new Array(1365), decode_table = new Array(8192), fcs_table = new Array(8192);
+    function build_codewords(bits, low, hi) {
+        for (var fwd = 0; fwd < 8192; fwd++) {
+            var pop = 0, rev = 0, tmp = fwd;
+            for (var bit = 0; bit < 13; bit++) { pop += tmp & 1; rev = (rev << 1) | (tmp & 1); tmp >>= 1; }
+            if (pop != bits) continue;
+            if (fwd == rev) { encode_table[hi] = fwd; decode_table[fwd] = hi; decode_table[fwd ^ 8191] = hi; fcs_table[fwd] = 0; fcs_table[fwd ^ 8191] = 1; hi--; }
+            else if (fwd < rev) { encode_table[low] = fwd; decode_table[fwd] = low; decode_table[fwd ^ 8191] = low; fcs_table[fwd] = 0; fcs_table[fwd ^ 8191] = 1; low++; encode_table[low] = rev; decode_table[rev] = low; decode_table[rev ^ 8191] = low; fcs_table[rev] = 0; fcs_table[rev ^ 8191] = 1; low++; }
         }
-        build_codewords(5, 0, 1286); build_codewords(2, 1287, 1364);
-        function muladd(bytes, mult, add) { var n, x; for (n = bytes.length - 1; n >= 0; n--) { x = bytes[n] * mult + add; add = x >> 8; bytes[n] = x & 0xff; } }
-        function divmod(bytes, div) { var mod = 0; for (var n = 0; n < bytes.length; n++) { var x = bytes[n] + (mod << 8); bytes[n] = Math.floor(x / div); mod = x - bytes[n] * div; } return mod; }
-        function iszero(bytes) { for (var n = bytes.length - 1; n >= 0; n--) if (bytes[n] != 0) return false; return true; }
-        function calcfcs(bytes) { var fcs = 0x5a8; for (var n = 0; n < bytes.length; n++) { fcs ^= bytes[n] << 3; for (var bit = 0; bit < 8; bit++) { fcs <<= 1; if (fcs & 0x800) fcs ^= 0xf35; } } return fcs & 0x7ff; }
+    }
+    build_codewords(5, 0, 1286); build_codewords(2, 1287, 1364);
+    function muladd(bytes, mult, add) { var n, x; for (n = bytes.length - 1; n >= 0; n--) { x = bytes[n] * mult + add; add = x >> 8; bytes[n] = x & 0xff; } }
+    function divmod(bytes, div) { var mod = 0; for (var n = 0; n < bytes.length; n++) { var x = bytes[n] + (mod << 8); bytes[n] = Math.floor(x / div); mod = x - bytes[n] * div; } return mod; }
+    function iszero(bytes) { for (var n = bytes.length - 1; n >= 0; n--) if (bytes[n] != 0) return false; return true; }
+    function calcfcs(bytes) { var fcs = 0x5a8; for (var n = 0; n < bytes.length; n++) { fcs ^= bytes[n] << 3; for (var bit = 0; bit < 8; bit++) { fcs <<= 1; if (fcs & 0x800) fcs ^= 0xf35; } } return fcs & 0x7ff; }
 
-        function decode_imb_string(barcode) {
-            if (barcode.length !== 65) return { error: "Short" };
-            var chars = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-            for (var n = 0; n < 65; n++) {
-                var c = barcode.charAt(n);
-                if (c == 'D' || c == 'F') chars[desc_char[n]] |= desc_bit[n];
-                if (c == 'A' || c == 'F') chars[asc_char[n]] |= asc_bit[n];
-            }
-            var cw = new Array(10), fcs = 0;
-            for (n = 0; n < 10; n++) {
-                cw[n] = decode_table[chars[n]];
-                if (cw[n] === undefined) return { error: "Bad Pattern" };
-                fcs |= fcs_table[chars[n]] << n;
-            }
-            if (cw[9] & 1) return { error: "Upside Down" };
-            cw[9] >>= 1; if (cw[0] > 658) { cw[0] -= 659; fcs |= 1 << 10; }
-            var bytes = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, cw[0]];
-            for (n = 1; n < 9; n++) muladd(bytes, 1365, cw[n]);
-            muladd(bytes, 636, cw[9]);
-            if (calcfcs(bytes) != fcs) return { error: "CRC Fail" };
-            var track = new Array(20);
-            for (n = 19; n >= 2; n--) track[n] = divmod(bytes, 10);
-            track[1] = divmod(bytes, 5); track[0] = divmod(bytes, 10);
-            var route = new Array(11), pos = 11;
-            for (var sz = 5; sz >= 2; sz--) {
-                if (sz == 3) continue; if (iszero(bytes)) break;
-                var n2, addVal = -1;
-                for (n2 = bytes.length - 1; n2 >= 0 && addVal != 0; n2--) { var x = bytes[n2] + addVal; addVal = x >> 8; bytes[n2] = x & 0xff; }
-                for (n = 0; n < sz; n++) route[--pos] = divmod(bytes, 10);
-            }
-            return { barcode_id: track.slice(0, 2).join(''), service_type: track.slice(2, 5).join(''), mailer_id: (track[5] == 9 ? track.slice(5, 14) : track.slice(5, 11)).join(''), serial_num: (track[5] == 9 ? track.slice(14, 20) : track.slice(11, 20)).join(''), zip: pos <= 6 ? route.slice(pos, pos + 5).join('') : "", plus4: pos <= 2 ? route.slice(pos + 5, pos + 9).join('') : "", delivery_pt: pos == 0 ? route.slice(9, 11).join('') : "" };
+    function decode_imb_string(barcode) {
+        if (barcode.length !== 65) return { error: "Short" };
+        var chars = [0,0,0,0,0,0,0,0,0,0];
+        for (var n = 0; n < 65; n++) {
+            var c = barcode.charAt(n);
+            if (c == 'D' || c == 'F') chars[desc_char[n]] |= desc_bit[n];
+            if (c == 'A' || c == 'F') chars[asc_char[n]] |= asc_bit[n];
         }
-
-        // --- SCANNER LOGIC ---
-        const v = document.getElementById('video'), ov = document.getElementById('overlay-canvas'), pc = document.getElementById('proc-canvas'), fd = document.getElementById('fadt-text'), st = document.getElementById('status');
-        let isFrozen = false, isModalActive = false, h1 = 0, h2 = 0, activeHandle = null;
-
-        async function start() {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1280 } } });
-                v.srcObject = stream;
-                v.onloadedmetadata = () => {
-                    ov.width = pc.width = v.videoWidth;
-                    ov.height = pc.height = v.videoHeight;
-                    h1 = ov.width * 0.1;
-                    h2 = ov.width * 0.9;
-                    requestAnimationFrame(scanLoop);
-                };
-            } catch (e) { st.innerText = "Camera Error"; }
+        var cw = new Array(10), fcs = 0;
+        for (n = 0; n < 10; n++) {
+            cw[n] = decode_table[chars[n]];
+            if (cw[n] === undefined) return { error: "Pattern" };
+            fcs |= fcs_table[chars[n]] << n;
         }
-
-        function scanLoop() {
-            if (!isFrozen && !isModalActive && v.readyState === v.HAVE_ENOUGH_DATA) {
-                const ctx = pc.getContext('2d');
-                ctx.drawImage(v, 0, 0);
-                processFrame(ctx.getImageData(0, 0, pc.width, pc.height));
-            }
-            drawOverlay();
-            requestAnimationFrame(scanLoop);
+        if (cw[9] & 1) return { error: "Flip" };
+        cw[9] >>= 1; if (cw[0] > 658) { cw[0] -= 659; fcs |= 1 << 10; }
+        var bytes = [0,0,0,0,0,0,0,0,0,0,0,0,cw[0]];
+        for (n = 1; n < 9; n++) muladd(bytes, 1365, cw[n]);
+        muladd(bytes, 636, cw[9]);
+        if (calcfcs(bytes) != fcs) return { error: "CRC Fail" };
+        var track = new Array(20);
+        for (n = 19; n >= 2; n--) track[n] = divmod(bytes, 10);
+        track[1] = divmod(bytes, 5); track[0] = divmod(bytes, 10);
+        var route = new Array(11), pos = 11;
+        for (var sz = 5; sz >= 2; sz--) {
+            if (sz == 3) continue; if (iszero(bytes)) break;
+            var n2, addVal = -1;
+            for (n2 = bytes.length - 1; n2 >= 0 && addVal != 0; n2--) { var x = bytes[n2] + addVal; addVal = x >> 8; bytes[n2] = x & 0xff; }
+            for (n = 0; n < sz; n++) route[--pos] = divmod(bytes, 10);
         }
+        return { barcode_id: track.slice(0,2).join(''), service_type: track.slice(2,5).join(''), mailer_id: (track[5] == 9 ? track.slice(5,14) : track.slice(5,11)).join(''), serial_num: (track[5] == 9 ? track.slice(14,20) : track.slice(11,20)).join(''), zip: pos <= 6 ? route.slice(pos, pos + 5).join('') : "", plus4: pos <= 2 ? route.slice(pos + 5, pos + 9).join('') : "", delivery_pt: pos == 0 ? route.slice(9, 11).join('') : "" };
+    }
 
-        function processFrame(buf) {
-            const d = buf.data, W = pc.width, centerY = pc.height / 2;
-            const bH = pc.height * 0.08, sH = bH / 7;
-            let bars = [], inB = false, start = 0;
+    // --- LIVE SCANNER LOGIC ---
+    const v=document.getElementById('video'), ov=document.getElementById('overlay-canvas'), pc=document.getElementById('proc-canvas'), fd=document.getElementById('fadt-text');
+    let isFrozen=false, isModalActive=false, h1=0, h2=0, activeHandle=null;
 
-            // Scan only between handles
-            const left = Math.min(h1, h2), right = Math.max(h1, h2);
-            for (let x = left; x < right; x++) {
-                if (d[(Math.floor(centerY) * W + Math.floor(x)) * 4] < 115) {
-                    if (!inB) { inB = true; start = x; }
-                }
-                else if (inB) { inB = false; bars.push({ m: (start + x) / 2 }); }
-            }
+    async function start(){ 
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment",width:{ideal:1280}}});
+            v.srcObject = stream;
+            v.onloadedmetadata = () => {
+                ov.width = pc.width = v.videoWidth; 
+                ov.height = pc.height = v.videoHeight;
+                h1 = ov.width * 0.1; h2 = ov.width * 0.9;
+                requestAnimationFrame(scanLoop);
+            };
+        } catch(e) { fd.innerText="Camera Error: Ensure Permissions Enabled"; }
+    }
 
-            const fadt = bars.map(b => {
-                let z = new Array(7).fill(false);
-                for (let s = 0; s < 7; s++) {
-                    const off = (-bH / 2 + (s * sH)) + (sH / 2);
-                    const py = Math.floor(centerY + off);
-                    if (d[(py * W + Math.floor(b.m)) * 4] < 115) z[s] = true;
-                }
-                const A = z[0] || z[1], D = z[5] || z[6]; return A && D ? 'F' : A ? 'A' : D ? 'D' : 'T';
-            }).join('');
+    function scanLoop() {
+        if (!isFrozen && !isModalActive && v.readyState === v.HAVE_ENOUGH_DATA) {
+            const ctx = pc.getContext('2d');
+            ctx.drawImage(v, 0, 0);
+            processFrame(ctx.getImageData(0, 0, pc.width, pc.height));
+        }
+        drawOverlay();
+        requestAnimationFrame(scanLoop);
+    }
 
-            fd.innerText = fadt || "---";
-            if (fadt.length === 65) {
-                const res = decode_imb_string(fadt);
-                if (!res.error) showResult(res);
-            }
+    function processFrame(buf) {
+        const d = buf.data, W = pc.width, cy = pc.height / 2;
+        const bH = pc.height * 0.08, sH = bH / 7;
+        let bars = [], inB = false, start = 0;
+        const left = Math.min(h1, h2), right = Math.max(h1, h2);
+
+        for (let x = left; x < right; x++) {
+            if (d[(Math.floor(cy) * W + Math.floor(x)) * 4] < 115) { 
+                if (!inB) { inB = true; start = x; } 
+            } else if (inB) { inB = false; bars.push({ m: (start + x) / 2 }); }
         }
 
-        function drawOverlay() {
-            const ctx = ov.getContext('2d');
-            ctx.clearRect(0, 0, ov.width, ov.height);
-            const centerY = ov.height / 2;
+        const fadt = bars.map(b => {
+            let z = new Array(7).fill(false);
+            for (let s = 0; s < 7; s++) {
+                const py = Math.floor(cy + ((-bH/2 + (s*sH)) + (sH/2)));
+                if (d[(py * W + Math.floor(b.m)) * 4] < 115) z[s] = true;
+            }
+            const A = z[0]||z[1], D = z[5]||z[6]; return A&&D ? 'F' : A ? 'A' : D ? 'D' : 'T';
+        }).join('');
 
-            // 1. Prominent Guide Box (Viewfinder)
-            ctx.strokeStyle = "rgba(0, 255, 0, 0.4)";
-            ctx.lineWidth = 4;
-            ctx.strokeRect(ov.width * 0.05, ov.height * 0.35, ov.width * 0.9, ov.height * 0.3);
-
-            // 2. Crosshair Red Line (Fixed Horizontal)
-            ctx.strokeStyle = "red";
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.moveTo(0, centerY);
-            ctx.lineTo(ov.width, centerY);
-            ctx.stroke();
-
-            // 3. Sliding Handles (defining the search width)
-            [h1, h2].forEach(h => {
-                ctx.fillStyle = "white";
-                ctx.beginPath();
-                ctx.arc(h, centerY, 35, 0, 7);
-                ctx.fill();
-                // Handle stem
-                ctx.strokeStyle = "white";
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                ctx.moveTo(h, centerY - 50);
-                ctx.lineTo(h, centerY + 50);
-                ctx.stroke();
-            });
+        if(fadt) fd.innerText = fadt;
+        if (fadt.length === 65) {
+            fd.style.color = "var(--accent)";
+            const res = decode_imb_string(fadt);
+            if (!res.error) showResult(res);
+        } else {
+            fd.style.color = "#fff";
         }
+    }
 
-        function showResult(res) {
-            isModalActive = true;
-            let html = '';
-            const fields = [["ID", res.barcode_id], ["Type", res.service_type], ["MID", res.mailer_id], ["Serial", res.serial_num], ["ZIP", res.zip], ["+4", res.plus4], ["DP", res.delivery_pt]];
-            fields.forEach(([l, v]) => { if (v) html += `<div class="data-row"><span class="data-label">${l}</span><span class="data-val">${v}</span></div>`; });
-            document.getElementById('modal-body').innerHTML = html;
-            document.getElementById('modal-overlay').style.display = 'flex';
-        }
+    function drawOverlay() {
+        const ctx = ov.getContext('2d');
+        ctx.clearRect(0,0,ov.width,ov.height);
+        const cy = ov.height / 2;
 
-        function resumeScan() { isModalActive = false; document.getElementById('modal-overlay').style.display = 'none'; }
-        function toggleFreeze() { isFrozen = !isFrozen; document.getElementById('freeze-toggle').innerText = isFrozen ? "RESUME" : "FREEZE"; }
-        function processFADT() { const res = decode_imb_string(fd.innerText); if (res.error) return alert(res.error); showResult(res); }
+        // Viewfinder
+        ctx.strokeStyle = "rgba(0, 255, 0, 0.4)";
+        ctx.lineWidth = 4;
+        ctx.strokeRect(ov.width * 0.05, ov.height * 0.35, ov.width * 0.9, ov.height * 0.3);
+        
+        // Crosshair
+        ctx.strokeStyle = "red";
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(0, cy); ctx.lineTo(ov.width, cy); ctx.stroke();
 
-        ov.addEventListener('pointerdown', e => {
-            const r = ov.getBoundingClientRect(), mx = (e.clientX - r.left) * (ov.width / r.width);
-            const d1 = Math.abs(mx - h1), d2 = Math.abs(mx - h2);
-            if (d1 < 80) activeHandle = 1; else if (d2 < 80) activeHandle = 2;
+        // Horizontal Limiters
+        [h1, h2].forEach(h => {
+            ctx.fillStyle = "white"; ctx.beginPath(); ctx.arc(h, cy, 35, 0, 7); ctx.fill();
+            ctx.strokeStyle = "white"; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(h, cy - 50); ctx.lineTo(h, cy + 50); ctx.stroke();
         });
-        window.addEventListener('pointermove', e => {
-            if (!activeHandle) return;
-            const r = ov.getBoundingClientRect(), mx = (e.clientX - r.left) * (ov.width / r.width);
-            if (activeHandle === 1) h1 = Math.max(0, Math.min(ov.width, mx));
-            else h2 = Math.max(0, Math.min(ov.width, mx));
-        });
-        window.addEventListener('pointerup', () => activeHandle = null);
+    }
 
-        window.onload = start;
-    </script>
+    function showResult(res) {
+        isModalActive = true;
+        let html = '';
+        const fields = [["Barcode ID", res.barcode_id], ["Service Type", res.service_type], ["Mailer ID", res.mailer_id], ["Serial Num", res.serial_num], ["ZIP Code", res.zip], ["+4 Add-on", res.plus4], ["Delivery Pt", res.delivery_pt]];
+        fields.forEach(([l,v]) => { if(v) html += `<div class="data-row"><span class="data-label">${l}</span><span class="data-val">${v}</span></div>`; });
+        document.getElementById('modal-body').innerHTML = html;
+        document.getElementById('modal-overlay').style.display = 'flex';
+    }
+
+    function resumeScan() { isModalActive = false; document.getElementById('modal-overlay').style.display = 'none'; }
+    function toggleFreeze() { 
+        isFrozen = !isFrozen; 
+        document.getElementById('freeze-toggle').innerText = isFrozen ? "RESUME CAMERA" : "FREEZE CAMERA";
+        document.getElementById('freeze-toggle').style.background = isFrozen ? "#444" : "#008000";
+    }
+
+    function copyFADT() {
+        const text = fd.innerText;
+        navigator.clipboard.writeText(text).then(() => {
+            const original = fd.style.color;
+            fd.style.color = "cyan";
+            setTimeout(() => fd.style.color = original, 500);
+        });
+    }
+
+    ov.addEventListener('pointerdown', e => {
+        const r = ov.getBoundingClientRect(), mx = (e.clientX-r.left)*(ov.width/r.width);
+        const d1 = Math.abs(mx - h1), d2 = Math.abs(mx - h2);
+        if(d1 < 80) activeHandle = 1; else if(d2 < 80) activeHandle = 2;
+    });
+    window.addEventListener('pointermove', e => {
+        if(!activeHandle) return;
+        const r = ov.getBoundingClientRect(), mx = (e.clientX-r.left)*(ov.width/r.width);
+        if(activeHandle===1) h1 = Math.max(0, Math.min(ov.width, mx)); 
+        else h2 = Math.max(0, Math.min(ov.width, mx));
+    });
+    window.addEventListener('pointerup', () => activeHandle = null);
+
+    window.onload = start;
+</script>
 </body>
-
 </html>
