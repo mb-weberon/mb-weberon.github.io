@@ -6,14 +6,15 @@
     <link rel="manifest" href="manifest.json">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>IMB Scanner v4.3.1</title>
+    <title>IMB Scanner v4.3.2</title>
     <style>
         :root {
             --accent: #00ff00;
+            --bg: #0a0a0a;
         }
 
         body {
-            font-family: system-ui, sans-serif;
+            font-family: system-ui, -apple-system, sans-serif;
             margin: 0;
             background: #000;
             color: var(--accent);
@@ -44,24 +45,37 @@
             display: none;
         }
 
-        /* Modal & History Styles */
+        /* Full Screen Modals */
         .modal-overlay {
             display: none;
-            position: absolute;
+            position: fixed;
             top: 0;
             left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.85);
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.9);
             z-index: 1000;
             align-items: center;
             justify-content: center;
         }
 
+        #history-panel {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: var(--bg);
+            z-index: 2000;
+            flex-direction: column;
+            box-sizing: border-box;
+        }
+
         .modal-content {
             background: #1a1a1a;
             width: 90%;
-            padding: 15px;
+            padding: 20px;
             border-radius: 12px;
             border: 1px solid var(--accent);
             color: white;
@@ -69,83 +83,84 @@
             flex-direction: column;
         }
 
+        /* History Content */
+        .history-header {
+            padding: 20px;
+            border-bottom: 1px solid #333;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #111;
+        }
+
+        #history-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 15px;
+        }
+
+        /* Reusable Card UI */
         .history-card {
-            border-bottom: 2px solid #333;
-            padding-bottom: 15px;
-            margin-bottom: 20px;
+            background: #151515;
+            border: 1px solid #333;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 15px;
         }
 
         .data-grid {
             display: flex;
             flex-wrap: wrap;
             gap: 8px;
-            margin-bottom: 10px;
         }
 
         .data-row {
-            flex: 1 1 120px;
+            flex: 1 1 140px;
             background: #222;
-            padding: 8px;
+            padding: 10px;
             border-radius: 6px;
             border: 1px solid #333;
         }
 
         .data-label {
-            color: #aaa;
-            font-size: 0.6rem;
+            color: #888;
+            font-size: 0.65rem;
             text-transform: uppercase;
             display: block;
+            margin-bottom: 2px;
         }
 
         .data-val {
             color: var(--accent);
-            font-family: monospace;
+            font-family: 'Courier New', monospace;
             font-weight: bold;
-            font-size: 0.95rem;
+            font-size: 1.1rem;
         }
 
         .card-footer-daft {
             font-family: monospace;
-            font-size: 0.65rem;
-            color: #777;
+            font-size: 0.7rem;
+            color: #555;
             word-break: break-all;
             text-align: center;
-            border-top: 1px solid #333;
-            padding-top: 8px;
-            margin-top: 8px;
+            border-top: 1px solid #282828;
+            padding-top: 10px;
+            margin-top: 10px;
         }
 
         .close-btn {
             background: var(--accent);
             color: #000;
-            padding: 15px;
+            padding: 18px;
             border: none;
-            border-radius: 8px;
+            border-radius: 0;
             font-weight: 900;
             width: 100%;
             cursor: pointer;
-            margin-top: 10px;
+            font-size: 1rem;
         }
 
-        #history-panel {
-            display: none;
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: #000;
-            z-index: 2000;
-            flex-direction: column;
-            padding: 20px;
-            box-sizing: border-box;
-        }
-
-        #history-list {
-            flex: 1;
-            overflow-y: auto;
-        }
-
+        /* Nav Area */
         #results-area {
             background: #000;
             padding: 10px 15px;
@@ -155,12 +170,17 @@
         }
 
         #history-slider {
-            width: 50px;
+            width: 60px;
             height: 6px;
-            background: #333;
+            background: #444;
             border-radius: 3px;
             margin: 0 auto 12px auto;
             cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        #history-slider:hover {
+            background: var(--accent);
         }
 
         .version-info {
@@ -173,7 +193,7 @@
 
         #fadt-text {
             font-family: monospace;
-            font-size: 13px;
+            font-size: 14px;
             color: #fff;
             background: #111;
             padding: 12px;
@@ -197,25 +217,29 @@
         <div id="modal-overlay" class="modal-overlay">
             <div class="modal-content">
                 <div id="modal-body" class="data-grid"></div>
-                <button class="close-btn" onclick="resumeScan()">DISMISS & RESUME</button>
+                <button class="close-btn" style="border-radius:8px; margin-top:15px;" onclick="resumeScan()">DISMISS &
+                    RESUME</button>
             </div>
         </div>
 
         <div id="history-panel">
-            <h3 style="color:var(--accent); margin-bottom:20px;">SCAN HISTORY</h3>
+            <div class="history-header">
+                <span style="font-weight:900; letter-spacing:1px;">SCAN LOG</span>
+                <span id="history-count" style="font-size:0.8rem; color:#666;">0 SCANS</span>
+            </div>
             <div id="history-list"></div>
-            <button class="close-btn" onclick="closeHistory()">BACK TO SCANNER</button>
+            <button class="close-btn" onclick="closeHistory()">CLOSE HISTORY</button>
         </div>
     </div>
 
     <div id="results-area">
         <div id="history-slider" onclick="openHistory()"></div>
-        <div class="version-info">IMB SCANNER v4.3.1</div>
+        <div class="version-info">IMB SCANNER v4.3.2</div>
         <div id="fadt-text" onclick="copyFADT()">---</div>
     </div>
 
     <script>
-        // --- DECODER CORE (Unchanged, Fixed syntax) ---
+        // --- DECODER CORE (Optimized) ---
         var desc_char = [7, 1, 9, 5, 8, 0, 2, 4, 6, 3, 5, 8, 9, 7, 3, 0, 6, 1, 7, 4, 6, 8, 9, 2, 5, 1, 7, 5, 4, 3, 8, 7, 6, 0, 2, 5, 4, 9, 3, 0, 1, 6, 8, 2, 0, 4, 5, 9, 6, 7, 5, 2, 6, 3, 8, 5, 1, 9, 8, 7, 4, 0, 2, 6, 3],
             desc_bit = [4, 1024, 4096, 32, 512, 2, 32, 16, 8, 512, 2048, 32, 1024, 2, 64, 8, 16, 2, 1024, 1, 4, 2048, 256, 64, 2, 4096, 8, 256, 64, 16, 16, 2048, 1, 64, 2, 512, 2048, 32, 8, 128, 8, 1024, 128, 2048, 256, 4, 1024, 8, 32, 256, 1, 8, 4096, 2048, 256, 16, 32, 2, 8, 1, 128, 4096, 512, 256, 1024],
             asc_char = [4, 0, 2, 6, 3, 5, 1, 9, 8, 7, 1, 2, 0, 6, 4, 8, 2, 9, 5, 3, 0, 1, 3, 7, 4, 6, 8, 9, 2, 0, 5, 1, 9, 4, 3, 8, 6, 7, 1, 2, 4, 3, 9, 5, 7, 8, 3, 0, 2, 1, 4, 0, 9, 1, 7, 0, 2, 4, 6, 3, 7, 1, 9, 5, 8],
@@ -242,7 +266,7 @@
             return { barcode_id: track.slice(0, 2).join(''), service_type: track.slice(2, 5).join(''), mailer_id: (track[5] == 9 ? track.slice(5, 14) : track.slice(5, 11)).join(''), serial_num: (track[5] == 9 ? track.slice(14, 20) : track.slice(11, 20)).join(''), zip: pos <= 6 ? route.slice(pos, pos + 5).join('') : "", plus4: pos <= 2 ? route.slice(pos + 5, pos + 9).join('') : "", delivery_pt: pos == 0 ? route.slice(9, 11).join('') : "" };
         }
 
-        // --- SCANNER UI LOGIC ---
+        // --- SCANNER LOGIC ---
         const v = document.getElementById('video'), ov = document.getElementById('overlay-canvas'), pc = document.getElementById('proc-canvas'), fd = document.getElementById('fadt-text');
         let isModalActive = false, h1 = 0, h2 = 0, activeHandle = null, scanHistory = [];
 
@@ -263,12 +287,12 @@
             if (!isModalActive && v.readyState === v.HAVE_ENOUGH_DATA) {
                 const ctx = pc.getContext('2d'); ctx.drawImage(v, 0, 0);
                 const d = ctx.getImageData(0, 0, pc.width, pc.height).data, W = pc.width, cy = pc.height / 2;
-                const bH = pc.height * 0.08, sH = bH / 7; let bars = [], inB = false, startX = 0;
+                const bH = pc.height * 0.08, sH = bH / 7; let bars = [], inB = false, sx = 0;
                 const left = Math.min(h1, h2), right = Math.max(h1, h2);
-                for (let x = left; x < right; x++) { if (d[(Math.floor(cy) * W + Math.floor(x)) * 4] < 115) { if (!inB) { inB = true; startX = x } } else if (inB) { inB = false; bars.push({ m: (startX + x) / 2 }) } }
+                for (let x = left; x < right; x++) { if (d[(Math.floor(cy) * W + Math.floor(x)) * 4] < 115) { if (!inB) { inB = true; sx = x } } else if (inB) { inB = false; bars.push({ m: (sx + x) / 2 }) } }
                 const fadt = bars.map(b => {
                     let z = new Array(7).fill(false);
-                    for (let s = 0; s < 7; s++) { let py = Math.floor(cy + ((-bH / 2 + (s * sH)) + (sH / 2))); if (d[(py * W + Math.floor(b.m)) * 4] < 115) z[s] = true; } // Fixed Syntax
+                    for (let s = 0; s < 7; s++) { let py = Math.floor(cy + ((-bH / 2 + (s * sH)) + (sH / 2))); if (d[(py * W + Math.floor(b.m)) * 4] < 115) z[s] = true; }
                     const A = z[0] || z[1], D = z[5] || z[6]; return A && D ? 'F' : A ? 'A' : D ? 'D' : 'T';
                 }).join('');
                 if (fadt) { fd.innerText = fadt; if (fadt.length === 65) { fd.style.color = "var(--accent)"; const res = decode_imb_string(fadt); if (!res.error) showResult(res, fadt); } else fd.style.color = "#fff"; }
@@ -278,7 +302,7 @@
 
         function drawOverlay() {
             const ctx = ov.getContext('2d'), cy = ov.height / 2; ctx.clearRect(0, 0, ov.width, ov.height);
-            ctx.strokeStyle = "rgba(0,255,0,0.4)"; ctx.lineWidth = 4; ctx.strokeRect(ov.width * 0.05, ov.height * 0.35, ov.width * 0.9, ov.height * 0.3);
+            ctx.strokeStyle = "rgba(0,255,0,0.3)"; ctx.lineWidth = 4; ctx.strokeRect(ov.width * 0.05, ov.height * 0.35, ov.width * 0.9, ov.height * 0.3);
             ctx.strokeStyle = "red"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, cy); ctx.lineTo(ov.width, cy); ctx.stroke();
             [h1, h2].forEach(h => { ctx.fillStyle = "white"; ctx.beginPath(); ctx.arc(h, cy, 35, 0, 7); ctx.fill(); ctx.strokeStyle = "white"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(h, cy - 50); ctx.lineTo(h, cy + 50); ctx.stroke(); });
         }
@@ -299,14 +323,16 @@
         function openHistory() {
             isModalActive = true;
             const list = document.getElementById('history-list');
+            document.getElementById('history-count').innerText = scanHistory.length + " SCANS";
             list.innerHTML = "";
+
             scanHistory.forEach(item => {
                 let card = document.createElement('div');
                 card.className = "history-card";
                 let grid = document.createElement('div');
                 grid.className = "data-grid";
-                const fields = [["ID", item.res.barcode_id], ["Type", item.res.service_type], ["MID", item.res.mailer_id], ["Serial", item.res.serial_num], ["ZIP", item.res.zip], ["+4", item.res.plus4], ["DP", item.res.delivery_pt]];
-                fields.forEach(([l, val]) => { if (val) grid.innerHTML += `<div class="data-row"><span class="data-label">${l}</span><span class="data-val">${val}</span></div>` });
+                const f = [["ID", item.res.barcode_id], ["Type", item.res.service_type], ["MID", item.res.mailer_id], ["Serial", item.res.serial_num], ["ZIP", item.res.zip], ["+4", item.res.plus4], ["DP", item.res.delivery_pt]];
+                f.forEach(([l, v]) => { if (v) grid.innerHTML += `<div class="data-row"><span class="data-label">${l}</span><span class="data-val">${v}</span></div>` });
                 card.appendChild(grid);
                 card.innerHTML += `<div class="card-footer-daft">${item.fadt}</div>`;
                 list.appendChild(card);
