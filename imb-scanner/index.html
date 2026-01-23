@@ -6,7 +6,7 @@
     <link rel="manifest" href="manifest.json">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>IMB Scanner v4.3.7</title>
+    <title>IMB Scanner v4.3.8</title>
     <style>
         :root {
             --accent: #00ff00;
@@ -29,7 +29,7 @@
             position: relative;
             flex: 1;
             overflow: hidden;
-            background: #111;
+            background: #000;
         }
 
         video {
@@ -38,6 +38,7 @@
             object-fit: cover;
             position: absolute;
             z-index: 1;
+            display: block;
         }
 
         #overlay-canvas {
@@ -49,7 +50,6 @@
             pointer-events: auto;
         }
 
-        /* Flash Effect */
         #flash-overlay {
             position: absolute;
             top: 0;
@@ -76,7 +76,6 @@
             }
         }
 
-        /* History Panel */
         #history-panel {
             display: none;
             position: fixed;
@@ -87,7 +86,6 @@
             background: var(--bg);
             z-index: 2000;
             flex-direction: column;
-            box-sizing: border-box;
         }
 
         .history-header {
@@ -103,9 +101,9 @@
             flex: 1;
             overflow-y: auto;
             padding: 10px;
+            -webkit-overflow-scrolling: touch;
         }
 
-        /* Card UI */
         .history-card {
             background: var(--card-bg);
             border: 1px solid #222;
@@ -148,7 +146,6 @@
             font-size: 0.85rem;
         }
 
-        /* Handle UI */
         .handle-container {
             padding: 15px 0;
             width: 100%;
@@ -159,14 +156,13 @@
 
         .ui-handle {
             width: 80px;
-            height: 8px;
+            height: 10px;
             background: #666;
-            border-radius: 4px;
+            border-radius: 5px;
             margin: 0 auto;
             border: 1px solid #444;
         }
 
-        /* Modals */
         .modal-overlay {
             display: none;
             position: fixed;
@@ -232,7 +228,7 @@
         }
 
         .version-info {
-            font-size: 11px;
+            font-size: 12px;
             color: var(--accent);
             text-align: right;
             margin-top: 6px;
@@ -258,7 +254,7 @@
 
         <div id="history-panel">
             <div class="handle-container" id="history-close-handle">
-                <div class="ui-handle"></div>
+                <div class="ui-handle" style="background:var(--accent); opacity:0.6;"></div>
             </div>
             <div class="history-header">
                 <span style="font-weight:900; color:#fff;">LOG (<span id="history-count">0</span>)</span>
@@ -273,11 +269,11 @@
             <div class="ui-handle"></div>
         </div>
         <div id="fadt-text">READY</div>
-        <div class="version-info">BUILD v4.3.7</div>
+        <div class="version-info">BUILD v4.3.8</div>
     </div>
 
     <script>
-        // --- DECODER CORE (Unchanged for stability) ---
+        // --- DECODER (Preserved) ---
         var desc_char = [7, 1, 9, 5, 8, 0, 2, 4, 6, 3, 5, 8, 9, 7, 3, 0, 6, 1, 7, 4, 6, 8, 9, 2, 5, 1, 7, 5, 4, 3, 8, 7, 6, 0, 2, 5, 4, 9, 3, 0, 1, 6, 8, 2, 0, 4, 5, 9, 6, 7, 5, 2, 6, 3, 8, 5, 1, 9, 8, 7, 4, 0, 2, 6, 3],
             desc_bit = [4, 1024, 4096, 32, 512, 2, 32, 16, 8, 512, 2048, 32, 1024, 2, 64, 8, 16, 2, 1024, 1, 4, 2048, 256, 64, 2, 4096, 8, 256, 64, 16, 16, 2048, 1, 64, 2, 512, 2048, 32, 8, 128, 8, 1024, 128, 2048, 256, 4, 1024, 8, 32, 256, 1, 8, 4096, 2048, 256, 16, 32, 2, 8, 1, 128, 4096, 512, 256, 1024],
             asc_char = [4, 0, 2, 6, 3, 5, 1, 9, 8, 7, 1, 2, 0, 6, 4, 8, 2, 9, 5, 3, 0, 1, 3, 7, 4, 6, 8, 9, 2, 0, 5, 1, 9, 4, 3, 8, 6, 7, 1, 2, 4, 3, 9, 5, 7, 8, 3, 0, 2, 1, 4, 0, 9, 1, 7, 0, 2, 4, 6, 3, 7, 1, 9, 5, 8],
@@ -304,7 +300,7 @@
             return { barcode_id: track.slice(0, 2).join(''), service_type: track.slice(2, 5).join(''), mailer_id: (track[5] == 9 ? track.slice(5, 14) : track.slice(5, 11)).join(''), serial_num: (track[5] == 9 ? track.slice(14, 20) : track.slice(11, 20)).join(''), zip: pos <= 6 ? route.slice(pos, pos + 5).join('') : "", plus4: pos <= 2 ? route.slice(pos + 5, pos + 9).join('') : "", delivery_pt: pos == 0 ? route.slice(9, 11).join('') : "" };
         }
 
-        // --- SCANNER LOGIC ---
+        // --- MAIN ---
         const v = document.getElementById('video'), ov = document.getElementById('overlay-canvas'), pc = document.getElementById('proc-canvas'), fd = document.getElementById('fadt-text'), hp = document.getElementById('history-panel'), flash = document.getElementById('flash-overlay');
         let isModalActive = false, h1 = 0, h2 = 0, activeHandle = null, scanHistory = [];
 
@@ -315,13 +311,15 @@
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1280 } } });
                 v.srcObject = stream;
+                v.setAttribute('autoplay', ''); v.setAttribute('muted', ''); v.setAttribute('playsinline', '');
                 v.onloadedmetadata = () => {
+                    v.play();
                     ov.width = pc.width = v.videoWidth;
                     ov.height = pc.height = v.videoHeight;
                     h1 = ov.width * 0.1; h2 = ov.width * 0.9;
                     requestAnimationFrame(scanLoop);
                 };
-            } catch (e) { fd.innerText = "CAMERA FAIL"; }
+            } catch (e) { fd.innerText = "CAMERA FAIL: " + e.message; }
         }
 
         function scanLoop() {
@@ -336,13 +334,10 @@
                     for (let s = 0; s < 7; s++) { let py = Math.floor(cy + ((-bH / 2 + (s * sH)) + (sH / 2))); if (d[(py * W + Math.floor(b.m)) * 4] < 110) z[s] = true; }
                     const A = z[0] || z[1], D = z[5] || z[6]; return A && D ? 'F' : A ? 'A' : D ? 'D' : 'T';
                 }).join('');
-
-                if (fadt) {
+                if (fadt && fadt.length === 65) {
                     fd.innerText = fadt;
-                    if (fadt.length === 65) {
-                        const res = decode_imb_string(fadt);
-                        if (!res.error) showResult(res, fadt);
-                    }
+                    const res = decode_imb_string(fadt);
+                    if (!res.error) showResult(res, fadt);
                 } else { fd.innerText = "READY"; }
             }
             drawOverlay(); requestAnimationFrame(scanLoop);
@@ -355,20 +350,13 @@
             [h1, h2].forEach(h => { ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(h, cy, 35, 0, 7); ctx.fill(); });
         }
 
-        function triggerFeedback() {
-            flash.classList.remove('flash-active');
-            void flash.offsetWidth; // Force reflow
-            flash.classList.add('flash-active');
-            if (navigator.vibrate) navigator.vibrate(50);
-        }
-
         function showResult(res, fadt) {
             if (scanHistory.length > 0 && scanHistory[0].fadt === fadt) return;
             isModalActive = true;
-            triggerFeedback();
+            flash.classList.remove('flash-active'); void flash.offsetWidth; flash.classList.add('flash-active');
+            if (navigator.vibrate) navigator.vibrate(50);
             const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-            scanHistory.unshift({ res, fadt, time: now });
-            sync();
+            scanHistory.unshift({ res, fadt, time: now }); sync();
             let html = '';
             const fields = [["ID", res.barcode_id], ["Type", res.service_type], ["MID", res.mailer_id], ["Serial", res.serial_num], ["ZIP", res.zip], ["+4", res.plus4], ["DP", res.delivery_pt]];
             fields.forEach(([l, val]) => { if (val) html += `<div class="data-row"><span class="data-label">${l}</span><span class="data-val">${val}</span></div>` });
@@ -395,12 +383,10 @@
         }
 
         function closeHistory() { isModalActive = false; hp.style.display = 'none'; }
-        function clearAllHistory() { if (confirm("Clear all logs?")) { scanHistory = []; sync(); openHistory(); } }
+        function clearAllHistory() { if (confirm("Clear logs?")) { scanHistory = []; sync(); openHistory(); } }
         function resumeScan() { isModalActive = false; document.getElementById('modal-overlay').style.display = 'none'; }
 
-        let touchStartY = 0;
-        hp.addEventListener('touchstart', e => touchStartY = e.touches[0].clientY);
-        hp.addEventListener('touchmove', e => { if (e.touches[0].clientY - touchStartY > 80) closeHistory(); });
+        // Close Handle ONLY (Swipe removed)
         document.getElementById('history-close-handle').onclick = closeHistory;
 
         ov.addEventListener('pointerdown', e => { const r = ov.getBoundingClientRect(), mx = (e.clientX - r.left) * (ov.width / r.width); if (Math.abs(mx - h1) < 80) activeHandle = 1; else if (Math.abs(mx - h2) < 80) activeHandle = 2; });
