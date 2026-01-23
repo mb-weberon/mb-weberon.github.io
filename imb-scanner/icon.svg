@@ -25,5 +25,5 @@
     <animate attributeName="opacity" values="0.4;1;0.4" dur="2s" repeatCount="indefinite" />
   </rect>
 
-  <text x="256" y="420" font-family="monospace" font-size="50" font-weight="bold" fill="#00ff00" text-anchor="middle">IMB v2.6</text>
+  <text x="256" y="420" font-family="monospace" font-size="50" font-weight="bold" fill="#00ff00" text-anchor="middle">IMb Scan</text>
 </svg>
