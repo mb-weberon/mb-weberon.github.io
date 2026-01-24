@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Match-O-Matic v1.12</title>
+    <title>Match-O-Matic v1.13</title>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
         :root { --primary: #0A84FF; --success: #30D158; --error: #FF453A; --bg: #000; }
@@ -11,36 +11,32 @@
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: var(--bg); color: white; font-family: -apple-system, sans-serif; overflow: hidden; }
 
         #version-tag { position: fixed; top: 10px; left: 10px; background: rgba(0,0,0,0.8); padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; color: var(--primary); z-index: 100; border: 1px solid #333; }
-        #power-status { position: fixed; top: 35px; left: 10px; font-size: 9px; color: #666; z-index: 100; }
 
         #camera-wrapper { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; z-index: 1; }
         video { width: 100%; height: 100%; object-fit: cover; opacity: 0.7; }
 
         #scanner-overlay { position: absolute; top: 35%; left: 50%; transform: translate(-50%, -50%); width: 80%; height: 120px; border: 2px solid var(--primary); border-radius: 12px; box-shadow: 0 0 0 2000px rgba(0,0,0,0.8); z-index: 5; pointer-events: none; }
-        #debug-view { position: fixed; top: 10px; right: 10px; width: 90px; border: 1px solid #555; background: #000; z-index: 100; }
-        #proc-canvas { width: 100%; display: block; image-rendering: pixelated; }
+        
+        /* Pulse effect to show scanning is alive */
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+        .scanning-active { animation: pulse 1.5s infinite; }
 
         .ui-panel { position: fixed; bottom: 0; left: 0; width: 100%; background: #1c1c1e; padding: 15px 15px calc(15px + env(safe-area-inset-bottom)); text-align: center; z-index: 10; border-top: 1px solid #333; }
         #result-display { font-size: 2.2rem; font-weight: 900; color: var(--primary); margin: 5px 0; min-height: 2.8rem; }
         .status-label { font-size: 0.75rem; color: #8e8e93; font-weight: bold; text-transform: uppercase; }
         
-        .btn-row { display: flex; gap: 8px; justify-content: center; margin-top: 10px; flex-wrap: wrap; }
-        button { background: #333; border: none; color: #fff; padding: 10px 15px; border-radius: 10px; font-size: 0.8rem; cursor: pointer; font-weight: bold; flex: 1; min-width: 80px; }
+        .btn-row { display: flex; gap: 8px; justify-content: center; margin-top: 10px; }
+        button { background: #333; border: none; color: #fff; padding: 12px 15px; border-radius: 10px; font-size: 0.8rem; cursor: pointer; font-weight: bold; flex: 1; }
         
         #history-panel { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #1c1c1e; z-index: 200; display: none; padding: 40px 20px; overflow-y: auto; }
-        .history-item { padding: 10px; border-bottom: 1px solid #333; font-size: 0.9rem; display: flex; justify-content: space-between; }
+        .history-item { padding: 12px; border-bottom: 1px solid #333; font-size: 0.9rem; display: flex; justify-content: space-between; }
         .match-active { color: var(--success) !important; }
         .error-active { color: var(--error) !important; }
     </style>
 </head>
-<body onclick="wakeAndScan()">
+<body onclick="manualTrigger()">
 
-    <div id="version-tag">v1.12</div>
-    <div id="power-status">SCANNING ACTIVE</div>
-
-    <div id="debug-view">
-        <canvas id="proc-canvas"></canvas>
-    </div>
+    <div id="version-tag">v1.13 - RECOVERY</div>
 
     <div id="camera-wrapper">
         <video id="video" autoplay playsinline></video>
@@ -51,12 +47,12 @@
         <h2 style="color: var(--primary)">Scan History</h2>
         <div id="history-list"></div>
         <button onclick="toggleHistory()" style="margin-top: 20px; width: 100%; background: var(--primary)">CLOSE</button>
-        <button onclick="clearHistory()" style="margin-top: 10px; width: 100%; background: var(--error)">CLEAR LOG</button>
+        <button onclick="clearHistory()" style="margin-top: 10px; width: 100%; background: #444">CLEAR LOG</button>
     </div>
 
     <div class="ui-panel">
         <div class="status-label" id="step-info">STEP 1: SCAN LETTER (+H...)</div>
-        <div id="result-display">READY</div>
+        <div id="result-display" class="scanning-active">READY</div>
         
         <div class="btn-row">
             <button onclick="event.stopPropagation(); toggleTorch();">🔦 LIGHT</button>
@@ -65,6 +61,8 @@
         </div>
     </div>
 
+    <canvas id="proc-canvas" style="display:none;"></canvas>
+
     <script>
         const video = document.getElementById('video');
         const resultDisplay = document.getElementById('result-display');
@@ -72,134 +70,153 @@
         const canvas = document.getElementById('proc-canvas');
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
         
-        let targetID = null, isProcessing = false, track = null;
-        let lastActionTime = Date.now();
-        let scanInterval = 1500;
+        let targetID = null;
+        let isProcessing = false;
+        let track = null;
+        let scanTimer = null;
 
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         function playTone(freq, duration) {
-            const osc = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
-            osc.frequency.value = freq;
-            osc.connect(gain); gain.connect(audioCtx.destination);
-            gain.gain.setValueAtTime(0.02, audioCtx.currentTime);
-            osc.start(); gain.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + duration);
-            osc.stop(audioCtx.currentTime + duration);
+            try {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.frequency.value = freq;
+                osc.connect(gain); gain.connect(audioCtx.destination);
+                gain.gain.setValueAtTime(0.02, audioCtx.currentTime);
+                osc.start(); gain.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + duration);
+                osc.stop(audioCtx.currentTime + duration);
+            } catch(e) {}
         }
 
-        async function init() {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1280 } } });
-            video.srcObject = stream;
-            track = stream.getVideoTracks()[0];
-            mainLoop();
-        }
-
-        function mainLoop() {
-            const idleTime = Date.now() - lastActionTime;
-            if (idleTime > 60000) {
-                scanInterval = 5000;
-                document.getElementById('power-status').innerText = "POWER SAVER (IDLE)";
-            } else {
-                scanInterval = 1500;
-                document.getElementById('power-status').innerText = "SCANNING ACTIVE";
+        async function initCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: "environment", width: { ideal: 1280 } } 
+                });
+                video.srcObject = stream;
+                track = stream.getVideoTracks()[0];
+                startScanLoop();
+            } catch (e) {
+                resultDisplay.innerText = "CAMERA ERROR";
+                resultDisplay.classList.remove('scanning-active');
             }
-            if (!isProcessing) performScan(false);
-            setTimeout(mainLoop, scanInterval);
         }
 
-        function wakeAndScan() {
-            lastActionTime = Date.now();
-            if (!isProcessing) {
-                playTone(800, 0.1);
-                performScan(true);
-            }
+        function startScanLoop() {
+            if (scanTimer) clearInterval(scanTimer);
+            scanTimer = setInterval(() => {
+                if (!isProcessing) performScan(false);
+            }, 1800);
+        }
+
+        function manualTrigger() {
+            if (isProcessing) return;
+            playTone(800, 0.1);
+            performScan(true);
         }
 
         async function performScan(isManual) {
             isProcessing = true;
-            const scale = video.videoWidth / video.clientWidth;
-            const cropW = video.videoWidth * 0.8, cropH = 120 * scale;
-            const cropX = (video.videoWidth - cropW) / 2, cropY = (video.videoHeight * 0.35) - (cropH / 2);
+            try {
+                const scale = video.videoWidth / video.clientWidth;
+                const cropW = video.videoWidth * 0.8;
+                const cropH = 120 * scale;
+                const cropX = (video.videoWidth - cropW) / 2;
+                const cropY = (video.videoHeight * 0.35) - (cropH / 2);
 
-            canvas.width = cropW; canvas.height = cropH;
-            ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
-            applyFilter(ctx, cropW, cropH, isManual);
+                canvas.width = cropW; canvas.height = cropH;
+                ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
 
-            let res = await extractPattern(canvas);
-            if (!res) {
-                const fCanv = document.createElement('canvas'); fCanv.width = cropW; fCanv.height = cropH;
-                const fCtx = fCanv.getContext('2d'); fCtx.translate(cropW/2, cropH/2); fCtx.rotate(Math.PI); fCtx.drawImage(canvas, -cropW/2, -cropH/2);
-                res = await extractPattern(fCanv);
+                // Simple Threshold Filter
+                const imgData = ctx.getImageData(0, 0, cropW, cropH);
+                const d = imgData.data;
+                for (let i = 0; i < d.length; i += 4) {
+                    const avg = (d[i] + d[i+1] + d[i+2]) / 3;
+                    const v = avg < 120 ? 0 : 255;
+                    d[i] = d[i+1] = d[i+2] = v;
+                }
+                ctx.putImageData(imgData, 0, 0);
+
+                const { data: { text } } = await Tesseract.recognize(canvas, 'eng');
+                const clean = text.replace(/\s/g, '').toUpperCase();
+                
+                const letterMatch = clean.match(/\+H([0-9]+)[\>\]\)]/);
+                const envMatch = clean.match(/\+([0-9]+)[\>\]\)]/);
+
+                if (!targetID && letterMatch) {
+                    handleMatch({ id: letterMatch[1], type: 'LETTER' });
+                } else if (targetID && envMatch && !clean.includes('+H')) {
+                    handleMatch({ id: envMatch[1], type: 'ENVELOPE' });
+                }
+            } catch (e) {
+                console.error("OCR Error:", e);
             }
-            if (res) { lastActionTime = Date.now(); handleLogic(res); }
             isProcessing = false;
         }
 
-        async function extractPattern(canv) {
-            const { data: { text } } = await Tesseract.recognize(canv, 'eng');
-            const clean = text.replace(/\s/g, '').toUpperCase();
-            const letterMatch = clean.match(/\+H([0-9]+)[\>\]\)]/);
-            const envMatch = clean.match(/\+([0-9]+)[\>\]\)]/);
-
-            if (!targetID && letterMatch) return { id: letterMatch[1], type: 'LETTER' };
-            if (targetID && envMatch && !clean.includes('+H')) return { id: envMatch[1], type: 'ENVELOPE' };
-            return null;
-        }
-
-        function applyFilter(context, w, h, isManual) {
-            const imgData = context.getImageData(0, 0, w, h), data = imgData.data;
-            let total = 0; for (let i = 0; i < data.length; i += 4) total += (data[i] + data[i+1] + data[i+2]) / 3;
-            let threshold = (total / (data.length / 4)) * (isManual ? 0.90 : 0.84); 
-            for (let i = 0; i < data.length; i += 4) {
-                let v = ((data[i] + data[i+1] + data[i+2]) / 3) < threshold ? 0 : 255;
-                data[i] = data[i+1] = data[i+2] = v;
-            }
-            context.putImageData(imgData, 0, 0);
-        }
-
-        function handleLogic(obj) {
+        function handleMatch(obj) {
             if (obj.type === 'LETTER') {
                 targetID = obj.id;
                 resultDisplay.innerText = "+H" + targetID + ">";
+                resultDisplay.classList.remove('scanning-active');
                 stepInfo.innerText = "STEP 2: SCAN ENVELOPE";
                 playTone(440, 0.2);
-            } else if (obj.type === 'ENVELOPE') {
+            } else {
                 if (obj.id === targetID) {
                     resultDisplay.innerText = "MATCH!";
                     resultDisplay.className = "match-active";
                     saveToHistory(targetID);
                     playTone(880, 0.5);
-                    isProcessing = true; setTimeout(() => { resetApp(); isProcessing = false; }, 3000);
+                    setTimeout(resetApp, 3000);
                 } else {
                     resultDisplay.innerText = "+" + obj.id + ">";
                     resultDisplay.className = "error-active";
                     playTone(200, 0.3);
+                    setTimeout(() => { 
+                        if (targetID) {
+                            resultDisplay.innerText = "+H" + targetID + ">";
+                            resultDisplay.className = "";
+                        }
+                    }, 1500);
                 }
             }
         }
 
         function saveToHistory(id) {
-            const history = JSON.parse(localStorage.getItem('matchHistory') || '[]');
-            const entry = { id, time: new Date().toLocaleTimeString() };
-            history.unshift(entry);
-            localStorage.setItem('matchHistory', JSON.stringify(history.slice(0, 50)));
+            const history = JSON.parse(localStorage.getItem('mHistory') || '[]');
+            history.unshift({ id, time: new Date().toLocaleTimeString() });
+            localStorage.setItem('mHistory', JSON.stringify(history.slice(0, 50)));
         }
 
         function toggleHistory() {
             const p = document.getElementById('history-panel');
-            const list = document.getElementById('history-list');
             if (p.style.display === 'block') { p.style.display = 'none'; } 
             else {
-                const history = JSON.parse(localStorage.getItem('matchHistory') || '[]');
-                list.innerHTML = history.map(i => `<div class="history-item"><span>ID: ${i.id}</span><span style="color:#666">${i.time}</span></div>`).join('');
+                const history = JSON.parse(localStorage.getItem('mHistory') || '[]');
+                document.getElementById('history-list').innerHTML = history.map(i => 
+                    `<div class="history-item"><span>ID: ${i.id}</span><span style="color:#888">${i.time}</span></div>`
+                ).join('');
                 p.style.display = 'block';
             }
         }
 
-        function clearHistory() { localStorage.removeItem('matchHistory'); toggleHistory(); }
-        function toggleTorch() { if (track) { const s = track.getSettings(); track.applyConstraints({ advanced: [{ torch: !s.torch }] }); } }
-        function resetApp() { targetID = null; resultDisplay.innerText = "READY"; resultDisplay.className = ""; stepInfo.innerText = "STEP 1: SCAN LETTER (+H...)"; }
-        window.addEventListener('load', init);
+        function clearHistory() { localStorage.removeItem('mHistory'); toggleHistory(); }
+        
+        function toggleTorch() { 
+            if (track) { 
+                const s = track.getSettings(); 
+                track.applyConstraints({ advanced: [{ torch: !s.torch }] }).catch(()=>{}); 
+            } 
+        }
+
+        function resetApp() {
+            targetID = null;
+            resultDisplay.innerText = "READY";
+            resultDisplay.className = "scanning-active";
+            stepInfo.innerText = "STEP 1: SCAN LETTER (+H...)";
+        }
+
+        window.addEventListener('load', initCamera);
     </script>
 </body>
 </html>
