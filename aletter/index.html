@@ -1,168 +1,92 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Match-O-Matic v1.1</title>
+    <title>Match-O-Matic v1.3</title>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
-        :root {
-            --primary: #007AFF;
-            --success: #34C759;
-            --error: #FF3B30;
-            --bg: #000;
-        }
-
-        body {
-            font-family: sans-serif;
-            background-color: var(--bg);
-            color: white;
-            margin: 0;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            height: 100vh;
-        }
-
-        #camera-container {
-            position: relative;
-            width: 100%;
-            flex-grow: 1;
-            overflow: hidden;
-        }
-
-        video {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
-
-        /* Doubled the size of the target window */
+        :root { --primary: #0A84FF; --success: #30D158; --error: #FF453A; --bg: #000; }
+        body { font-family: -apple-system, sans-serif; background: var(--bg); color: white; margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        
+        #camera-container { position: relative; flex-grow: 1; display: flex; align-items: center; justify-content: center; background: #000; }
+        video { width: 100%; height: 100%; object-fit: cover; opacity: 0.6; }
+        
         #scanner-overlay {
             position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 80%;
-            height: 120px;
-            /* Doubled height */
-            border: 3px solid var(--primary);
-            box-shadow: 0 0 0 1000px rgba(0, 0, 0, 0.6);
-            border-radius: 8px;
-            z-index: 10;
+            width: 85%; height: 140px;
+            border: 2px solid var(--primary);
+            border-radius: 12px;
+            box-shadow: 0 0 0 2000px rgba(0,0,0,0.8);
+            z-index: 5;
         }
 
-        #scanner-overlay::after {
-            content: "SCANNING...";
+        /* Training View / Debug Window */
+        #debug-view {
             position: absolute;
-            bottom: -25px;
-            left: 50%;
-            transform: translateX(-50%);
-            font-size: 12px;
-            color: var(--primary);
-            font-weight: bold;
+            top: 10px; right: 10px;
+            width: 120px; border: 1px solid #555;
+            background: #000; border-radius: 4px;
+            z-index: 20; text-align: center;
         }
+        #proc-canvas { width: 100%; height: auto; display: block; image-rendering: pixelated; }
 
-        .ui-panel {
-            width: 100%;
-            background: #1c1c1e;
-            padding: 20px;
-            box-sizing: border-box;
-            text-align: center;
-            border-top: 1px solid #333;
-        }
-
-        #result-display {
-            font-size: 2.5rem;
-            font-weight: bold;
-            margin: 10px 0;
-            min-height: 3rem;
-        }
-
-        .status-label {
-            font-size: 0.8rem;
-            color: #888;
-            text-transform: uppercase;
-        }
-
-        .version-footer {
-            font-size: 10px;
-            color: #444;
-            padding: 5px;
-        }
-
-        #processing-canvas {
-            display: none;
-        }
-
-        .match-flash {
-            animation: flash-green 0.5s;
-        }
-
-        @keyframes flash-green {
-            from {
-                background: var(--success);
-            }
-
-            to {
-                background: #1c1c1e;
-            }
-        }
+        .ui-panel { background: #1c1c1e; padding: 20px; text-align: center; border-top: 1px solid #333; z-index: 10; }
+        #result-display { font-size: 2.5rem; font-weight: 800; margin: 5px 0; height: 3rem; color: var(--primary); transition: all 0.2s; }
+        .status-label { font-size: 0.8rem; color: #8e8e93; text-transform: uppercase; letter-spacing: 1px; }
+        
+        .version-footer { font-size: 10px; color: #444; padding: 5px; text-align: center; background: #1c1c1e; }
+        .match-active { color: var(--success) !important; transform: scale(1.1); }
+        .error-active { color: var(--error) !important; }
     </style>
 </head>
-
 <body>
+
+    <div id="debug-view">
+        <canvas id="proc-canvas"></canvas>
+        <div style="font-size: 8px; color: #555;">OCR PREVIEW</div>
+    </div>
 
     <div id="camera-container">
         <video id="video" autoplay playsinline></video>
         <div id="scanner-overlay"></div>
     </div>
 
-    <div class="ui-panel" id="main-panel">
-        <div class="status-label" id="step-info">Step 1: Focus on Letter Number</div>
-        <div id="result-display">---</div>
-        <button onclick="resetApp()"
-            style="background:none; border:1px solid #444; color:#888; padding:8px 16px; border-radius:20px;">Reset</button>
+    <div class="ui-panel">
+        <div class="status-label" id="step-info">STEP 1: SCAN LETTER</div>
+        <div id="result-display">READY</div>
+        <button onclick="resetApp()" style="background: #333; border: none; color: #aaa; padding: 8px 16px; border-radius: 20px; font-size: 0.7rem; font-weight: bold;">RESET SESSION</button>
     </div>
 
-    <div class="version-footer">v1.1 - Auto-Scan & Dual-Orientation Enabled</div>
-
-    <canvas id="processing-canvas"></canvas>
+    <div class="version-footer">v1.3 - Training View & Dual-Direction Logic</div>
 
     <script>
         const video = document.getElementById('video');
         const resultDisplay = document.getElementById('result-display');
         const stepInfo = document.getElementById('step-info');
-        const mainPanel = document.getElementById('main-panel');
-        const canvas = document.getElementById('processing-canvas');
+        const canvas = document.getElementById('proc-canvas');
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
         let targetID = null;
         let isProcessing = false;
-        let scheduler = null;
 
         async function init() {
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: "environment", focusMode: "continuous" }
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: "environment", width: { ideal: 1280 } } 
                 });
                 video.srcObject = stream;
-                // Start the scanning loop
-                scheduler = setInterval(autoScan, 1500); // Scan every 1.5 seconds
-            } catch (err) {
-                resultDisplay.innerText = "Camera Error";
-            }
+                setInterval(autoScan, 1000); // Faster cycle for v1.3
+            } catch (e) { resultDisplay.innerText = "CAMERA ERROR"; }
         }
 
         async function autoScan() {
             if (isProcessing) return;
             isProcessing = true;
 
-            // 1. Capture the overlay area
             const scale = video.videoWidth / video.clientWidth;
-            const cropW = video.videoWidth * 0.8;
-            const cropH = 120 * scale;
+            const cropW = video.videoWidth * 0.85;
+            const cropH = 140 * scale;
             const cropX = (video.videoWidth - cropW) / 2;
             const cropY = (video.videoHeight / 2) - (cropH / 2);
 
@@ -170,91 +94,81 @@
             canvas.height = cropH;
             ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
 
-            // 2. Pre-process for light gray text (High Contrast)
-            applyFilter(ctx, cropW, cropH);
+            // Filter for screen-based light gray text
+            applyAdaptiveFilter(ctx, cropW, cropH);
 
-            // 3. Check Normal and 180-flip
-            const normalText = await ocr(canvas);
-            let finalNumber = normalText;
-
-            if (!finalNumber) {
-                flipCanvas(ctx, cropW, cropH);
-                finalNumber = await ocr(canvas);
+            // Pass 1: Standard
+            let found = await runOCR(canvas);
+            
+            // Pass 2: Flip if needed
+            if (!found) {
+                const flipCanvas = document.createElement('canvas');
+                flipCanvas.width = cropW; flipCanvas.height = cropH;
+                const fCtx = flipCanvas.getContext('2d');
+                fCtx.translate(cropW/2, cropH/2);
+                fCtx.rotate(Math.PI);
+                fCtx.drawImage(canvas, -cropW/2, -cropH/2);
+                found = await runOCR(flipCanvas);
             }
 
-            if (finalNumber) {
-                handleDetection(finalNumber);
-            }
-
+            if (found) handleLogic(found);
             isProcessing = false;
         }
 
-        async function ocr(canv) {
+        async function runOCR(canv) {
             const { data: { text, confidence } } = await Tesseract.recognize(canv, 'eng');
             const digits = text.replace(/\D/g, '');
-            // Only return if it looks like a real ID (e.g., 3+ digits) and Tesseract is confident
-            return (digits.length >= 3 && confidence > 50) ? digits : null;
+            // confidence > 30 is lower, but we are filtering heavily so it's safer
+            return (digits.length >= 3 && confidence > 30) ? digits : null;
         }
 
-        function applyFilter(context, w, h) {
+        function applyAdaptiveFilter(context, w, h) {
             const imgData = context.getImageData(0, 0, w, h);
             const data = imgData.data;
-            // High threshold (200) to force light gray to black
+            
+            // Contrast Stretching for Screen Glow
             for (let i = 0; i < data.length; i += 4) {
-                const v = (data[i] + data[i + 1] + data[i + 2]) / 3 < 200 ? 0 : 255;
-                data[i] = data[i + 1] = data[i + 2] = v;
+                let brightness = (data[i] + data[i+1] + data[i+2]) / 3;
+                // Aggressive threshold: screens bloom, so we want to be strict
+                let v = brightness < 160 ? 0 : 255; 
+                data[i] = data[i+1] = data[i+2] = v;
             }
             context.putImageData(imgData, 0, 0);
         }
 
-        function flipCanvas(context, w, h) {
-            const temp = document.createElement('canvas');
-            temp.width = w; temp.height = h;
-            temp.getContext('2d').drawImage(canvas, 0, 0);
-            context.clearRect(0, 0, w, h);
-            context.save();
-            context.translate(w / 2, h / 2);
-            context.rotate(Math.PI);
-            context.drawImage(temp, -w / 2, -h / 2);
-            context.restore();
-        }
-
-        function handleDetection(num) {
+        function handleLogic(num) {
             if (!targetID) {
-                // Step 1 Complete
                 targetID = num;
                 resultDisplay.innerText = targetID;
-                stepInfo.innerText = "Step 2: Scan Envelope";
-                if (navigator.vibrate) navigator.vibrate(100);
+                stepInfo.innerText = "STEP 2: SCAN ENVELOPE";
+                vibrate(100);
             } else {
-                // Step 2 Logic
                 if (num === targetID) {
-                    resultDisplay.innerText = "MATCH: " + num;
-                    mainPanel.classList.add('match-flash');
-                    if (navigator.vibrate) navigator.vibrate(400);
-
-                    // Stop scanning briefly to show success
-                    clearInterval(scheduler);
-                    setTimeout(() => {
-                        resetApp();
-                        scheduler = setInterval(autoScan, 1500);
-                    }, 3000);
+                    resultDisplay.innerText = "MATCH!";
+                    resultDisplay.className = "match-active";
+                    vibrate(500);
+                    // Pause for success
+                    isProcessing = true; 
+                    setTimeout(() => { resetApp(); isProcessing = false; }, 4000);
                 } else {
-                    resultDisplay.innerText = "NO MATCH: " + num;
-                    if (navigator.vibrate) navigator.vibrate([50, 50, 50]);
+                    // Temporarily show the mismatch but keep looking
+                    resultDisplay.innerText = num;
+                    resultDisplay.className = "error-active";
+                    vibrate([50, 50]);
                 }
             }
         }
 
+        function vibrate(p) { if(navigator.vibrate) navigator.vibrate(p); }
+
         function resetApp() {
             targetID = null;
-            resultDisplay.innerText = "---";
-            stepInfo.innerText = "Step 1: Focus on Letter Number";
-            mainPanel.classList.remove('match-flash');
+            resultDisplay.innerText = "READY";
+            resultDisplay.className = "";
+            stepInfo.innerText = "STEP 1: SCAN LETTER";
         }
 
         window.addEventListener('load', init);
     </script>
 </body>
-
 </html>
