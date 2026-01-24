@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Match-O-Matic v1.14</title>
+    <title>Match-O-Matic v1.15</title>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
         :root { --primary: #0A84FF; --success: #30D158; --error: #FF453A; --bg: #000; }
@@ -11,14 +11,14 @@
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: var(--bg); color: white; font-family: -apple-system, sans-serif; overflow: hidden; }
 
         #version-tag { position: fixed; top: 10px; left: 10px; background: rgba(0,0,0,0.8); padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; color: var(--primary); z-index: 100; border: 1px solid #333; }
-        #ocr-status { position: fixed; top: 35px; left: 10px; font-size: 9px; color: #aaa; z-index: 100; background: rgba(0,0,0,0.5); padding: 2px 5px; }
+        #ocr-status { position: fixed; top: 35px; left: 10px; font-size: 9px; color: #aaa; z-index: 100; background: rgba(0,0,0,0.5); padding: 2px 5px; max-width: 180px; overflow: hidden; }
 
         #camera-wrapper { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; z-index: 1; }
-        video { width: 100%; height: 100%; object-fit: cover; opacity: 0.7; }
+        video { width: 100%; height: 100%; object-fit: cover; opacity: 0.6; }
 
         #scanner-overlay { position: absolute; top: 35%; left: 50%; transform: translate(-50%, -50%); width: 85%; height: 100px; border: 2px solid var(--primary); border-radius: 12px; box-shadow: 0 0 0 2000px rgba(0,0,0,0.8); z-index: 5; pointer-events: none; }
         
-        #debug-view { position: fixed; top: 10px; right: 10px; width: 100px; border: 1px solid #555; background: #000; z-index: 100; }
+        #debug-view { position: fixed; top: 10px; right: 10px; width: 120px; border: 1px solid #555; background: #000; z-index: 100; }
         #proc-canvas { width: 100%; display: block; image-rendering: pixelated; }
 
         .ui-panel { position: fixed; bottom: 0; left: 0; width: 100%; background: #1c1c1e; padding: 15px 15px calc(20px + env(safe-area-inset-bottom)); text-align: center; z-index: 10; border-top: 1px solid #333; }
@@ -27,22 +27,16 @@
         
         .btn-row { display: flex; gap: 8px; justify-content: center; margin-top: 12px; }
         button { background: #333; border: none; color: #fff; padding: 12px; border-radius: 10px; font-size: 0.8rem; cursor: pointer; font-weight: bold; flex: 1; }
-        
-        #history-panel { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #1c1c1e; z-index: 200; display: none; padding: 40px 20px; overflow-y: auto; }
-        .history-item { padding: 12px; border-bottom: 1px solid #333; display: flex; justify-content: space-between; }
-        
-        .scanning-active { animation: pulse 1.5s infinite; }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
     </style>
 </head>
 <body onclick="manualAction()">
 
-    <div id="version-tag">v1.14</div>
-    <div id="ocr-status">SYSTEM: STANDBY</div>
+    <div id="version-tag">v1.15 - DUAL ROTATION</div>
+    <div id="ocr-status">SYSTEM: READY</div>
 
     <div id="debug-view">
         <canvas id="proc-canvas"></canvas>
-        <div style="font-size: 7px; color: #666; text-align: center;">FILTER PREVIEW</div>
+        <div style="font-size: 7px; color: #666; text-align: center;">ROTATING PASS...</div>
     </div>
 
     <div id="camera-wrapper">
@@ -50,20 +44,14 @@
         <div id="scanner-overlay"></div>
     </div>
 
-    <div id="history-panel">
-        <h2 style="color: var(--primary)">History</h2>
-        <div id="history-list"></div>
-        <button onclick="toggleHistory()" style="margin-top: 20px; width: 100%; background: var(--primary)">CLOSE</button>
-    </div>
-
     <div class="ui-panel">
         <div class="status-label" id="step-info">STEP 1: SCAN LETTER (+H...)</div>
-        <div id="result-display" class="scanning-active">READY</div>
+        <div id="result-display">READY</div>
         
         <div class="btn-row">
             <button onclick="event.stopPropagation(); toggleTorch();">🔦 LIGHT</button>
-            <button onclick="event.stopPropagation(); toggleHistory();">📜 LOG</button>
-            <button onclick="event.stopPropagation(); location.reload();">🔄 RELOAD</button>
+            <button onclick="event.stopPropagation(); resetApp();">🔄 RESET</button>
+            <button onclick="event.stopPropagation(); location.reload();">💾 REBOOT</button>
         </div>
     </div>
 
@@ -77,9 +65,9 @@
         let targetID = null, isProcessing = false, track = null, worker = null;
 
         async function initOCR() {
-            statusEl.innerText = "SYSTEM: STARTING OCR...";
+            statusEl.innerText = "INIT: LOADING ENGINE...";
             worker = await Tesseract.createWorker('eng');
-            statusEl.innerText = "SYSTEM: READY";
+            statusEl.innerText = "INIT: READY";
             initCamera();
         }
 
@@ -90,79 +78,96 @@
                 });
                 video.srcObject = stream;
                 track = stream.getVideoTracks()[0];
-                setInterval(() => { if (!isProcessing) performScan(false); }, 1500);
-            } catch (e) { statusEl.innerText = "SYSTEM: CAMERA ERROR"; }
+                setInterval(() => { if (!isProcessing) performScan(false); }, 1800);
+            } catch (e) { statusEl.innerText = "CAMERA: ERROR"; }
         }
 
-        function manualAction() {
-            if (isProcessing) return;
-            performScan(true);
-        }
+        function manualAction() { if (!isProcessing) performScan(true); }
 
         async function performScan(isManual) {
             if (!worker) return;
             isProcessing = true;
-            statusEl.innerText = "SYSTEM: CAPTURING...";
 
             const scale = video.videoWidth / video.clientWidth;
             const cropW = video.videoWidth * 0.85, cropH = 100 * scale;
             const cropX = (video.videoWidth - cropW) / 2, cropY = (video.videoHeight * 0.35) - (cropH / 2);
 
             canvas.width = cropW; canvas.height = cropH;
+            
+            // --- PASS 1: NORMAL ORIENTATION ---
             ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+            applyFilter(ctx, cropW, cropH);
+            let textPass1 = await runOCR();
+            if (processText(textPass1)) { isProcessing = false; return; }
 
-            // Binarization Filter (Boost for gray-on-gray)
-            const imgData = ctx.getImageData(0, 0, cropW, cropH);
-            const d = imgData.data;
-            for (let i = 0; i < d.length; i += 4) {
-                const avg = (d[i] + d[i+1] + d[i+2]) / 3;
-                const v = avg < 140 ? 0 : 255; // Lower = darker, Higher = more aggressive
-                d[i] = d[i+1] = d[i+2] = v;
-            }
-            ctx.putImageData(imgData, 0, 0);
+            // --- PASS 2: 180 DEGREE FLIP ---
+            ctx.clearRect(0,0,cropW,cropH);
+            ctx.save();
+            ctx.translate(cropW/2, cropH/2);
+            ctx.rotate(Math.PI);
+            ctx.drawImage(video, cropX, cropY, cropW, cropH, -cropW/2, -cropH/2, cropW, cropH);
+            ctx.restore();
+            applyFilter(ctx, cropW, cropH);
+            let textPass2 = await runOCR();
+            processText(textPass2);
 
-            try {
-                const { data: { text } } = await worker.recognize(canvas);
-                const clean = text.replace(/\s/g, '').toUpperCase();
-                statusEl.innerText = `LAST RAW: ${clean || 'EMPTY'}`;
-                
-                const letterMatch = clean.match(/\+H([0-9]+)[\>\]\)]/);
-                const envMatch = clean.match(/\+([0-9]+)[\>\]\)]/);
-
-                if (!targetID && letterMatch) {
-                    targetID = letterMatch[1];
-                    resultDisplay.innerText = "+H" + targetID + ">";
-                    document.getElementById('step-info').innerText = "STEP 2: SCAN ENVELOPE";
-                } else if (targetID && envMatch && !clean.includes('+H')) {
-                    if (envMatch[1] === targetID) {
-                        resultDisplay.innerText = "MATCH!";
-                        resultDisplay.style.color = "var(--success)";
-                        saveToHistory(targetID);
-                        setTimeout(() => location.reload(), 3000);
-                    } else {
-                        resultDisplay.innerText = "+" + envMatch[1] + ">";
-                        resultDisplay.style.color = "var(--error)";
-                        setTimeout(() => { resultDisplay.innerText = "+H"+targetID+">"; resultDisplay.style.color = "var(--primary)"; }, 1500);
-                    }
-                }
-            } catch (e) { statusEl.innerText = "SYSTEM: OCR FAIL"; }
             isProcessing = false;
         }
 
-        function saveToHistory(id) {
-            const h = JSON.parse(localStorage.getItem('mH') || '[]');
-            h.unshift({ id, t: new Date().toLocaleTimeString() });
-            localStorage.setItem('mH', JSON.stringify(h.slice(0, 50)));
+        async function runOCR() {
+            try {
+                const { data: { text } } = await worker.recognize(canvas);
+                const clean = text.replace(/\s/g, '').toUpperCase();
+                statusEl.innerText = `RAW: ${clean}`;
+                return clean;
+            } catch (e) { return ""; }
         }
 
-        function toggleHistory() {
-            const p = document.getElementById('history-panel');
-            if (p.style.display === 'block') p.style.display = 'none';
-            else {
-                const h = JSON.parse(localStorage.getItem('mH') || '[]');
-                document.getElementById('history-list').innerHTML = h.map(i => `<div class="history-item"><span>ID: ${i.id}</span><span>${i.t}</span></div>`).join('');
-                p.style.display = 'block';
+        function applyFilter(context, w, h) {
+            const imgData = context.getImageData(0, 0, w, h);
+            const d = imgData.data;
+            for (let i = 0; i < d.length; i += 4) {
+                const avg = (d[i] + d[i+1] + d[i+2]) / 3;
+                const v = avg < 135 ? 0 : 255;
+                d[i] = d[i+1] = d[i+2] = v;
             }
+            context.putImageData(imgData, 0, 0);
+        }
+
+        function processText(clean) {
+            const letterMatch = clean.match(/\+H([0-9]+)[\>\]\)]/);
+            const envMatch = clean.match(/\+([0-9]+)[\>\]\)]/);
+
+            if (!targetID && letterMatch) {
+                targetID = letterMatch[1];
+                resultDisplay.innerText = "+H" + targetID + ">";
+                document.getElementById('step-info').innerText = "STEP 2: SCAN ENVELOPE";
+                return true;
+            } else if (targetID && envMatch && !clean.includes('+H')) {
+                if (envMatch[1] === targetID) {
+                    resultDisplay.innerText = "MATCH!";
+                    resultDisplay.style.color = "var(--success)";
+                    setTimeout(() => resetApp(), 3000);
+                    return true;
+                } else {
+                    resultDisplay.innerText = "+" + envMatch[1] + ">";
+                    resultDisplay.style.color = "var(--error)";
+                    setTimeout(() => { 
+                        if(targetID){
+                           resultDisplay.innerText = "+H"+targetID+">"; 
+                           resultDisplay.style.color = "var(--primary)";
+                        }
+                    }, 1200);
+                }
+            }
+            return false;
+        }
+
+        function resetApp() {
+            targetID = null;
+            resultDisplay.innerText = "READY";
+            resultDisplay.style.color = "var(--primary)";
+            document.getElementById('step-info').innerText = "STEP 1: SCAN LETTER (+H...)";
         }
 
         function toggleTorch() { if (track) { const s = track.getSettings(); track.applyConstraints({ advanced: [{ torch: !s.torch }] }); } }
