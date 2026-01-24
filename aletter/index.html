@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Match-O-Matic OCR</title>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <style>
+        :root {
+            --primary: #2196F3;
+            --success: #4CAF50;
+            --error: #f44336;
+            --bg: #121212;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg);
+            color: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0;
+            padding: 20px;
+            overflow: hidden;
+        }
+        #camera-container {
+            position: relative;
+            width: 100%;
+            max-width: 400px;
+            aspect-ratio: 3/4;
+            background: #000;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 2px solid #333;
+        }
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        #scanner-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 80%;
+            height: 60px;
+            border: 2px solid var(--primary);
+            box-shadow: 0 0 0 500px rgba(0,0,0,0.5);
+            border-radius: 4px;
+            pointer-events: none;
+        }
+        #scanner-overlay::after {
+            content: "ALIGN NUMBER HERE";
+            position: absolute;
+            top: -25px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 10px;
+            letter-spacing: 1px;
+            color: var(--primary);
+        }
+        .controls {
+            margin-top: 20px;
+            text-align: center;
+            width: 100%;
+            max-width: 400px;
+        }
+        button {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 1.1rem;
+            border-radius: 30px;
+            font-weight: bold;
+            cursor: pointer;
+            width: 100%;
+            margin-bottom: 10px;
+        }
+        button:active { transform: scale(0.98); }
+        #status-card {
+            background: #1e1e1e;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 10px;
+            border-left: 5px solid var(--primary);
+        }
+        .match { border-left-color: var(--success) !important; background: #1b2e1c !important; }
+        .mismatch { border-left-color: var(--error) !important; background: #2e1b1b !important; }
+        .loading { opacity: 0.5; pointer-events: none; }
+    </style>
+</head>
+<body>
+
+    <h2>Match-O-Matic</h2>
+
+    <div id="camera-container">
+        <video id="video" autoplay playsinline></video>
+        <div id="scanner-overlay"></div>
+    </div>
+
+    <div class="controls">
+        <button id="scan-btn">SCAN LETTER</button>
+        <div id="status-card">
+            <div id="step-label">Step 1: Scan the Letter</div>
+            <div id="result-text" style="font-size: 1.5rem; margin-top: 5px;">---</div>
+        </div>
+        <button onclick="resetApp()" style="background: #333; margin-top: 20px; font-size: 0.8rem; padding: 10px;">Reset App</button>
+    </div>
+
+    <canvas id="crop-canvas" style="display:none;"></canvas>
+
+    <script>
+        const video = document.getElementById('video');
+        const scanBtn = document.getElementById('scan-btn');
+        const resultText = document.getElementById('result-text');
+        const stepLabel = document.getElementById('step-label');
+        const statusCard = document.getElementById('status-card');
+        const cropCanvas = document.getElementById('crop-canvas');
+
+        let targetID = null;
+
+        // Start Camera
+        async function initCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: "environment" },
+                    audio: false 
+                });
+                video.srcObject = stream;
+            } catch (err) {
+                resultText.innerText = "Camera Error: " + err.message;
+            }
+        }
+
+        async function performOCR() {
+            scanBtn.classList.add('loading');
+            scanBtn.innerText = "READING...";
+
+            // 1. Crop the image to just the overlay area for speed/accuracy
+            const ctx = cropCanvas.getContext('2d');
+            const scale = video.videoWidth / video.clientWidth;
+            
+            // Define crop box based on the UI overlay
+            const cropW = video.videoWidth * 0.8;
+            const cropH = 100; // Small height for single line of text
+            const cropX = (video.videoWidth - cropW) / 2;
+            const cropY = (video.videoHeight / 2) - (cropH / 2);
+
+            cropCanvas.width = cropW;
+            cropCanvas.height = cropH;
+            ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+
+            // 2. Run Tesseract
+            try {
+                const { data: { text } } = await Tesseract.recognize(cropCanvas, 'eng');
+                const cleanText = text.replace(/\D/g, ''); // Get only numbers
+
+                if (cleanText.length > 0) {
+                    processLogic(cleanText);
+                } else {
+                    resultText.innerText = "No numbers found. Try again.";
+                }
+            } catch (e) {
+                resultText.innerText = "OCR Error.";
+            }
+
+            scanBtn.classList.remove('loading');
+        }
+
+        function processLogic(foundNumber) {
+            if (!targetID) {
+                // First Scan (Letter)
+                targetID = foundNumber;
+                resultText.innerText = targetID;
+                stepLabel.innerText = "Step 2: Scan the Envelope";
+                scanBtn.innerText = "SCAN ENVELOPE";
+                if (navigator.vibrate) navigator.vibrate(50); // Small haptic for focus
+            } else {
+                // Second Scan (Envelope)
+                if (foundNumber === targetID) {
+                    // SUCCESS
+                    resultText.innerText = `MATCH: ${foundNumber}`;
+                    statusCard.className = "match";
+                    if (navigator.vibrate) navigator.vibrate(300); // One long pulse
+                    
+                    // Reset after 2 seconds to start next pair
+                    setTimeout(resetApp, 2500);
+                } else {
+                    // FAIL
+                    resultText.innerText = `NO MATCH: ${foundNumber}`;
+                    statusCard.className = "mismatch";
+                    if (navigator.vibrate) navigator.vibrate([100, 50, 100, 50, 100]); // Triple pulse
+                }
+            }
+        }
+
+        function resetApp() {
+            targetID = null;
+            statusCard.className = "";
+            stepLabel.innerText = "Step 1: Scan the Letter";
+            resultText.innerText = "---";
+            scanBtn.innerText = "SCAN LETTER";
+        }
+
+        scanBtn.addEventListener('click', performOCR);
+        window.addEventListener('load', initCamera);
+    </script>
+</body>
+</html>
