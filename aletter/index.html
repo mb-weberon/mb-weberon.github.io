@@ -3,40 +3,47 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Match-O-Matic v1.3</title>
+    <title>Match-O-Matic v1.4</title>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
         :root { --primary: #0A84FF; --success: #30D158; --error: #FF453A; --bg: #000; }
         body { font-family: -apple-system, sans-serif; background: var(--bg); color: white; margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
         
-        #camera-container { position: relative; flex-grow: 1; display: flex; align-items: center; justify-content: center; background: #000; }
-        video { width: 100%; height: 100%; object-fit: cover; opacity: 0.6; }
+        #camera-container { position: relative; height: 60vh; display: flex; align-items: center; justify-content: center; background: #000; }
+        video { width: 100%; height: 100%; object-fit: cover; opacity: 0.7; }
         
         #scanner-overlay {
             position: absolute;
-            width: 85%; height: 140px;
+            width: 85%; height: 120px;
             border: 2px solid var(--primary);
             border-radius: 12px;
             box-shadow: 0 0 0 2000px rgba(0,0,0,0.8);
             z-index: 5;
         }
 
-        /* Training View / Debug Window */
         #debug-view {
             position: absolute;
             top: 10px; right: 10px;
-            width: 120px; border: 1px solid #555;
-            background: #000; border-radius: 4px;
-            z-index: 20; text-align: center;
+            width: 100px; border: 1px solid #555;
+            background: #000; z-index: 20;
         }
-        #proc-canvas { width: 100%; height: auto; display: block; image-rendering: pixelated; }
+        #proc-canvas { width: 100%; display: block; }
 
-        .ui-panel { background: #1c1c1e; padding: 20px; text-align: center; border-top: 1px solid #333; z-index: 10; }
-        #result-display { font-size: 2.5rem; font-weight: 800; margin: 5px 0; height: 3rem; color: var(--primary); transition: all 0.2s; }
-        .status-label { font-size: 0.8rem; color: #8e8e93; text-transform: uppercase; letter-spacing: 1px; }
+        .ui-panel { 
+            flex-grow: 1; 
+            background: #1c1c1e; 
+            padding: 15px; 
+            text-align: center; 
+            display: flex; 
+            flex-direction: column; 
+            justify-content: space-around;
+            border-top: 1px solid #333; 
+        }
+        #result-display { font-size: 2.2rem; font-weight: 800; color: var(--primary); }
+        .status-label { font-size: 0.75rem; color: #8e8e93; text-transform: uppercase; }
         
-        .version-footer { font-size: 10px; color: #444; padding: 5px; text-align: center; background: #1c1c1e; }
-        .match-active { color: var(--success) !important; transform: scale(1.1); }
+        .version-footer { font-size: 9px; color: #444; padding: 4px; text-align: center; }
+        .match-active { color: var(--success) !important; }
         .error-active { color: var(--error) !important; }
     </style>
 </head>
@@ -44,7 +51,6 @@
 
     <div id="debug-view">
         <canvas id="proc-canvas"></canvas>
-        <div style="font-size: 8px; color: #555;">OCR PREVIEW</div>
     </div>
 
     <div id="camera-container">
@@ -53,12 +59,13 @@
     </div>
 
     <div class="ui-panel">
-        <div class="status-label" id="step-info">STEP 1: SCAN LETTER</div>
-        <div id="result-display">READY</div>
-        <button onclick="resetApp()" style="background: #333; border: none; color: #aaa; padding: 8px 16px; border-radius: 20px; font-size: 0.7rem; font-weight: bold;">RESET SESSION</button>
+        <div>
+            <div class="status-label" id="step-info">STEP 1: SCAN LETTER</div>
+            <div id="result-display">READY</div>
+        </div>
+        <button onclick="resetApp()" style="background: #333; border: none; color: #fff; padding: 12px; border-radius: 10px; font-size: 0.8rem; width: 60%; margin: 0 auto;">RESET</button>
+        <div class="version-footer">v1.4 - Dynamic Gray-Scale Filtering</div>
     </div>
-
-    <div class="version-footer">v1.3 - Training View & Dual-Direction Logic</div>
 
     <script>
         const video = document.getElementById('video');
@@ -76,8 +83,8 @@
                     video: { facingMode: "environment", width: { ideal: 1280 } } 
                 });
                 video.srcObject = stream;
-                setInterval(autoScan, 1000); // Faster cycle for v1.3
-            } catch (e) { resultDisplay.innerText = "CAMERA ERROR"; }
+                setInterval(autoScan, 1000);
+            } catch (e) { resultDisplay.innerText = "ERROR"; }
         }
 
         async function autoScan() {
@@ -86,7 +93,7 @@
 
             const scale = video.videoWidth / video.clientWidth;
             const cropW = video.videoWidth * 0.85;
-            const cropH = 140 * scale;
+            const cropH = 120 * scale;
             const cropX = (video.videoWidth - cropW) / 2;
             const cropY = (video.videoHeight / 2) - (cropH / 2);
 
@@ -94,21 +101,19 @@
             canvas.height = cropH;
             ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
 
-            // Filter for screen-based light gray text
-            applyAdaptiveFilter(ctx, cropW, cropH);
+            // DYNAMIC FILTERING: Handles gray-on-gray
+            applyDynamicFilter(ctx, cropW, cropH);
 
-            // Pass 1: Standard
+            // Check both directions
             let found = await runOCR(canvas);
-            
-            // Pass 2: Flip if needed
             if (!found) {
-                const flipCanvas = document.createElement('canvas');
-                flipCanvas.width = cropW; flipCanvas.height = cropH;
-                const fCtx = flipCanvas.getContext('2d');
+                const fCanv = document.createElement('canvas');
+                fCanv.width = cropW; fCanv.height = cropH;
+                const fCtx = fCanv.getContext('2d');
                 fCtx.translate(cropW/2, cropH/2);
                 fCtx.rotate(Math.PI);
                 fCtx.drawImage(canvas, -cropW/2, -cropH/2);
-                found = await runOCR(flipCanvas);
+                found = await runOCR(fCanv);
             }
 
             if (found) handleLogic(found);
@@ -118,19 +123,25 @@
         async function runOCR(canv) {
             const { data: { text, confidence } } = await Tesseract.recognize(canv, 'eng');
             const digits = text.replace(/\D/g, '');
-            // confidence > 30 is lower, but we are filtering heavily so it's safer
-            return (digits.length >= 3 && confidence > 30) ? digits : null;
+            return (digits.length >= 3 && confidence > 25) ? digits : null;
         }
 
-        function applyAdaptiveFilter(context, w, h) {
+        function applyDynamicFilter(context, w, h) {
             const imgData = context.getImageData(0, 0, w, h);
             const data = imgData.data;
             
-            // Contrast Stretching for Screen Glow
+            // 1. Calculate Average Brightness
+            let total = 0;
             for (let i = 0; i < data.length; i += 4) {
-                let brightness = (data[i] + data[i+1] + data[i+2]) / 3;
-                // Aggressive threshold: screens bloom, so we want to be strict
-                let v = brightness < 160 ? 0 : 255; 
+                total += (data[i] + data[i+1] + data[i+2]) / 3;
+            }
+            let avg = total / (data.length / 4);
+
+            // 2. Set threshold slightly below average to catch gray text
+            let threshold = avg * 0.85; 
+
+            for (let i = 0; i < data.length; i += 4) {
+                let v = ((data[i] + data[i+1] + data[i+2]) / 3) < threshold ? 0 : 255;
                 data[i] = data[i+1] = data[i+2] = v;
             }
             context.putImageData(imgData, 0, 0);
@@ -141,25 +152,21 @@
                 targetID = num;
                 resultDisplay.innerText = targetID;
                 stepInfo.innerText = "STEP 2: SCAN ENVELOPE";
-                vibrate(100);
+                if(navigator.vibrate) navigator.vibrate(100);
             } else {
                 if (num === targetID) {
                     resultDisplay.innerText = "MATCH!";
                     resultDisplay.className = "match-active";
-                    vibrate(500);
-                    // Pause for success
+                    if(navigator.vibrate) navigator.vibrate(500);
                     isProcessing = true; 
-                    setTimeout(() => { resetApp(); isProcessing = false; }, 4000);
+                    setTimeout(() => { resetApp(); isProcessing = false; }, 3000);
                 } else {
-                    // Temporarily show the mismatch but keep looking
                     resultDisplay.innerText = num;
                     resultDisplay.className = "error-active";
-                    vibrate([50, 50]);
+                    if(navigator.vibrate) navigator.vibrate([50, 50]);
                 }
             }
         }
-
-        function vibrate(p) { if(navigator.vibrate) navigator.vibrate(p); }
 
         function resetApp() {
             targetID = null;
