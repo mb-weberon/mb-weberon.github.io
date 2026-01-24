@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Match-O-Matic v1.8</title>
+    <title>Match-O-Matic v1.9</title>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
         :root { --primary: #0A84FF; --success: #30D158; --error: #FF453A; --bg: #000; }
@@ -37,7 +37,7 @@
             border-top: 1px solid #333; z-index: 10;
             padding-bottom: env(safe-area-inset-bottom);
         }
-        #result-display { font-size: 2.5rem; font-weight: 900; color: var(--primary); margin: 5px 0; min-height: 3rem; }
+        #result-display { font-size: 2.2rem; font-weight: 900; color: var(--primary); margin: 5px 0; min-height: 3rem; word-break: break-all; }
         .status-label { font-size: 0.8rem; color: #8e8e93; font-weight: bold; }
         
         .btn-row { display: flex; gap: 10px; justify-content: center; margin-top: 15px; }
@@ -45,12 +45,12 @@
         
         .match-active { color: var(--success) !important; }
         .error-active { color: var(--error) !important; }
-        .tap-hint { font-size: 11px; color: var(--primary); margin-top: 5px; letter-spacing: 0.5px; }
+        .tap-hint { font-size: 11px; color: var(--primary); margin-top: 5px; letter-spacing: 0.5px; opacity: 0.8; }
     </style>
 </head>
 <body onclick="manualScanTrigger()">
 
-    <div id="version-tag">VERSION: v1.8</div>
+    <div id="version-tag">VERSION: v1.9</div>
 
     <div id="debug-view">
         <canvas id="proc-canvas"></canvas>
@@ -63,9 +63,9 @@
     </div>
 
     <div class="ui-panel">
-        <div class="status-label" id="step-info">STEP 1: SCAN + NUMBER ></div>
+        <div class="status-label" id="step-info">STEP 1: SCAN LETTER (+123>)</div>
         <div id="result-display">READY</div>
-        <div class="tap-hint">TAP TO FORCE SCAN (+123>)</div>
+        <div class="tap-hint">TAP TO SCAN • ENVELOPES MUST START WITH +E</div>
         <div class="btn-row">
             <button onclick="event.stopPropagation(); toggleTorch();">🔦 LIGHT</button>
             <button onclick="event.stopPropagation(); resetApp();">RESET</button>
@@ -110,7 +110,7 @@
             try {
                 const settings = track.getSettings();
                 await track.applyConstraints({ advanced: [{ torch: !settings.torch }] });
-            } catch(e) { console.log("Torch not supported"); }
+            } catch(e) { console.log("Torch error"); }
         }
 
         function manualScanTrigger() {
@@ -132,10 +132,8 @@
 
             applyDynamicFilter(ctx, cropW, cropH, isManual);
 
-            // Orientation Pass 1
             let result = await extractPattern(canvas);
             
-            // If not found, Orientation Pass 2 (Flip)
             if (!result) {
                 const fCanv = document.createElement('canvas');
                 fCanv.width = cropW; fCanv.height = cropH;
@@ -150,16 +148,22 @@
         }
 
         async function extractPattern(canv) {
-            const { data: { text, confidence } } = await Tesseract.recognize(canv, 'eng');
-            // Clean up text but keep markers. Tesseract often reads '>' as ')' or '7' or 'I' 
-            // so we use a Regex that looks for + then digits then any closing-style char
-            const pattern = /\+([0-9]+)[\>\]\)]/; 
-            const match = text.replace(/\s/g, '').match(pattern);
+            const { data: { text } } = await Tesseract.recognize(canv, 'eng');
+            const clean = text.replace(/\s/g, '').toUpperCase();
             
-            if (match && match[1]) {
-                return match[1]; // Returns just the digits
+            // Regex logic:
+            // Letter (TargetID is null): Must be + (digits) >
+            // Envelope (TargetID exists): Must be + E (digits) >
+            const letterPattern = /\+([0-9]+)[\>\]\)]/;
+            const envelopePattern = /\+E([0-9]+)[\>\]\)]/;
+
+            if (!targetID) {
+                const match = clean.match(letterPattern);
+                return match ? { id: match[1], type: 'LETTER' } : null;
+            } else {
+                const match = clean.match(envelopePattern);
+                return match ? { id: match[1], type: 'ENVELOPE' } : null;
             }
-            return null;
         }
 
         function applyDynamicFilter(context, w, h, isManual) {
@@ -168,9 +172,7 @@
             let total = 0;
             for (let i = 0; i < data.length; i += 4) total += (data[i] + data[i+1] + data[i+2]) / 3;
             let avg = total / (data.length / 4);
-            // Lower threshold = stricter (cleaner background)
             let threshold = avg * (isManual ? 0.90 : 0.82); 
-
             for (let i = 0; i < data.length; i += 4) {
                 let v = ((data[i] + data[i+1] + data[i+2]) / 3) < threshold ? 0 : 255;
                 data[i] = data[i+1] = data[i+2] = v;
@@ -178,15 +180,15 @@
             context.putImageData(imgData, 0, 0);
         }
 
-        function handleLogic(num) {
-            if (!targetID) {
-                targetID = num;
+        function handleLogic(obj) {
+            if (obj.type === 'LETTER' && !targetID) {
+                targetID = obj.id;
                 resultDisplay.innerText = "+" + targetID + ">";
-                stepInfo.innerText = "STEP 2: SCAN ENVELOPE";
+                stepInfo.innerText = "STEP 2: SCAN ENVELOPE (+E...>)";
                 playTone(440, 'sine', 0.2);
                 if(navigator.vibrate) navigator.vibrate(100);
-            } else {
-                if (num === targetID) {
+            } else if (obj.type === 'ENVELOPE' && targetID) {
+                if (obj.id === targetID) {
                     resultDisplay.innerText = "MATCH!";
                     resultDisplay.className = "match-active";
                     playTone(880, 'sine', 0.5);
@@ -194,7 +196,7 @@
                     isProcessing = true; 
                     setTimeout(() => { resetApp(); isProcessing = false; }, 3500);
                 } else {
-                    resultDisplay.innerText = "+" + num + ">";
+                    resultDisplay.innerText = "+E" + obj.id + ">";
                     resultDisplay.className = "error-active";
                     playTone(200, 'sawtooth', 0.3);
                     if(navigator.vibrate) navigator.vibrate([100, 50, 100]);
@@ -206,7 +208,7 @@
             targetID = null;
             resultDisplay.innerText = "READY";
             resultDisplay.className = "";
-            stepInfo.innerText = "STEP 1: SCAN + NUMBER >";
+            stepInfo.innerText = "STEP 1: SCAN LETTER (+123>)";
         }
         window.addEventListener('load', init);
     </script>
