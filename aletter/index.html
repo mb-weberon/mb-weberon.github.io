@@ -2,58 +2,55 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Match-O-Matic v1.5</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Match-O-Matic v1.6</title>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
         :root { --primary: #0A84FF; --success: #30D158; --error: #FF453A; --bg: #000; }
         body { font-family: -apple-system, sans-serif; background: var(--bg); color: white; margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
         
-        /* Camera Area */
-        #camera-container { position: relative; height: 65vh; display: flex; align-items: center; justify-content: center; background: #000; cursor: pointer; }
-        video { width: 100%; height: 100%; object-fit: cover; opacity: 0.8; }
+        /* Floating Version Badge */
+        #version-tag {
+            position: absolute; top: 10px; left: 10px;
+            background: rgba(255,255,255,0.1); padding: 4px 8px;
+            border-radius: 4px; font-size: 10px; font-weight: bold;
+            color: #888; z-index: 30; pointer-events: none;
+        }
+
+        #camera-container { position: relative; flex: 1; display: flex; align-items: center; justify-content: center; background: #000; overflow: hidden; }
+        video { width: 100%; height: 100%; object-fit: cover; }
         
         #scanner-overlay {
-            position: absolute;
-            width: 85%; height: 120px;
-            border: 2px solid var(--primary);
-            border-radius: 12px;
-            box-shadow: 0 0 0 2000px rgba(0,0,0,0.85);
-            z-index: 5;
+            position: absolute; width: 85%; height: 120px;
+            border: 2px solid var(--primary); border-radius: 12px;
+            box-shadow: 0 0 0 2000px rgba(0,0,0,0.8); z-index: 5;
             pointer-events: none;
         }
 
         #debug-view {
-            position: absolute;
-            top: 10px; right: 10px;
-            width: 110px; border: 1px solid #555;
-            background: #000; z-index: 20;
+            position: absolute; top: 10px; right: 10px;
+            width: 100px; border: 1px solid #555; background: #000; z-index: 20;
         }
         #proc-canvas { width: 100%; display: block; image-rendering: pixelated; }
 
-        /* Control Area */
         .ui-panel { 
-            flex-grow: 1; 
-            background: #1c1c1e; 
-            padding: 10px; 
-            text-align: center; 
-            display: flex; 
-            flex-direction: column; 
-            justify-content: space-between;
-            border-top: 1px solid #333; 
+            background: #1c1c1e; padding: 20px; text-align: center;
+            border-top: 1px solid #333; z-index: 10;
+            padding-bottom: env(safe-area-inset-bottom);
         }
-        #result-display { font-size: 2.8rem; font-weight: 900; color: var(--primary); margin: 5px 0; }
-        .status-label { font-size: 0.8rem; color: #8e8e93; font-weight: bold; letter-spacing: 1px; }
+        #result-display { font-size: 2.5rem; font-weight: 900; color: var(--primary); margin: 5px 0; min-height: 3rem; }
+        .status-label { font-size: 0.8rem; color: #8e8e93; font-weight: bold; }
         
-        button#reset-btn { background: #333; border: none; color: #fff; padding: 12px; border-radius: 12px; font-size: 0.9rem; width: 80%; margin: 0 auto; cursor: pointer; }
-        .version-footer { font-size: 11px; color: #555; font-weight: bold; margin-bottom: 5px; }
+        button#reset-btn { background: #333; border: none; color: #fff; padding: 12px 24px; border-radius: 12px; font-size: 0.9rem; cursor: pointer; }
+        .tap-hint { font-size: 11px; color: var(--primary); margin-top: 5px; font-weight: 600; }
         
         .match-active { color: var(--success) !important; }
         .error-active { color: var(--error) !important; }
-        .tap-hint { font-size: 10px; color: var(--primary); margin-top: 2px; }
     </style>
 </head>
 <body onclick="manualScanTrigger()">
+
+    <div id="version-tag">VERSION: v1.6</div>
 
     <div id="debug-view">
         <canvas id="proc-canvas"></canvas>
@@ -66,14 +63,12 @@
     </div>
 
     <div class="ui-panel">
-        <div>
-            <div class="status-label" id="step-info">STEP 1: SCAN LETTER</div>
-            <div id="result-display">READY</div>
-            <div class="tap-hint">TAP SCREEN TO FORCE SCAN</div>
+        <div class="status-label" id="step-info">STEP 1: SCAN LETTER</div>
+        <div id="result-display">READY</div>
+        <div class="tap-hint">TAP TO FORCE SCAN</div>
+        <div style="margin-top: 15px;">
+            <button id="reset-btn" onclick="event.stopPropagation(); resetApp();">RESET SESSION</button>
         </div>
-        
-        <button id="reset-btn" onclick="event.stopPropagation(); resetApp();">RESET SESSION</button>
-        <div class="version-footer">APP VERSION: v1.5 (Tap-to-Scan Enabled)</div>
     </div>
 
     <script>
@@ -82,6 +77,18 @@
         const stepInfo = document.getElementById('step-info');
         const canvas = document.getElementById('proc-canvas');
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+        // Simple Audio Tones
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function playTone(freq, type, duration) {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = type; osc.frequency.value = freq;
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            osc.start(); gain.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + duration);
+            osc.stop(audioCtx.currentTime + duration);
+        }
 
         let targetID = null;
         let isProcessing = false;
@@ -92,80 +99,56 @@
                     video: { facingMode: "environment", width: { ideal: 1280 } } 
                 });
                 video.srcObject = stream;
-                // Periodic auto-scan every 1.5s
                 setInterval(() => { if(!isProcessing) performScan(false); }, 1500);
             } catch (e) { resultDisplay.innerText = "NO CAMERA"; }
         }
 
-        // Tap-to-scan trigger
         function manualScanTrigger() {
             if (isProcessing) return;
-            vibrate(50); // Immediate feedback that tap was felt
+            playTone(800, 'sine', 0.1); // Shutter click sound
             performScan(true); 
         }
 
         async function performScan(isManual) {
             isProcessing = true;
-            if(isManual) resultDisplay.style.opacity = "0.5";
-
             const scale = video.videoWidth / video.clientWidth;
             const cropW = video.videoWidth * 0.85;
             const cropH = 120 * scale;
             const cropX = (video.videoWidth - cropW) / 2;
             const cropY = (video.videoHeight / 2) - (cropH / 2);
 
-            canvas.width = cropW;
-            canvas.height = cropH;
+            canvas.width = cropW; canvas.height = cropH;
             ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
 
-            // Filter Logic - Manual tap is slightly more sensitive
             applyDynamicFilter(ctx, cropW, cropH, isManual);
 
-            // Try 0 degrees
             let found = await runOCR(canvas);
-            
-            // Try 180 degrees
             if (!found) {
                 const fCanv = document.createElement('canvas');
                 fCanv.width = cropW; fCanv.height = cropH;
                 const fCtx = fCanv.getContext('2d');
-                fCtx.translate(cropW/2, cropH/2);
-                fCtx.rotate(Math.PI);
+                fCtx.translate(cropW/2, cropH/2); fCtx.rotate(Math.PI);
                 fCtx.drawImage(canvas, -cropW/2, -cropH/2);
                 found = await runOCR(fCanv);
             }
 
-            if (found) {
-                handleLogic(found);
-            } else if (isManual) {
-                resultDisplay.innerText = "NOT FOUND";
-                setTimeout(() => { if(!targetID) resultDisplay.innerText = "READY"; else resultDisplay.innerText = targetID; }, 1000);
-            }
-
-            resultDisplay.style.opacity = "1";
+            if (found) handleLogic(found);
             isProcessing = false;
         }
 
         async function runOCR(canv) {
             const { data: { text, confidence } } = await Tesseract.recognize(canv, 'eng');
             const digits = text.replace(/\D/g, '');
-            // We lower confidence requirement for manual taps to catch faint text
             return (digits.length >= 3 && confidence > 20) ? digits : null;
         }
 
         function applyDynamicFilter(context, w, h, isManual) {
             const imgData = context.getImageData(0, 0, w, h);
             const data = imgData.data;
-            
             let total = 0;
-            for (let i = 0; i < data.length; i += 4) {
-                total += (data[i] + data[i+1] + data[i+2]) / 3;
-            }
+            for (let i = 0; i < data.length; i += 4) total += (data[i] + data[i+1] + data[i+2]) / 3;
             let avg = total / (data.length / 4);
-
-            // Manual tap uses a more lenient threshold to catch lighter grays
-            let thresholdFactor = isManual ? 0.92 : 0.82;
-            let threshold = avg * thresholdFactor; 
+            let threshold = avg * (isManual ? 0.90 : 0.80); 
 
             for (let i = 0; i < data.length; i += 4) {
                 let v = ((data[i] + data[i+1] + data[i+2]) / 3) < threshold ? 0 : 255;
@@ -179,23 +162,21 @@
                 targetID = num;
                 resultDisplay.innerText = targetID;
                 stepInfo.innerText = "STEP 2: SCAN ENVELOPE";
-                vibrate(100);
+                playTone(440, 'square', 0.2); // Notified sound
             } else {
                 if (num === targetID) {
                     resultDisplay.innerText = "MATCH!";
                     resultDisplay.className = "match-active";
-                    vibrate(600);
+                    playTone(880, 'sine', 0.5); // Success chime
                     isProcessing = true; 
                     setTimeout(() => { resetApp(); isProcessing = false; }, 3500);
                 } else {
                     resultDisplay.innerText = num;
                     resultDisplay.className = "error-active";
-                    vibrate([100, 50, 100]);
+                    playTone(200, 'sawtooth', 0.3); // Error buzz
                 }
             }
         }
-
-        function vibrate(p) { if(navigator.vibrate) navigator.vibrate(p); }
 
         function resetApp() {
             targetID = null;
@@ -203,7 +184,6 @@
             resultDisplay.className = "";
             stepInfo.innerText = "STEP 1: SCAN LETTER";
         }
-
         window.addEventListener('load', init);
     </script>
 </body>
