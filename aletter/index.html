@@ -3,38 +3,38 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Match-O-Matic OCR</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Match-O-Matic Pro</title>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
         :root {
-            --primary: #2196F3;
-            --success: #4CAF50;
-            --error: #f44336;
-            --bg: #121212;
+            --primary: #007AFF;
+            --success: #34C759;
+            --error: #FF3B30;
+            --bg: #000000;
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            font-family: -apple-system, system-ui, sans-serif;
             background-color: var(--bg);
             color: white;
             display: flex;
             flex-direction: column;
             align-items: center;
             margin: 0;
-            padding: 20px;
-            overflow: hidden;
+            padding: 15px;
+            touch-action: manipulation;
         }
 
         #camera-container {
             position: relative;
             width: 100%;
-            max-width: 400px;
-            aspect-ratio: 3/4;
-            background: #000;
-            border-radius: 12px;
+            max-width: 450px;
+            aspect-ratio: 4/3;
+            background: #1c1c1e;
+            border-radius: 16px;
             overflow: hidden;
-            border: 2px solid #333;
+            border: 1px solid #333;
         }
 
         video {
@@ -48,77 +48,84 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            width: 80%;
-            height: 60px;
+            width: 70%;
+            height: 50px;
             border: 2px solid var(--primary);
-            box-shadow: 0 0 0 500px rgba(0, 0, 0, 0.5);
+            box-shadow: 0 0 0 1000px rgba(0, 0, 0, 0.6);
             border-radius: 4px;
-            pointer-events: none;
-        }
-
-        #scanner-overlay::after {
-            content: "ALIGN NUMBER HERE";
-            position: absolute;
-            top: -25px;
-            left: 50%;
-            transform: translateX(-50%);
-            font-size: 10px;
-            letter-spacing: 1px;
-            color: var(--primary);
         }
 
         .controls {
-            margin-top: 20px;
-            text-align: center;
             width: 100%;
-            max-width: 400px;
+            max-width: 450px;
+            margin-top: 20px;
         }
 
         button {
             background: var(--primary);
             color: white;
             border: none;
-            padding: 15px 30px;
-            font-size: 1.1rem;
-            border-radius: 30px;
-            font-weight: bold;
-            cursor: pointer;
+            padding: 18px;
+            font-size: 1.2rem;
+            border-radius: 12px;
+            font-weight: 600;
             width: 100%;
-            margin-bottom: 10px;
+            cursor: pointer;
         }
 
         button:active {
-            transform: scale(0.98);
-        }
-
-        #status-card {
-            background: #1e1e1e;
-            padding: 15px;
-            border-radius: 8px;
-            margin-top: 10px;
-            border-left: 5px solid var(--primary);
-        }
-
-        .match {
-            border-left-color: var(--success) !important;
-            background: #1b2e1c !important;
-        }
-
-        .mismatch {
-            border-left-color: var(--error) !important;
-            background: #2e1b1b !important;
+            opacity: 0.8;
         }
 
         .loading {
-            opacity: 0.5;
+            background: #444 !important;
             pointer-events: none;
+        }
+
+        #status-card {
+            background: #1c1c1e;
+            padding: 15px;
+            border-radius: 12px;
+            margin-top: 15px;
+            text-align: center;
+            border: 2px solid #333;
+        }
+
+        .match {
+            border-color: var(--success) !important;
+            background: #0e2613 !important;
+        }
+
+        .mismatch {
+            border-color: var(--error) !important;
+            background: #260e0e !important;
+        }
+
+        .config-panel {
+            margin-top: 15px;
+            width: 100%;
+            font-size: 0.8rem;
+            color: #888;
+        }
+
+        input[type=range] {
+            width: 100%;
+            margin: 10px 0;
+        }
+
+        canvas#debug-canvas {
+            width: 100%;
+            height: auto;
+            border: 1px solid #444;
+            margin-top: 10px;
+            border-radius: 4px;
         }
     </style>
 </head>
 
 <body>
 
-    <h2>Match-O-Matic</h2>
+    <h2 style="margin: 10px 0;">Match-O-Matic</h2>
 
     <div id="camera-container">
         <video id="video" autoplay playsinline></video>
@@ -127,15 +134,25 @@
 
     <div class="controls">
         <button id="scan-btn">SCAN LETTER</button>
-        <div id="status-card">
-            <div id="step-label">Step 1: Scan the Letter</div>
-            <div id="result-text" style="font-size: 1.5rem; margin-top: 5px;">---</div>
-        </div>
-        <button onclick="resetApp()" style="background: #333; margin-top: 20px; font-size: 0.8rem; padding: 10px;">Reset
-            App</button>
-    </div>
 
-    <canvas id="crop-canvas" style="display:none;"></canvas>
+        <div id="status-card">
+            <div id="step-label" style="color: #888; text-transform: uppercase; font-size: 0.7rem;">Step 1</div>
+            <div id="result-text" style="font-size: 1.8rem; font-weight: bold; margin: 5px 0;">READY</div>
+        </div>
+
+        <div class="config-panel">
+            <label>OCR Sensitivity (Light Gray Correction):</label>
+            <input type="range" id="threshold-slider" min="50" max="230" value="180">
+            <div style="display: flex; justify-content: space-between;">
+                <span>See Processed Preview:</span>
+                <span id="thresh-val">180</span>
+            </div>
+            <canvas id="crop-canvas"></canvas>
+        </div>
+
+        <button onclick="resetApp()"
+            style="background: transparent; color: #666; font-size: 0.9rem; margin-top: 10px;">Reset Everything</button>
+    </div>
 
     <script>
         const video = document.getElementById('video');
@@ -144,90 +161,129 @@
         const stepLabel = document.getElementById('step-label');
         const statusCard = document.getElementById('status-card');
         const cropCanvas = document.getElementById('crop-canvas');
+        const threshSlider = document.getElementById('threshold-slider');
+        const threshValDisp = document.getElementById('thresh-val');
 
         let targetID = null;
 
-        // Start Camera
+        threshSlider.oninput = () => threshValDisp.innerText = threshSlider.value;
+
         async function initCamera() {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: "environment" },
+                    video: { facingMode: "environment", width: { ideal: 1280 } },
                     audio: false
                 });
                 video.srcObject = stream;
             } catch (err) {
-                resultText.innerText = "Camera Error: " + err.message;
+                resultText.innerText = "Check Camera Permissions";
             }
         }
 
         async function performOCR() {
             scanBtn.classList.add('loading');
-            scanBtn.innerText = "READING...";
+            scanBtn.innerText = "PROCESSING...";
 
-            // 1. Crop the image to just the overlay area for speed/accuracy
-            const ctx = cropCanvas.getContext('2d');
-            const scale = video.videoWidth / video.clientWidth;
+            const ctx = cropCanvas.getContext('2d', { willReadFrequently: true });
 
-            // Define crop box based on the UI overlay
-            const cropW = video.videoWidth * 0.8;
-            const cropH = 100; // Small height for single line of text
+            // Define dimensions based on video feed
+            const cropW = video.videoWidth * 0.7;
+            const cropH = 100;
             const cropX = (video.videoWidth - cropW) / 2;
             const cropY = (video.videoHeight / 2) - (cropH / 2);
 
             cropCanvas.width = cropW;
             cropCanvas.height = cropH;
+
+            // 1. First Pass: Right side up
             ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+            applyThreshold(ctx, cropW, cropH);
+            let found = await recognizeNumbers();
 
-            // 2. Run Tesseract
-            try {
-                const { data: { text } } = await Tesseract.recognize(cropCanvas, 'eng');
-                const cleanText = text.replace(/\D/g, ''); // Get only numbers
+            // 2. Second Pass: Upside down (if first pass failed)
+            if (!found) {
+                flip180(ctx, cropW, cropH);
+                found = await recognizeNumbers();
+            }
 
-                if (cleanText.length > 0) {
-                    processLogic(cleanText);
-                } else {
-                    resultText.innerText = "No numbers found. Try again.";
-                }
-            } catch (e) {
-                resultText.innerText = "OCR Error.";
+            if (found) {
+                processMatchLogic(found);
+            } else {
+                resultText.innerText = "RETRY";
+                vibrate([50, 50]);
             }
 
             scanBtn.classList.remove('loading');
+            updateBtnText();
         }
 
-        function processLogic(foundNumber) {
-            if (!targetID) {
-                // First Scan (Letter)
-                targetID = foundNumber;
-                resultText.innerText = targetID;
-                stepLabel.innerText = "Step 2: Scan the Envelope";
-                scanBtn.innerText = "SCAN ENVELOPE";
-                if (navigator.vibrate) navigator.vibrate(50); // Small haptic for focus
-            } else {
-                // Second Scan (Envelope)
-                if (foundNumber === targetID) {
-                    // SUCCESS
-                    resultText.innerText = `MATCH: ${foundNumber}`;
-                    statusCard.className = "match";
-                    if (navigator.vibrate) navigator.vibrate(300); // One long pulse
+        async function recognizeNumbers() {
+            const { data: { text } } = await Tesseract.recognize(cropCanvas, 'eng');
+            const digits = text.replace(/\D/g, '');
+            return digits.length >= 3 ? digits : null; // Ignore noise under 3 digits
+        }
 
-                    // Reset after 2 seconds to start next pair
-                    setTimeout(resetApp, 2500);
+        function applyThreshold(ctx, w, h) {
+            const imgData = ctx.getImageData(0, 0, w, h);
+            const data = imgData.data;
+            const threshold = parseInt(threshSlider.value);
+
+            for (let i = 0; i < data.length; i += 4) {
+                const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
+                // If the pixel is darker than threshold, make it black, else white
+                const v = brightness < threshold ? 0 : 255;
+                data[i] = data[i + 1] = data[i + 2] = v;
+            }
+            ctx.putImageData(imgData, 0, 0);
+        }
+
+        function flip180(ctx, w, h) {
+            const temp = document.createElement('canvas');
+            temp.width = w; temp.height = h;
+            temp.getContext('2d').drawImage(cropCanvas, 0, 0);
+
+            ctx.clearRect(0, 0, w, h);
+            ctx.save();
+            ctx.translate(w / 2, h / 2);
+            ctx.rotate(Math.PI);
+            ctx.drawImage(temp, -w / 2, -h / 2);
+            ctx.restore();
+        }
+
+        function processMatchLogic(found) {
+            if (!targetID) {
+                targetID = found;
+                resultText.innerText = targetID;
+                stepLabel.innerText = "Step 2: Scan Envelope";
+                vibrate(100);
+            } else {
+                if (found === targetID) {
+                    resultText.innerText = "MATCH: " + found;
+                    statusCard.className = "match";
+                    vibrate(400); // Success pulse
+                    setTimeout(resetApp, 3000);
                 } else {
-                    // FAIL
-                    resultText.innerText = `NO MATCH: ${foundNumber}`;
+                    resultText.innerText = "NO MATCH: " + found;
                     statusCard.className = "mismatch";
-                    if (navigator.vibrate) navigator.vibrate([100, 50, 100, 50, 100]); // Triple pulse
+                    vibrate([100, 50, 100, 50, 100]); // Error pattern
                 }
             }
+        }
+
+        function vibrate(pattern) {
+            if (navigator.vibrate) navigator.vibrate(pattern);
+        }
+
+        function updateBtnText() {
+            scanBtn.innerText = targetID ? "SCAN ENVELOPE" : "SCAN LETTER";
         }
 
         function resetApp() {
             targetID = null;
             statusCard.className = "";
-            stepLabel.innerText = "Step 1: Scan the Letter";
-            resultText.innerText = "---";
-            scanBtn.innerText = "SCAN LETTER";
+            stepLabel.innerText = "Step 1";
+            resultText.innerText = "READY";
+            updateBtnText();
         }
 
         scanBtn.addEventListener('click', performOCR);
