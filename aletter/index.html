@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Match-O-Matic v1.15</title>
+    <title>Match-O-Matic v1.16</title>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
         :root { --primary: #0A84FF; --success: #30D158; --error: #FF453A; --bg: #000; }
@@ -11,32 +11,34 @@
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: var(--bg); color: white; font-family: -apple-system, sans-serif; overflow: hidden; }
 
         #version-tag { position: fixed; top: 10px; left: 10px; background: rgba(0,0,0,0.8); padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; color: var(--primary); z-index: 100; border: 1px solid #333; }
-        #ocr-status { position: fixed; top: 35px; left: 10px; font-size: 9px; color: #aaa; z-index: 100; background: rgba(0,0,0,0.5); padding: 2px 5px; max-width: 180px; overflow: hidden; }
+        #ocr-status { position: fixed; top: 35px; left: 10px; font-size: 9px; color: #aaa; z-index: 100; background: rgba(0,0,0,0.5); padding: 2px 5px; }
 
         #camera-wrapper { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; z-index: 1; }
         video { width: 100%; height: 100%; object-fit: cover; opacity: 0.6; }
 
         #scanner-overlay { position: absolute; top: 35%; left: 50%; transform: translate(-50%, -50%); width: 85%; height: 100px; border: 2px solid var(--primary); border-radius: 12px; box-shadow: 0 0 0 2000px rgba(0,0,0,0.8); z-index: 5; pointer-events: none; }
         
-        #debug-view { position: fixed; top: 10px; right: 10px; width: 120px; border: 1px solid #555; background: #000; z-index: 100; }
+        #debug-view { position: fixed; top: 10px; right: 10px; width: 110px; border: 1px solid #555; background: #000; z-index: 100; }
         #proc-canvas { width: 100%; display: block; image-rendering: pixelated; }
 
-        .ui-panel { position: fixed; bottom: 0; left: 0; width: 100%; background: #1c1c1e; padding: 15px 15px calc(20px + env(safe-area-inset-bottom)); text-align: center; z-index: 10; border-top: 1px solid #333; }
+        .ui-panel { position: fixed; bottom: 0; left: 0; width: 100%; background: #1c1c1e; padding: 15px 15px calc(25px + env(safe-area-inset-bottom)); text-align: center; z-index: 10; border-top: 1px solid #333; }
         #result-display { font-size: 2.2rem; font-weight: 900; color: var(--primary); margin: 5px 0; min-height: 2.8rem; }
         .status-label { font-size: 0.75rem; color: #8e8e93; font-weight: bold; text-transform: uppercase; }
         
         .btn-row { display: flex; gap: 8px; justify-content: center; margin-top: 12px; }
         button { background: #333; border: none; color: #fff; padding: 12px; border-radius: 10px; font-size: 0.8rem; cursor: pointer; font-weight: bold; flex: 1; }
+        
+        .match-active { color: var(--success) !important; }
+        .error-active { color: var(--error) !important; }
     </style>
 </head>
 <body onclick="manualAction()">
 
-    <div id="version-tag">v1.15 - DUAL ROTATION</div>
-    <div id="ocr-status">SYSTEM: READY</div>
+    <div id="version-tag">v1.16</div>
+    <div id="ocr-status">SENSORS: ONLINE</div>
 
     <div id="debug-view">
         <canvas id="proc-canvas"></canvas>
-        <div style="font-size: 7px; color: #666; text-align: center;">ROTATING PASS...</div>
     </div>
 
     <div id="camera-wrapper">
@@ -64,114 +66,130 @@
         
         let targetID = null, isProcessing = false, track = null, worker = null;
 
+        // --- AUDIO/HAPTIC SYSTEM ---
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function playFeedback(type) {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            
+            if (type === 'SUCCESS') {
+                osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+                gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+                osc.start(); osc.stop(audioCtx.currentTime + 0.5);
+                if (navigator.vibrate) navigator.vibrate(200);
+            } else if (type === 'LOCK') {
+                osc.frequency.setValueAtTime(440, audioCtx.currentTime);
+                gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+                osc.start(); osc.stop(audioCtx.currentTime + 0.2);
+                if (navigator.vibrate) navigator.vibrate(50);
+            } else if (type === 'ERROR') {
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+                gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+                osc.start(); osc.stop(audioCtx.currentTime + 0.3);
+                if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+            }
+        }
+
         async function initOCR() {
-            statusEl.innerText = "INIT: LOADING ENGINE...";
             worker = await Tesseract.createWorker('eng');
-            statusEl.innerText = "INIT: READY";
+            statusEl.innerText = "OCR: READY";
             initCamera();
         }
 
         async function initCamera() {
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { facingMode: "environment", width: { ideal: 1280 } } 
-                });
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1280 } } });
                 video.srcObject = stream;
                 track = stream.getVideoTracks()[0];
                 setInterval(() => { if (!isProcessing) performScan(false); }, 1800);
             } catch (e) { statusEl.innerText = "CAMERA: ERROR"; }
         }
 
-        function manualAction() { if (!isProcessing) performScan(true); }
+        function manualAction() { if (!isProcessing) { audioCtx.resume(); performScan(true); } }
 
         async function performScan(isManual) {
             if (!worker) return;
             isProcessing = true;
-
             const scale = video.videoWidth / video.clientWidth;
             const cropW = video.videoWidth * 0.85, cropH = 100 * scale;
             const cropX = (video.videoWidth - cropW) / 2, cropY = (video.videoHeight * 0.35) - (cropH / 2);
 
             canvas.width = cropW; canvas.height = cropH;
             
-            // --- PASS 1: NORMAL ORIENTATION ---
+            // PASS 1: Normal
             ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
             applyFilter(ctx, cropW, cropH);
-            let textPass1 = await runOCR();
-            if (processText(textPass1)) { isProcessing = false; return; }
+            if (await processPass()) { isProcessing = false; return; }
 
-            // --- PASS 2: 180 DEGREE FLIP ---
+            // PASS 2: Flip
             ctx.clearRect(0,0,cropW,cropH);
             ctx.save();
-            ctx.translate(cropW/2, cropH/2);
-            ctx.rotate(Math.PI);
+            ctx.translate(cropW/2, cropH/2); ctx.rotate(Math.PI);
             ctx.drawImage(video, cropX, cropY, cropW, cropH, -cropW/2, -cropH/2, cropW, cropH);
             ctx.restore();
             applyFilter(ctx, cropW, cropH);
-            let textPass2 = await runOCR();
-            processText(textPass2);
+            await processPass();
 
             isProcessing = false;
         }
 
-        async function runOCR() {
+        async function processPass() {
             try {
                 const { data: { text } } = await worker.recognize(canvas);
                 const clean = text.replace(/\s/g, '').toUpperCase();
                 statusEl.innerText = `RAW: ${clean}`;
-                return clean;
-            } catch (e) { return ""; }
+                
+                const letterMatch = clean.match(/\+H([0-9]+)[\>\]\)]/);
+                const envMatch = clean.match(/\+([0-9]+)[\>\]\)]/);
+
+                if (!targetID && letterMatch) {
+                    targetID = letterMatch[1];
+                    resultDisplay.innerText = "+H" + targetID + ">";
+                    document.getElementById('step-info').innerText = "STEP 2: SCAN ENVELOPE";
+                    playFeedback('LOCK');
+                    return true;
+                } else if (targetID && envMatch && !clean.includes('+H')) {
+                    if (envMatch[1] === targetID) {
+                        resultDisplay.innerText = "MATCH!";
+                        resultDisplay.className = "match-active";
+                        playFeedback('SUCCESS');
+                        setTimeout(resetApp, 3000);
+                        return true;
+                    } else {
+                        resultDisplay.innerText = "+" + envMatch[1] + ">";
+                        resultDisplay.className = "error-active";
+                        playFeedback('ERROR');
+                        setTimeout(() => { if(targetID){ resultDisplay.innerText = "+H"+targetID+">"; resultDisplay.className = ""; } }, 1200);
+                        return true;
+                    }
+                }
+            } catch (e) { return false; }
+            return false;
         }
 
         function applyFilter(context, w, h) {
-            const imgData = context.getImageData(0, 0, w, h);
-            const d = imgData.data;
+            const imgData = context.getImageData(0, 0, w, h), d = imgData.data;
             for (let i = 0; i < d.length; i += 4) {
-                const avg = (d[i] + d[i+1] + d[i+2]) / 3;
-                const v = avg < 135 ? 0 : 255;
+                const v = ((d[i] + d[i+1] + d[i+2]) / 3) < 135 ? 0 : 255;
                 d[i] = d[i+1] = d[i+2] = v;
             }
             context.putImageData(imgData, 0, 0);
         }
 
-        function processText(clean) {
-            const letterMatch = clean.match(/\+H([0-9]+)[\>\]\)]/);
-            const envMatch = clean.match(/\+([0-9]+)[\>\]\)]/);
-
-            if (!targetID && letterMatch) {
-                targetID = letterMatch[1];
-                resultDisplay.innerText = "+H" + targetID + ">";
-                document.getElementById('step-info').innerText = "STEP 2: SCAN ENVELOPE";
-                return true;
-            } else if (targetID && envMatch && !clean.includes('+H')) {
-                if (envMatch[1] === targetID) {
-                    resultDisplay.innerText = "MATCH!";
-                    resultDisplay.style.color = "var(--success)";
-                    setTimeout(() => resetApp(), 3000);
-                    return true;
-                } else {
-                    resultDisplay.innerText = "+" + envMatch[1] + ">";
-                    resultDisplay.style.color = "var(--error)";
-                    setTimeout(() => { 
-                        if(targetID){
-                           resultDisplay.innerText = "+H"+targetID+">"; 
-                           resultDisplay.style.color = "var(--primary)";
-                        }
-                    }, 1200);
-                }
-            }
-            return false;
-        }
-
         function resetApp() {
             targetID = null;
             resultDisplay.innerText = "READY";
-            resultDisplay.style.color = "var(--primary)";
+            resultDisplay.className = "";
             document.getElementById('step-info').innerText = "STEP 1: SCAN LETTER (+H...)";
         }
 
         function toggleTorch() { if (track) { const s = track.getSettings(); track.applyConstraints({ advanced: [{ torch: !s.torch }] }); } }
-        
         window.addEventListener('load', initOCR);
     </script>
 </body>
