@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Gemini Suite Architect</title>
+    <style>
+        body { font-family: 'Google Sans', sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; background-color: #f0f2f5; padding: 20px; }
+        .card { background: white; padding: 40px; border-radius: 24px; box-shadow: 0 12px 40px rgba(0,0,0,0.1); width: 100%; max-width: 600px; border: 1px solid #e2e8f0; }
+        h1 { color: #1a73e8; margin: 0 0 10px 0; font-size: 24px; text-align: center; }
+        p { color: #5f6368; font-size: 14px; margin-bottom: 25px; text-align: center; line-height: 1.4; }
+        .section { background: #f8f9fa; padding: 20px; border-radius: 12px; margin-bottom: 20px; border: 1px solid #eee; }
+        label { display: block; font-weight: 600; margin-bottom: 8px; color: #1f1f1f; font-size: 14px; }
+        input, textarea { width: 100%; padding: 12px; border: 2px solid #e8eaed; border-radius: 10px; font-size: 13px; box-sizing: border-box; background: white; }
+        textarea { font-family: 'Roboto Mono', monospace; height: 100px; resize: vertical; }
+        .btn-main { width: 100%; background-color: #1a73e8; color: white; border: none; padding: 14px; border-radius: 10px; font-weight: 600; cursor: pointer; font-size: 16px; transition: 0.2s; }
+        .btn-main:hover { background-color: #174ea6; transform: translateY(-1px); }
+        #file-status { font-size: 12px; color: #1a73e8; margin-top: 5px; text-align: center; font-style: italic; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h1>Suite Architect</h1>
+    <p>Upload a file to <b>append</b> a new tool, <br>or leave empty to <b>create</b> a new suite.</p>
+    
+    <div class="section">
+        <label>1. Existing Suite (Optional)</label>
+        <input type="file" id="fileInput" accept=".html">
+        <div id="file-status">No file selected (Creating new)</div>
+    </div>
+
+    <div class="section">
+        <label>2. New Tool Label</label>
+        <input type="text" id="labelName" placeholder="e.g. Gemini Mirror Editor">
+        <br><br>
+        <label>3. Bookmarklet JavaScript</label>
+        <textarea id="bookmarkletCode" placeholder="javascript:(function(){...})();"></textarea>
+    </div>
+    
+    <button class="btn-main" onclick="processFile()">Save & Download HTML</button>
+</div>
+
+<script>
+    const DEFAULT_TEMPLATE = `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Gemini Tool Suite</title>
+    <style>
+        body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; background: #f8f9fa; padding: 20px; }
+        .box { background: white; padding: 40px; border-radius: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); text-align: center; border: 1px solid #ddd; width: 100%; max-width: 400px; }
+        .btn { display: inline-block; background: #1a73e8; color: white; padding: 14px 28px; border-radius: 50px; text-decoration: none; font-weight: bold; cursor: move; box-shadow: 0 4px 10px rgba(26,115,232,0.2); transition: 0.2s; }
+        .btn:hover { background: #174ea6; transform: translateY(-2px); }
+        h2 { color: #1f1f1f; margin: 0; }
+        h3 { font-size: 16px; color: #444; margin-bottom: 15px; }
+        p { color: #666; margin-bottom: 30px; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div class="box">
+        <h2>Gemini Tool Suite</h2>
+        <p>Drag buttons to your Bookmarks Bar.</p>
+    </div>
+</body>
+</html>`;
+
+    async function processFile() {
+        const fileInput = document.getElementById('fileInput');
+        const label = document.getElementById('labelName').value.trim();
+        const code = document.getElementById('bookmarkletCode').value.trim();
+
+        if (!label || !code) {
+            alert("Please provide a Label and JavaScript code.");
+            return;
+        }
+
+        /* 1. Determine the source text */
+        let masterSource = DEFAULT_TEMPLATE;
+        let fileName = "Gemini_Tool_Suite.html";
+
+        if (fileInput.files[0]) {
+            masterSource = await fileInput.files[0].text();
+            fileName = fileInput.files[0].name;
+        }
+
+        /* 2. Prepare the injection block */
+        const injection = `
+        <div class="tool-item">
+            <hr style="border:0; border-top:1px solid #eee; margin:20px 0;">
+            <h3 style="font-size: 16px; color: #444; margin-bottom: 15px; font-family: sans-serif;">${label}</h3>
+            <a class="btn" href="${code.replace(/"/g, '&quot;')}">${label}</a>
+        </div>`;
+
+        /* 3. Surgical Append Logic */
+        let updatedSource;
+        const lastDivIndex = masterSource.lastIndexOf('</div>');
+        
+        if (lastDivIndex !== -1) {
+            // Append right inside the last container
+            updatedSource = masterSource.slice(0, lastDivIndex) + injection + masterSource.slice(lastDivIndex);
+        } else {
+            // Last resort: before body
+            updatedSource = masterSource.replace('</body>', injection + '</body>');
+        }
+
+        /* 4. Download */
+        const blob = new Blob([updatedSource], {type: 'text/html'});
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = fileName;
+        a.click();
+    }
+
+    document.getElementById('fileInput').onchange = function() {
+        const status = document.getElementById('file-status');
+        if (this.files[0]) {
+            status.innerText = "✓ Updating: " + this.files[0].name;
+            status.style.color = "#34a853";
+        } else {
+            status.innerText = "No file selected (Creating new)";
+            status.style.color = "#1a73e8";
+        }
+    };
+</script>
+
+</body>
+</html>
