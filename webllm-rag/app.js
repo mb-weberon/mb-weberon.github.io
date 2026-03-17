@@ -18,7 +18,38 @@ function isIOSSafari() {
   return /iPad|iPhone|iPod/.test(ua) && /WebKit/.test(ua) && !/CriOS|FxiOS|OPiOS/.test(ua);
 }
 
-// Engine state: 'loading' | 'llm' | 'fallback' | 'error'
+// Ranked model list — order matches the dropdown
+const MODELS = [
+  { id: 'Qwen2.5-1.5B-Instruct-q4f16_1-MLC',    label: 'Qwen 2.5 1.5B' },
+  { id: 'gemma-2-2b-it-q4f16_1-MLC',             label: 'Gemma 2 2B'    },
+  { id: 'Phi-3.5-mini-instruct-q4f16_1-MLC',     label: 'Phi-3.5 Mini'  },
+  { id: 'Llama-3.2-1B-Instruct-q4f32_1-MLC',     label: 'Llama 3.2 1B'  },
+];
+
+function getSelectedModel() {
+  const sel = document.getElementById('model-select');
+  return sel ? sel.value : MODELS[0].id;
+}
+
+// Called when user changes the dropdown — show the Load button
+window.onModelChange = function() {
+  const btn = document.getElementById('reload-model-btn');
+  if (btn) btn.classList.remove('hidden');
+};
+
+// Called when user clicks Load after changing model
+window.reloadModel = async function() {
+  const btn = document.getElementById('reload-model-btn');
+  if (btn) btn.classList.add('hidden');
+  llmEngine = null;
+  engineState.mode = 'loading';
+  engineState.model = null;
+  engineState.failReason = null;
+  updateEngineStatus();
+  await initLLM();
+};
+
+
 const engineState = {
   mode: 'loading',
   webgpu: null,
@@ -118,6 +149,9 @@ async function initLLM() {
     engineState.mode = 'fallback';
     engineState.failReason = 'iOS Safari — LLM requires server headers (COOP/COEP)';
     updateEngineStatus();
+    // Hide model selector — not useful on iOS
+    const row = document.getElementById('model-selector-row');
+    if (row) row.classList.add('hidden');
     console.log('⚠️ iOS Safari detected — skipping LLM, using template mode');
     return;
   }
@@ -136,7 +170,7 @@ async function initLLM() {
         updateEngineStatus();
 
         const webllm = await import('https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm/+esm');
-        const MODEL = 'Llama-3.2-1B-Instruct-q4f32_1-MLC';
+        const MODEL = getSelectedModel();
 
         llmEngine = await webllm.CreateMLCEngine(MODEL, {
           initProgressCallback: (p) => {
