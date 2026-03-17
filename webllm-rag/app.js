@@ -413,8 +413,174 @@ async function search(query, k = 5) {
     .slice(0, k);
 }
 
+// Category definitions — matched against URL slug and title
+const CATEGORIES = [
+  {
+    name: 'reports',
+    urlPatterns: [/\/rpt-/],
+    titlePatterns: [/report/i],
+    keywords: ['report', 'reports'],
+  },
+  {
+    name: 'seller resources',
+    urlPatterns: [/\/(sellers?|sell_|seller_|seminar_|coaching_|gold_|silver_|savethousands|homeeval|insideraccess|inspection)/],
+    titlePatterns: [/sell|seller|listing|price|seminar|coaching/i],
+    keywords: ['seller', 'sellers', 'selling', 'sell', 'seller resource', 'seller resources'],
+  },
+  {
+    name: 'buyer resources',
+    urlPatterns: [/\/(buyers?|buyer_|gc_|buyertraps?|vip_buyer|zerodown|stop_renting|27tips|agent_questions|homewardbound)/],
+    titlePatterns: [/buy|buyer|home guide|first.?time|down payment/i],
+    keywords: ['buyer', 'buyers', 'buying', 'buy', 'buyer resource', 'buyer resources'],
+  },
+  {
+    name: 'landing pages',
+    urlPatterns: [/\/lp-/],
+    titlePatterns: [],
+    keywords: ['landing page', 'landing pages', 'campaigns'],
+  },
+  {
+    name: 'coaching',
+    urlPatterns: [/\/coaching_/],
+    titlePatterns: [/coaching/i],
+    keywords: ['coaching'],
+  },
+  {
+    name: 'seminars',
+    urlPatterns: [/\/seminar_/],
+    titlePatterns: [/seminar/i],
+    keywords: ['seminar', 'seminars'],
+  },
+];
+
+function detectCategoryQuery(query) {
+  const q = query.toLowerCase();
+  // Must have a summary/overview intent
+  const hasIntent = /\b(summar|overview|list|show|what|give|all|tell me about)\b/.test(q);
+  if (!hasIntent) return null;
+  return CATEGORIES.find(cat =>
+    cat.keywords.some(kw => q.includes(kw))
+  ) ?? null;
+}
+
+async function handleCategoryQuery(category) {
+  await ensureTextLoaded();
+
+  const seen = new Set();
+  const pages = [];
+
+  for (const doc of metaDocs) {
+    if (seen.has(doc.url)) continue;
+    const slug = doc.url.split('/').pop() ?? '';
+    const matchesUrl   = category.urlPatterns.some(re => re.test('/' + slug));
+    const matchesTitle = category.titlePatterns.some(re => re.test(doc.title ?? ''));
+    if (matchesUrl || matchesTitle) {
+      seen.add(doc.url);
+      const text = getText(doc.id).replace(/\s+/g, ' ').trim().substring(0, 200);
+      pages.push({ url: doc.url, title: doc.title, snippet: text });
+    }
+  }
+
+  if (pages.length === 0) {
+    return {
+      answer: `No pages found matching **${category.name}** in the index.`,
+      sources: []
+    };
+  }
+
+  const answer = `Here are the **${pages.length} ${category.name}** on this site:\n\n` +
+    pages.map((p, i) =>
+      `[${i + 1}] **${p.title || p.url}**\n${p.snippet}…`
+    ).join('\n\n');
+
+  return {
+    answer,
+    sources: pages.map((p, i) => ({ id: i, url: p.url, title: p.title, score: 1 }))
+  };
+}
+
+// Detect meta-queries about the index itself
+function detectMetaQuery(query) {
+  const q = query.toLowerCase();
+  const urlPatterns = [
+    /\b(list|show|dump|give|what|all)\b.{0,30}\b(url|urls|pages|links|page)\b/,
+    /\b(url|urls|pages|links)\b.{0,30}\b(index|indexed|available|site)\b/,
+    /how many (pages|urls|documents|files)/,
+    /what (pages|urls|content) (do you|are) (have|indexed|available)/,
+  ];
+  return urlPatterns.some(re => re.test(q));
+}
+
+function detectSummaryQuery(query) {
+  const q = query.toLowerCase();
+  return /\b(summar|overview|describe|what('?s| is) (on|in|about)|about each|each page|all pages)\b/.test(q);
+}
+
+// Handle meta-queries directly from metaDocs — no RAG, no LLM needed
+function handleMetaQuery(query) {
+  // Collect all unique URLs with their titles
+  const seen = new Set();
+  const pages = [];
+  for (const doc of metaDocs) {
+    if (!seen.has(doc.url)) {
+      seen.add(doc.url);
+      pages.push({ url: doc.url, title: doc.title });
+    }
+  }
+
+  const answer = `This site has **${pages.length} indexed pages**:\n\n` +
+    pages.map((p, i) => `[${i + 1}] ${p.title || p.url}`).join('\n');
+
+  return {
+    answer,
+    sources: pages.map((p, i) => ({ id: i, url: p.url, title: p.title, score: 1 }))
+  };
+}
+
+// Summarize each page from first chunk's text — no LLM needed
+async function handleSummaryQuery() {
+  await ensureTextLoaded();
+
+  const seen = new Set();
+  const pages = [];
+  for (const doc of metaDocs) {
+    if (!seen.has(doc.url)) {
+      seen.add(doc.url);
+      const text = getText(doc.id);
+      // First 200 chars of the first chunk as the summary
+      const snippet = text.replace(/\s+/g, ' ').trim().substring(0, 200);
+      pages.push({ url: doc.url, title: doc.title, snippet });
+    }
+  }
+
+  const answer = `Here's a summary of all **${pages.length} pages** on this site:\n\n` +
+    pages.map((p, i) =>
+      `[${i + 1}] **${p.title || p.url}**\n${p.snippet}…`
+    ).join('\n\n');
+
+  return {
+    answer,
+    sources: pages.map((p, i) => ({ id: i, url: p.url, title: p.title, score: 1 }))
+  };
+}
+
 // RAG + LLM generation
 async function chat(query) {
+
+  // Handle category queries — filtered summaries by topic
+  const matchedCategory = detectCategoryQuery(query);
+  if (matchedCategory) {
+    return await handleCategoryQuery(matchedCategory);
+  }
+
+  // Handle meta-queries about the index directly
+  if (detectSummaryQuery(query)) {
+    return await handleSummaryQuery();
+  }
+  if (detectMetaQuery(query)) {
+    return handleMetaQuery(query);
+  }
+
   const sources = await search(query);
 
   if (sources.length === 0) {
