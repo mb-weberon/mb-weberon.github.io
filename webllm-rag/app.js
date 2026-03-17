@@ -1,5 +1,6 @@
 let index = [];
 let llmEngine = null;
+let embedder = null;  // query embedder — same model used at index build time
 
 // Safe localStorage — Safari private mode throws on access
 function storageGet(key) {
@@ -112,7 +113,6 @@ async function loadIndex() {
     const response = await fetch('index.json');
     const data = await response.json();
     
-    // Handle flat array format OR manifest format
     if (Array.isArray(data) && data.length > 0 && data[0].id !== undefined) {
       index = data;
     } else if (data.documents && Array.isArray(data.documents)) {
@@ -120,11 +120,33 @@ async function loadIndex() {
     } else {
       throw new Error('Invalid index format');
     }
-    
-    console.log(`✅ Loaded ${index.length} documents`);
-    statusEl.textContent = `Loaded ${index.length} chunks from ${index[0]?.url}! Initializing LLM...`;
-    
-    // Initialize LLM
+
+    // Verify embeddings are present
+    const hasEmbeddings = index.length > 0 && Array.isArray(index[0].embedding) && index[0].embedding.length > 0;
+    console.log(`✅ Loaded ${index.length} documents (embeddings: ${hasEmbeddings})`);
+
+    // Load the query embedder — same model used to build the index
+    if (hasEmbeddings) {
+      statusEl.textContent = `Loading embedding model…`;
+      try {
+        const { pipeline, env } = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3/+esm');
+        env.allowLocalModels = false;
+        env.useBrowserCache = true;
+        embedder = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', { dtype: 'fp32' });
+        console.log('✅ Query embedder loaded');
+      } catch (e) {
+        console.warn('⚠️ Embedder failed to load, falling back to keyword search:', e.message);
+        embedder = null;
+      }
+    }
+
+    statusEl.textContent = `Loaded ${index.length} chunks. Initializing LLM…`;
+
+    // Show welcome immediately — no need to wait for LLM
+    if (messages.length === 0) {
+      generateWelcome();
+    }
+
     await initLLM();
     statusEl.textContent = `✅ Ready to chat! (${index.length} chunks)`;
     
@@ -253,27 +275,49 @@ async function initLLM() {
   }
 }
 
-// Smart keyword search (for retrieval)
-function search(query, k = 5) {
+// Cosine similarity between two float arrays
+function cosineSimilarity(a, b) {
+  let dot = 0, normA = 0, normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot   += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  return dot / (Math.sqrt(normA) * Math.sqrt(normB) + 1e-8);
+}
+
+// Semantic search using embeddings, falls back to keyword if embedder unavailable
+async function search(query, k = 5) {
   if (!index.length) return [];
-  
+
+  // --- Semantic search ---
+  if (embedder) {
+    try {
+      const output = await embedder(query, { pooling: 'mean', normalize: true });
+      const queryVec = Array.from(output.data);
+
+      return index
+        .filter(doc => Array.isArray(doc.embedding) && doc.embedding.length > 0)
+        .map(doc => ({ ...doc, score: cosineSimilarity(queryVec, doc.embedding) }))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, k);
+    } catch (e) {
+      console.warn('Semantic search failed, falling back to keyword:', e.message);
+    }
+  }
+
+  // --- Keyword fallback ---
   const queryWords = query.toLowerCase().split(/\s+/).filter(w => w.length > 1);
-  
   return index
     .map(doc => {
       const textLower = doc.text.toLowerCase();
-      let score = 0.5; // Minimum score
-      
-      // Exact phrase match
+      let score = 0.5;
       if (textLower.includes(query.toLowerCase())) score += 3;
-      
-      // Word matches
       queryWords.forEach(word => {
         if (textLower.includes(word)) score += 1;
         if (doc.title?.toLowerCase().includes(word)) score += 2;
         if (doc.url.toLowerCase().includes(word)) score += 1;
       });
-      
       return { ...doc, score: score / Math.max(1, queryWords.length + 1) };
     })
     .sort((a, b) => b.score - a.score)
@@ -282,7 +326,7 @@ function search(query, k = 5) {
 
 // RAG + LLM generation
 async function chat(query) {
-  const sources = search(query);
+  const sources = await search(query);
 
   if (sources.length === 0) {
     return {
@@ -447,6 +491,9 @@ function renderMessages() {
 
       content = linkify(content);
 
+      // Render **bold** markdown
+      content = content.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+
       // Build footnotes block from sources
       if (m.sources && m.sources.length) {
         const footnotes = m.sources.map((s, i) => {
@@ -470,7 +517,13 @@ function renderMessages() {
 
     return `
       <div class="${m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}">
-        <div class="${m.role === 'user' ? 'bg-blue-500 text-white' : 'bg-white border shadow-sm'} max-w-[85%] sm:max-w-xl p-3 sm:p-4 rounded-2xl text-sm sm:text-base text-left">
+        <div class="${
+          m.role === 'user'
+            ? 'bg-blue-500 text-white'
+            : m.isWelcome
+            ? 'bg-blue-50 border border-blue-100 text-gray-700'
+            : 'bg-white border shadow-sm'
+        } max-w-[85%] sm:max-w-xl p-3 sm:p-4 rounded-2xl text-sm sm:text-base text-left">
           ${content.replace(/\n/g, '<br>')}
         </div>
       </div>
@@ -482,10 +535,41 @@ function renderMessages() {
   });
 }
 
+// Generate a welcome message summarising the site from the index — no LLM needed
+async function generateWelcome() {
+  if (!index.length) return;
+
+  // Collect first chunk from each unique URL, up to 8 pages
+  const seen = new Set();
+  const sample = [];
+  for (const doc of index) {
+    if (!seen.has(doc.url)) {
+      seen.add(doc.url);
+      sample.push(doc);
+      if (sample.length >= 8) break;
+    }
+  }
+
+  // Unique page titles
+  const titles = [...new Set(sample.map(s => s.title).filter(t => t && t !== 'Untitled'))];
+
+  // Build welcome instantly from titles
+  const topicList = titles.length
+    ? titles.slice(0, 6).join(', ')
+    : 'various topics';
+
+  const welcomeText = `👋 Welcome! This site covers **${topicList}**${titles.length > 6 ? ` and more` : ''}.\n\nAsk me anything about it.`;
+
+  messages.push({ role: 'assistant', content: welcomeText, sources: [], isWelcome: true });
+  renderMessages();
+}
+
 window.clearChat = function() {
   messages = [];
   saveMessages();
   renderMessages();
+  // Re-show welcome on clear
+  generateWelcome();
 };
 
 // FIX: Wire up both the Send button AND the Enter key
