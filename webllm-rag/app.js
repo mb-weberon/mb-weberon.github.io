@@ -1,4 +1,3 @@
-let index = [];
 let llmEngine = null;
 let embedder = null;  // query embedder — same model used at index build time
 
@@ -19,17 +18,61 @@ function isIOSSafari() {
   return /iPad|iPhone|iPod/.test(ua) && /WebKit/.test(ua) && !/CriOS|FxiOS|OPiOS/.test(ua);
 }
 
-// Ranked model list — order matches the dropdown
+// Ranked model list — all use q4f32 (no shader-f16 required, works on all WebGPU setups)
+// minMemoryGB = minimum navigator.deviceMemory to safely offer this model
 const MODELS = [
-  { id: 'Qwen2.5-1.5B-Instruct-q4f16_1-MLC',    label: 'Qwen 2.5 1.5B' },
-  { id: 'gemma-2-2b-it-q4f16_1-MLC',             label: 'Gemma 2 2B'    },
-  { id: 'Phi-3.5-mini-instruct-q4f16_1-MLC',     label: 'Phi-3.5 Mini'  },
-  { id: 'Llama-3.2-1B-Instruct-q4f32_1-MLC',     label: 'Llama 3.2 1B'  },
+  { id: 'Qwen2.5-1.5B-Instruct-q4f32_1-MLC',  label: 'Qwen 2.5 1.5B',  minMemoryGB: 4  },
+  { id: 'gemma-2-2b-it-q4f32_1-MLC',           label: 'Gemma 2 2B',      minMemoryGB: 6  },
+  { id: 'Phi-3.5-mini-instruct-q4f32_1-MLC',   label: 'Phi-3.5 Mini',    minMemoryGB: 8  },
+  { id: 'Llama-3.2-1B-Instruct-q4f32_1-MLC',   label: 'Llama 3.2 1B',   minMemoryGB: 2  },
 ];
+
+// Detect device memory (GB). navigator.deviceMemory is rounded to nearest power of 2:
+// 0.25, 0.5, 1, 2, 4, 8. Returns Infinity if API unavailable (desktop assumed capable).
+function getDeviceMemoryGB() {
+  return navigator.deviceMemory ?? Infinity;
+}
+
+// Pick the best model the device can safely run.
+// On low-memory devices, filter to models that fit, pick the highest-quality one.
+// Always falls back to Llama 1B if nothing else fits.
+function pickDefaultModel() {
+  const memGB = getDeviceMemoryGB();
+  console.log(`📱 Device memory: ${memGB === Infinity ? 'unknown (desktop)' : memGB + 'GB'}`);
+
+  // Filter to models that fit in available memory
+  const viable = MODELS.filter(m => memGB >= m.minMemoryGB);
+
+  // Pick the best viable model (first in ranked order = highest quality)
+  // Exclude Llama from "best" unless it's the only option
+  const best = viable.find(m => !m.id.includes('Llama')) ?? MODELS[MODELS.length - 1];
+  console.log(`🤖 Auto-selected model: ${best.label} (${best.id})`);
+  return best.id;
+}
+
+// Set the dropdown to the memory-appropriate default
+function setDefaultModel() {
+  const sel = document.getElementById('model-select');
+  if (!sel) return;
+
+  const bestId = pickDefaultModel();
+  const memGB = getDeviceMemoryGB();
+
+  // Grey out / add warning to options that exceed device memory
+  Array.from(sel.options).forEach(opt => {
+    const model = MODELS.find(m => m.id === opt.value);
+    if (model && memGB !== Infinity && memGB < model.minMemoryGB) {
+      opt.text += ' ⚠️ may OOM';
+      opt.style.color = '#9ca3af'; // gray out
+    }
+  });
+
+  sel.value = bestId;
+}
 
 function getSelectedModel() {
   const sel = document.getElementById('model-select');
-  return sel ? sel.value : MODELS[0].id;
+  return sel ? sel.value : pickDefaultModel();
 }
 
 // Called when user changes the dropdown — show the Load button
@@ -49,6 +92,7 @@ window.reloadModel = async function() {
   updateEngineStatus();
   await initLLM();
 };
+
 
 
 const engineState = {
@@ -103,59 +147,82 @@ function updateEngineStatus() {
   `;
 }
 
-// Load index - handles BOTH formats
+// ---------------------------------------------------------------------------
+// Index state — split across 3 files
+// ---------------------------------------------------------------------------
+let metaDocs    = [];          // [{ id, url, title }]
+let embMatrix   = null;        // Float32Array, all embeddings packed flat
+let textCache   = null;        // { [id]: text } — lazy loaded on first query
+const DIMS      = 384;         // all-MiniLM-L6-v2 dimensions
+
+// Load index - fetches index-meta.json + index-embeddings.bin in parallel
+// Falls back to legacy index.json if split files not found
 async function loadIndex() {
   const statusEl = document.getElementById('status');
-  statusEl.textContent = 'Loading index.json...';
+  statusEl.textContent = 'Loading index…';
   updateEngineStatus();
-  
+
   try {
-    const response = await fetch('index.json');
-    const data = await response.json();
-    
-    if (Array.isArray(data) && data.length > 0 && data[0].id !== undefined) {
-      index = data;
-    } else if (data.documents && Array.isArray(data.documents)) {
-      index = data.documents;
-    } else {
-      throw new Error('Invalid index format');
-    }
+    statusEl.textContent = 'Loading index (meta + embeddings)…';
+    const [metaRes, binRes] = await Promise.all([
+      fetch('index-meta.json'),
+      fetch('index-embeddings.bin'),
+    ]);
+    if (!metaRes.ok || !binRes.ok) throw new Error('Index files not found — run build-index-gh-final.js first');
 
-    // Verify embeddings are present
-    const hasEmbeddings = index.length > 0 && Array.isArray(index[0].embedding) && index[0].embedding.length > 0;
-    console.log(`✅ Loaded ${index.length} documents (embeddings: ${hasEmbeddings})`);
+    const meta   = await metaRes.json();
+    const binBuf = await binRes.arrayBuffer();
 
-    // Load the query embedder — same model used to build the index
-    if (hasEmbeddings) {
-      statusEl.textContent = `Loading embedding model…`;
+    metaDocs  = meta.documents;
+    embMatrix = new Float32Array(binBuf);
+    console.log(`✅ Index loaded — ${metaDocs.length} chunks, ${embMatrix.length} floats`);
+
+    // Load query embedder
+    if (embMatrix) {
+      statusEl.textContent = 'Loading embedding model…';
       try {
         const { pipeline, env } = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3/+esm');
         env.allowLocalModels = false;
-        env.useBrowserCache = true;
+        env.useBrowserCache  = true;
         embedder = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', { dtype: 'fp32' });
         console.log('✅ Query embedder loaded');
       } catch (e) {
-        console.warn('⚠️ Embedder failed to load, falling back to keyword search:', e.message);
+        console.warn('⚠️ Embedder failed, falling back to keyword search:', e.message);
         embedder = null;
       }
     }
 
-    statusEl.textContent = `Loaded ${index.length} chunks. Initializing LLM…`;
+    statusEl.textContent = `Loaded ${metaDocs.length} chunks. Initializing LLM…`;
 
-    // Show welcome immediately — no need to wait for LLM
-    if (messages.length === 0) {
-      generateWelcome();
-    }
+    if (messages.length === 0) generateWelcome();
 
     await initLLM();
-    statusEl.textContent = `✅ Ready to chat! (${index.length} chunks)`;
-    
+    statusEl.textContent = `✅ Ready to chat! (${metaDocs.length} chunks)`;
+
   } catch (e) {
     console.error('❌ Index load failed:', e);
     statusEl.textContent = `Error: ${e.message}`;
     engineState.mode = 'error';
     updateEngineStatus();
   }
+}
+
+// Lazy-load index-text.json on first query
+async function ensureTextLoaded() {
+  if (textCache) return;
+  try {
+    const res = await fetch('index-text.json');
+    textCache = await res.json();
+    console.log('✅ index-text.json loaded');
+  } catch (e) {
+    console.error('❌ Failed to load index-text.json:', e);
+    textCache = {};
+  }
+}
+
+// Get text for a chunk id — falls back to empty string
+function getText(id) {
+  return textCache?.[id] ?? textCache?.[String(id)] ?? '';
 }
 
 // Initialize WebLLM — tries WebGPU first, falls back to CPU via Transformers.js
@@ -275,7 +342,26 @@ async function initLLM() {
   }
 }
 
-// Cosine similarity between two float arrays
+// Remove repeated sentences from LLM output — common with small models
+function deduplicateSentences(text) {
+  // Split on sentence-ending punctuation, keeping the delimiter
+  const sentences = text.match(/[^.!?]+[.!?]*/g) ?? [text];
+  const seen = new Set();
+  const result = [];
+
+  for (const raw of sentences) {
+    // Normalise for comparison: lowercase, collapse whitespace, strip citations
+    const key = raw.toLowerCase().replace(/\[\d+\]/g, '').replace(/\s+/g, ' ').trim();
+    if (key.length < 8) { result.push(raw); continue; } // keep short fragments
+    if (!seen.has(key)) {
+      seen.add(key);
+      result.push(raw);
+    }
+  }
+  return result.join('').trim();
+}
+
+// Cosine similarity between two Float32Arrays (or plain arrays)
 function cosineSimilarity(a, b) {
   let dot = 0, normA = 0, normB = 0;
   for (let i = 0; i < a.length; i++) {
@@ -286,19 +372,21 @@ function cosineSimilarity(a, b) {
   return dot / (Math.sqrt(normA) * Math.sqrt(normB) + 1e-8);
 }
 
-// Semantic search using embeddings, falls back to keyword if embedder unavailable
+// Semantic search using packed Float32Array embeddings, keyword fallback
 async function search(query, k = 5) {
-  if (!index.length) return [];
+  if (!metaDocs.length) return [];
 
   // --- Semantic search ---
-  if (embedder) {
+  if (embedder && embMatrix) {
     try {
-      const output = await embedder(query, { pooling: 'mean', normalize: true });
-      const queryVec = Array.from(output.data);
+      const output   = await embedder(query, { pooling: 'mean', normalize: true });
+      const queryVec = new Float32Array(output.data);
 
-      return index
-        .filter(doc => Array.isArray(doc.embedding) && doc.embedding.length > 0)
-        .map(doc => ({ ...doc, score: cosineSimilarity(queryVec, doc.embedding) }))
+      return metaDocs
+        .map((doc, i) => {
+          const slice = embMatrix.subarray(i * DIMS, (i + 1) * DIMS);
+          return { ...doc, score: cosineSimilarity(queryVec, slice) };
+        })
         .sort((a, b) => b.score - a.score)
         .slice(0, k);
     } catch (e) {
@@ -306,15 +394,16 @@ async function search(query, k = 5) {
     }
   }
 
-  // --- Keyword fallback ---
+  // --- Keyword fallback (uses textCache if loaded, else titles/urls only) ---
+  await ensureTextLoaded();
   const queryWords = query.toLowerCase().split(/\s+/).filter(w => w.length > 1);
-  return index
+  return metaDocs
     .map(doc => {
-      const textLower = doc.text.toLowerCase();
+      const text = getText(doc.id).toLowerCase();
       let score = 0.5;
-      if (textLower.includes(query.toLowerCase())) score += 3;
+      if (text.includes(query.toLowerCase())) score += 3;
       queryWords.forEach(word => {
-        if (textLower.includes(word)) score += 1;
+        if (text.includes(word)) score += 1;
         if (doc.title?.toLowerCase().includes(word)) score += 2;
         if (doc.url.toLowerCase().includes(word)) score += 1;
       });
@@ -329,16 +418,12 @@ async function chat(query) {
   const sources = await search(query);
 
   if (sources.length === 0) {
-    return {
-      answer: "No relevant content found in your site.",
-      sources: []
-    };
+    return { answer: "No relevant content found in your site.", sources: [] };
   }
 
-  // Top 3 UNIQUE URLs (shows multiple pages)
+  // Top 3 unique URLs
   const uniqueSources = [];
   const seenUrls = new Set();
-
   sources.slice(0, 10).forEach(s => {
     if (!seenUrls.has(s.url) && uniqueSources.length < 3) {
       seenUrls.add(s.url);
@@ -346,44 +431,58 @@ async function chat(query) {
     }
   });
 
-  const context = uniqueSources.map((s, i) =>
-    `Source ${i+1} (${s.url}):\n${s.text}`
-  ).join('\n\n---\n\n');
+  // Ensure text is loaded before building context
+  await ensureTextLoaded();
 
-  // LLM path (modern web-llm API)
+  // LLM path
   if (llmEngine) {
     try {
-      // Trim context to avoid exceeding the model's context window
       const trimmedContext = uniqueSources.map((s, i) =>
-        `[${i+1}] ${s.text.substring(0, 400)}`
+        `[${i+1}] ${getText(s.id).substring(0, 400)}`
       ).join('\n\n');
 
       console.log('📤 Sending context to LLM:\n', trimmedContext);
+
+      // Build recent history — last 3 exchanges (6 messages), excluding
+      // welcome messages and the current user message (already in query)
+      const HISTORY_EXCHANGES = 3;
+      const history = messages
+        .filter(m => !m.isWelcome && m.role !== 'user' || !m.isWelcome)
+        .filter(m => m.role === 'user' || m.role === 'assistant')
+        .slice(-(HISTORY_EXCHANGES * 2 + 1), -1) // exclude the current message
+        .map(m => ({
+          role: m.role,
+          // For assistant messages strip footnote HTML, keep plain text
+          content: m.role === 'assistant'
+            ? m.content.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().substring(0, 300)
+            : m.content
+        }));
 
       const reply = await llmEngine.chat.completions.create({
         messages: [
           {
             role: 'system',
-            content: `You are a helpful assistant. Answer the user's question using ONLY the numbered passages below. Cite passages as [1], [2], [3]. If the passages don't contain the answer, say so briefly.`
+            content: `You are a helpful assistant. Answer the user's question using ONLY the numbered passages below. You may use the conversation history for context on follow-up questions. Cite passages as [1], [2], [3]. If the passages don't contain the answer, say so briefly.\n\nPassages:\n${trimmedContext}`
           },
+          ...history,
           {
             role: 'user',
-            content: `Passages:\n${trimmedContext}\n\nQuestion: ${query}`
+            content: query
           }
         ],
-        temperature: 0.1,
+        temperature: 0.4,      // higher than 0.1 — prevents repetition loops
+        repetition_penalty: 1.3, // penalise tokens already generated
         max_tokens: 300
       });
+
       const raw = reply.choices[0].message.content;
-      // Aggressively strip any sources/references block the LLM appends.
-      // Catches patterns like:
-      //   Sources: [1] http://...
-      //   [1] http://...
-      //   References\n1. http://...
-      const answer = raw
-        .replace(/\n+\[?\d+\]?\s*https?:\/\/\S+/g, '')        // bare URL citations
-        .replace(/\n+(sources|references|source list|cited|links)[\s\S]*/gi, '') // footer blocks
-        .replace(/\n+\[\d+\][^\n]*/g, '')                      // [1] label lines
+
+      // Strip duplicate sentences — split on ., !, ? then dedupe preserving order
+      const deduped = deduplicateSentences(raw);
+      const answer = deduped
+        .replace(/\n+\[?\d+\]?\s*https?:\/\/\S+/g, '')
+        .replace(/\n+(sources|references|source list|cited|links)[\s\S]*/gi, '')
+        .replace(/\n+\[\d+\][^\n]*/g, '')
         .trimEnd();
       return { answer, sources: uniqueSources };
     } catch (e) {
@@ -391,9 +490,9 @@ async function chat(query) {
     }
   }
 
-  // Template fallback — answer only, no source list (sidebar handles that)
+  // Template fallback
   const answer = `Here's what I found on the site:\n\n` +
-    uniqueSources.map((s, i) => `[${i+1}] ${s.text.substring(0, 300)}...`).join('\n\n');
+    uniqueSources.map((s, i) => `[${i+1}] ${getText(s.id).substring(0, 300)}...`).join('\n\n');
 
   return { answer, sources: uniqueSources };
 }
@@ -537,12 +636,11 @@ function renderMessages() {
 
 // Generate a welcome message summarising the site from the index — no LLM needed
 async function generateWelcome() {
-  if (!index.length) return;
+  if (!metaDocs.length) return;
 
-  // Collect first chunk from each unique URL, up to 8 pages
   const seen = new Set();
   const sample = [];
-  for (const doc of index) {
+  for (const doc of metaDocs) {
     if (!seen.has(doc.url)) {
       seen.add(doc.url);
       sample.push(doc);
@@ -589,6 +687,9 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     });
   }
+
+  // Set memory-appropriate default model before loading index
+  setDefaultModel();
 
   // Restore previous chat on load
   if (messages.length) {
