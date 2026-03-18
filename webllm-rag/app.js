@@ -30,7 +30,8 @@ const MODELS = [
   { id: 'Phi-3.5-mini-instruct-q4f32_1-MLC',   label: 'Phi-3.5 Mini 3.8B (WebGPU)',   backend: 'webgpu', minMemoryGB: 8 },
   { id: 'Llama-3.2-1B-Instruct-q4f32_1-MLC',   label: 'Llama 3.2 1B (WebGPU)',        backend: 'webgpu', minMemoryGB: 2 },
   // WebNN models (ONNX, runs on NPU/DirectML)
-  { id: 'onnx-community/Phi-3.5-mini-instruct-onnx-web', label: 'Phi-3.5 Mini (WebNN/NPU)', backend: 'webnn',  minMemoryGB: 4 },
+  { id: 'onnx-community/Phi-3.5-mini-instruct-onnx-web', label: 'Phi-3.5 Mini (WebGPU/ONNX)', backend: 'webgpu', minMemoryGB: 4 },
+  { id: 'onnx-community/Qwen2.5-0.5B-Instruct',          label: 'Qwen2.5 0.5B (WebNN/NPU)',  backend: 'webnn',  minMemoryGB: 2 },
   { id: 'HuggingFaceTB/SmolLM2-360M-Instruct',       label: 'SmolLM2 360M (WebNN)',   backend: 'webnn',  minMemoryGB: 2 },
   // CPU WASM fallback
   { id: 'HuggingFaceTB/SmolLM2-135M-Instruct',       label: 'SmolLM2 135M (CPU)',     backend: 'cpu',    minMemoryGB: 1 },
@@ -516,17 +517,16 @@ async function initLLM() {
       env.allowLocalModels = false;
       env.useBrowserCache  = true;
 
-      // Use the dropdown selection if it's a WebNN model, otherwise default to Phi-3 Mini
-      const selectedId = getSelectedModel();
+      // Use the dropdown selection if it's a WebNN model, otherwise default to Qwen2.5 0.5B
+      const selectedId   = getSelectedModel();
       const selectedMeta = MODELS.find(m => m.id === selectedId);
       const MODEL = (selectedMeta?.backend === 'webnn')
         ? selectedId
-        : 'onnx-community/Phi-3.5-mini-instruct-onnx-web';
+        : 'onnx-community/Qwen2.5-0.5B-Instruct';
 
       const pipe = await pipeline('text-generation', MODEL, {
         device: 'webnn',
-        dtype:  'fp32',
-        use_external_data_format: false,
+        dtype:  'q4',
         progress_callback: (p) => {
           if (p.progress != null) {
             engineState.loadProgress = Math.round(p.progress);
