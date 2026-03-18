@@ -15,8 +15,22 @@
     /* Smooth momentum scroll in messages */
     #messages { -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; }
 
-    /* Keep input bar above iOS keyboard */
-    #input-bar { padding-bottom: env(safe-area-inset-bottom, 0px); }
+    /* Keep input bar above iOS keyboard and home indicator with breathing room */
+    #input-bar {
+      padding-bottom: max(env(safe-area-inset-bottom, 0px), 16px);
+    }
+
+    /* Load button — always reserve space so it never gets squeezed off screen */
+    #reload-model-btn {
+      display: none;       /* hidden by default */
+      flex-shrink: 0;      /* never shrink, never disappear */
+      min-width: 3rem;
+    }
+    #reload-model-btn.visible {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
 
     /* Prevent tap highlight flash on mobile */
     button, input { -webkit-tap-highlight-color: transparent; }
@@ -48,43 +62,50 @@
         </div>
       </div>
       <!-- Model selector + sources count -->
-      <div id="model-selector-row" class="mt-2 flex items-center gap-2">
-        <label for="model-select" class="text-xs text-gray-500 whitespace-nowrap">Model:</label>
-        <select
-          id="model-select"
-          class="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-300"
-          onchange="onModelChange()"
-        >
-          <optgroup label="⚡ WebGPU models (MLC)">
-            <option value="Qwen2.5-1.5B-Instruct-q4f32_1-MLC">Qwen 2.5 1.5B (WebGPU)</option>
-            <option value="gemma-2-2b-it-q4f32_1-MLC">Gemma 2 2B (WebGPU)</option>
-            <option value="Phi-3.5-mini-instruct-q4f32_1-MLC">Phi-3.5 Mini 3.8B (WebGPU)</option>
-            <option value="Llama-3.2-1B-Instruct-q4f32_1-MLC">Llama 3.2 1B (WebGPU)</option>
-          </optgroup>
-          <optgroup label="🧠 WebNN models (ONNX/NPU)">
-            <option value="onnx-community/Phi-3.5-mini-instruct-onnx-web">Phi-3.5 Mini (WebNN/NPU) — recommended for X Elite</option>
-            <option value="HuggingFaceTB/SmolLM2-360M-Instruct">SmolLM2 360M (WebNN)</option>
-          </optgroup>
-          <optgroup label="💻 CPU models (WASM)">
-            <option value="HuggingFaceTB/SmolLM2-135M-Instruct">SmolLM2 135M (CPU fallback)</option>
-          </optgroup>
-        </select>
+      <div id="model-selector-row" class="mt-2 space-y-1.5">
+        <!-- Row 1: Model label + select, Load button on its own line when visible -->
+        <div class="flex items-center gap-2 min-w-0">
+          <label for="model-select" class="text-xs text-gray-500 whitespace-nowrap flex-none">Model:</label>
+          <select
+            id="model-select"
+            class="flex-1 min-w-0 w-0 text-xs border border-gray-200 rounded-lg px-2 py-1 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-300"
+            onchange="onModelChange()"
+          >
+            <optgroup label="⚡ WebGPU models (MLC)">
+              <option value="Qwen2.5-1.5B-Instruct-q4f32_1-MLC">Qwen 2.5 1.5B (WebGPU)</option>
+              <option value="gemma-2-2b-it-q4f32_1-MLC">Gemma 2 2B (WebGPU)</option>
+              <option value="Phi-3.5-mini-instruct-q4f32_1-MLC">Phi-3.5 Mini 3.8B (WebGPU)</option>
+              <option value="Llama-3.2-1B-Instruct-q4f32_1-MLC">Llama 3.2 1B (WebGPU)</option>
+            </optgroup>
+            <optgroup label="🧠 WebNN models (ONNX/NPU)">
+              <option value="onnx-community/Phi-3.5-mini-instruct-onnx-web">Phi-3.5 Mini (WebNN/NPU) — X Elite</option>
+              <option value="HuggingFaceTB/SmolLM2-360M-Instruct">SmolLM2 360M (WebNN)</option>
+            </optgroup>
+            <optgroup label="💻 CPU models (WASM)">
+              <option value="HuggingFaceTB/SmolLM2-135M-Instruct">SmolLM2 135M (CPU fallback)</option>
+            </optgroup>
+          </select>
+        </div>
+        <!-- Load button on its own full-width row — always has room, never squeezed -->
         <button
           id="reload-model-btn"
           onclick="reloadModel()"
-          class="hidden text-xs bg-blue-500 hover:bg-blue-600 active:bg-blue-700 text-white px-3 py-1 rounded-lg transition-colors whitespace-nowrap"
-        >Load</button>
-        <label for="sources-count" class="text-xs text-gray-500 whitespace-nowrap ml-2">Sources:</label>
-        <select
-          id="sources-count"
-          class="text-xs border border-gray-200 rounded-lg px-2 py-1 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-300"
-        >
-          <option value="1">1</option>
-          <option value="2">2</option>
-          <option value="3" selected>3</option>
-          <option value="4">4</option>
-          <option value="5">5</option>
-        </select>
+          class="w-full text-xs bg-blue-500 hover:bg-blue-600 active:bg-blue-700 text-white px-3 py-2 rounded-lg transition-colors"
+        >⬇ Load selected model</button>
+        <!-- Row 2: Sources -->
+        <div class="flex items-center gap-2">
+          <label for="sources-count" class="text-xs text-gray-500 whitespace-nowrap">Sources:</label>
+          <select
+            id="sources-count"
+            class="text-xs border border-gray-200 rounded-lg px-2 py-1 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-300"
+          >
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3" selected>3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+          </select>
+        </div>
       </div>
     </div>
 
@@ -95,7 +116,7 @@
     <div id="status" class="flex-none text-xs text-center text-gray-400 px-4 py-1 min-h-[1.25rem]"></div>
 
     <!-- Input bar -->
-    <div id="input-bar" class="flex-none border-t bg-white px-3 py-3">
+    <div id="input-bar" class="flex-none border-t bg-white px-3 pt-3 pb-2">
       <div class="flex gap-2 items-center">
         <input
           id="input"

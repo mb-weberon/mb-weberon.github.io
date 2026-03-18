@@ -262,7 +262,7 @@ function getSelectedModel() {
 window.onModelChange = function() {
   storageSet('user_selected_model', getSelectedModel());
   const btn = document.getElementById('reload-model-btn');
-  if (btn) btn.classList.remove('hidden');
+  if (btn) btn.classList.add('visible');
 };
 
 function getMaxSources() {
@@ -270,16 +270,10 @@ function getMaxSources() {
   return el ? parseInt(el.value) : 3;
 }
 
-// Called when user changes the dropdown — show the Load button
-window.onModelChange = function() {
-  const btn = document.getElementById('reload-model-btn');
-  if (btn) btn.classList.remove('hidden');
-};
-
 // Called when user clicks Load after changing model
 window.reloadModel = async function() {
   const btn = document.getElementById('reload-model-btn');
-  if (btn) btn.classList.add('hidden');
+  if (btn) btn.classList.remove('visible');
   llmEngine = null;
   engineState.mode = 'loading';
   engineState.model = null;
