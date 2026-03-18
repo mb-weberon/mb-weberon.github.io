@@ -75,6 +75,11 @@ function getSelectedModel() {
   return sel ? sel.value : pickDefaultModel();
 }
 
+function getMaxSources() {
+  const el = document.getElementById('sources-count');
+  return el ? parseInt(el.value) : 3;
+}
+
 // Called when user changes the dropdown — show the Load button
 window.onModelChange = function() {
   const btn = document.getElementById('reload-model-btn');
@@ -581,24 +586,31 @@ async function chat(query) {
     return handleMetaQuery(query);
   }
 
-  const sources = await search(query);
+  const maxSources = getMaxSources();
+  // Fetch enough candidates to find maxSources unique URLs even if chunks cluster
+  const sources = await search(query, maxSources * 3);
 
   if (sources.length === 0) {
     return { answer: "No relevant content found in your site.", sources: [] };
   }
 
-  // Top 3 unique URLs
+  // Dedupe to at most maxSources unique URLs — naturally fewer if not enough distinct pages match
   const uniqueSources = [];
   const seenUrls = new Set();
-  sources.slice(0, 10).forEach(s => {
-    if (!seenUrls.has(s.url) && uniqueSources.length < 3) {
+  sources.forEach(s => {
+    if (!seenUrls.has(s.url) && uniqueSources.length < maxSources) {
       seenUrls.add(s.url);
       uniqueSources.push(s);
     }
   });
 
-  // Ensure text is loaded before building context
+  // Attach a short snippet to each source for footnote display
   await ensureTextLoaded();
+  uniqueSources.forEach(s => {
+    if (!s.snippet) {
+      s.snippet = getText(s.id).replace(/\s+/g, ' ').trim().substring(0, 120);
+    }
+  });
 
   // LLM path
   if (llmEngine) {
@@ -767,14 +779,21 @@ function renderMessages() {
             title = s.url.split('/').pop()
               ?.replace(/-/g, ' ').replace(/\.html?$/, '').replace(/\?.*/, '') || 'Home';
           }
-          return `<div class="flex items-start gap-1.5">
+          const snippet = s.snippet
+            ? `<div class="text-gray-500 text-xs mt-0.5">${s.snippet}…</div>`
+            : '';
+          return `<div class="flex items-start gap-1.5 mb-2">
             <span class="text-gray-400 font-medium min-w-[1.2rem]">[${i+1}]</span>
-            <a href="${s.url}" target="_blank" class="text-blue-600 hover:underline text-xs break-all">${title} — ${s.url}</a>
+            <div>
+              <a href="${s.url}" target="_blank" class="text-blue-600 hover:underline text-xs font-medium">${title}</a>
+              <div class="text-gray-400 text-xs">${s.url}</div>
+              ${snippet}
+            </div>
           </div>`;
         }).join('');
 
         content += `
-          <div class="mt-3 pt-3 border-t border-gray-100 space-y-1">
+          <div class="mt-3 pt-3 border-t border-gray-100">
             ${footnotes}
           </div>`;
       }
