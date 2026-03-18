@@ -872,7 +872,7 @@ function detectCategoryQuery(query) {
 }
 
 // RAG + LLM generation
-async function chat(query) {
+async function chat(query, signal = null) {
 
   // --- %SYSTEM% prefix: explicit admin command, zero false positives ---
   const sysCmd = parseSystemCommand(query);
@@ -959,6 +959,9 @@ async function chat(query) {
             : m.content
         }));
 
+      // Throw immediately if already aborted before we even called the LLM
+      if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+
       const reply = await llmEngine.chat.completions.create({
         messages: [
           {
@@ -983,7 +986,8 @@ Passages:\n${trimmedContext}`
         ],
         temperature: 0.4,
         repetition_penalty: 1.3,
-        max_tokens: 400
+        max_tokens: 400,
+        ...(signal ? { signal } : {}),  // pass abort signal if supported by engine
       });
 
       const raw = reply.choices[0].message.content;
@@ -997,6 +1001,7 @@ Passages:\n${trimmedContext}`
         .trimEnd();
       return { answer, sources: uniqueSources };
     } catch (e) {
+      if (e.name === 'AbortError') throw e; // propagate abort to ask()
       console.warn('LLM failed, falling back to template:', e);
     }
   }
@@ -1009,15 +1014,35 @@ Passages:\n${trimmedContext}`
 }
 
 
+// Active abort controller — set while a query is in flight, null otherwise
+let _abortController = null;
+
+window.stopGeneration = function() {
+  if (_abortController) {
+    _abortController.abort();
+    _abortController = null;
+  }
+};
+
 // Main chat handler
 window.ask = async function() {
-  const input = document.getElementById('input');
-  const query = input.value.trim();
+  const input   = document.getElementById('input');
+  const sendBtn = document.getElementById('send-btn');
+  const query   = input.value.trim();
   if (!query) return;
-  
-  input.value = '';
-  input.disabled = true;
-  document.getElementById('send-btn').disabled = true;
+
+  input.value     = '';
+  input.disabled  = true;
+
+  // Swap send → stop button
+  sendBtn.onclick   = window.stopGeneration;
+  sendBtn.title     = 'Stop generating';
+  sendBtn.classList.remove('bg-blue-500', 'hover:bg-blue-600', 'active:bg-blue-700');
+  sendBtn.classList.add('bg-red-500', 'hover:bg-red-600', 'active:bg-red-700');
+  sendBtn.innerHTML = `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-4 h-4">
+      <rect x="6" y="6" width="12" height="12" rx="1"/>
+    </svg>`;
 
   // Add user message
   messages.push({ role: 'user', content: query });
@@ -1045,19 +1070,47 @@ window.ask = async function() {
     container.scrollTop = container.scrollHeight;
   });
 
-  // Get LLM response
-  const { answer, sources } = await chat(query);
+  // Create abort controller for this request
+  _abortController = new AbortController();
+  const signal = _abortController.signal;
+
+  let answer = null;
+  let sources = [];
+
+  try {
+    const result = await chat(query, signal);
+    answer  = result.answer;
+    sources = result.sources;
+  } catch (e) {
+    if (e.name === 'AbortError' || signal.aborted) {
+      answer = '_Generation stopped._';
+    } else {
+      console.warn('chat() error:', e);
+      answer = '_Something went wrong. Please try again._';
+    }
+  } finally {
+    _abortController = null;
+  }
 
   // Remove typing indicator
   typing.remove();
 
-  messages.push({ role: 'assistant', content: answer, sources });
-  saveMessages();
-  
-  renderMessages();
-  
-  input.disabled = false;
-  document.getElementById('send-btn').disabled = false;
+  if (answer) {
+    messages.push({ role: 'assistant', content: answer, sources });
+    saveMessages();
+    renderMessages();
+  }
+
+  // Restore send button
+  input.disabled    = false;
+  sendBtn.onclick   = window.ask;
+  sendBtn.title     = '';
+  sendBtn.classList.remove('bg-red-500', 'hover:bg-red-600', 'active:bg-red-700');
+  sendBtn.classList.add('bg-blue-500', 'hover:bg-blue-600', 'active:bg-blue-700');
+  sendBtn.innerHTML = `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5">
+      <path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" />
+    </svg>`;
   input.focus();
 };
 
@@ -1188,20 +1241,21 @@ window.clearChat = function() {
   generateWelcome();
 };
 
-// FIX: Wire up both the Send button AND the Enter key
+// Wire up Send button and Enter key
 document.addEventListener('DOMContentLoaded', function() {
   const sendBtn = document.getElementById('send-btn');
-  const input = document.getElementById('input');
+  const input   = document.getElementById('input');
 
   if (sendBtn) {
-    sendBtn.addEventListener('click', ask);
+    sendBtn.onclick = window.ask;
   }
 
   if (input) {
     input.addEventListener('keydown', function(e) {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
-        ask();
+        // Only submit if not currently generating
+        if (!_abortController) ask();
       }
     });
   }
