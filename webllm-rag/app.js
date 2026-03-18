@@ -103,6 +103,7 @@ window.reloadModel = async function() {
 const engineState = {
   mode: 'loading',
   webgpu: null,
+  webnn:  null,
   model: null,
   loadProgress: null,
   failReason: null,
@@ -112,11 +113,15 @@ function updateEngineStatus() {
   const bar = document.getElementById('engine-status');
   if (!bar) return;
 
-  const usingGPU = engineState.mode === 'llm' && !engineState.model?.includes('CPU');
+  const usingGPU = engineState.mode === 'llm' && !engineState.model?.includes('CPU') && !engineState.model?.includes('WebNN');
+  const usingNPU = engineState.mode === 'llm' && engineState.webnn === true;
+
   const gpuBadge = usingGPU
     ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-700">⚡ WebGPU</span>`
-    : engineState.webgpu === false
-    ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-200 text-gray-500">🚫 No WebGPU</span>`
+    : usingNPU
+    ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">🧠 WebNN</span>`
+    : engineState.webgpu === false && engineState.webnn === false
+    ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-200 text-gray-500">🚫 No WebGPU/WebNN</span>`
     : '';
 
   let modeBadge = '';
@@ -128,10 +133,10 @@ function updateEngineStatus() {
     modeBadge = `<span class="text-yellow-700 font-medium">Loading LLM${prog}…</span>`;
   } else if (engineState.mode === 'llm') {
     dot = '<span class="inline-block w-2 h-2 rounded-full bg-green-500"></span>';
-    const isCPU = engineState.model?.includes('CPU');
-    modeBadge = isCPU
-      ? `<span class="text-green-700 font-medium">LLM active (CPU)</span>`
-      : `<span class="text-green-700 font-medium">LLM active (GPU)</span>`;
+    const backend = engineState.webnn
+      ? 'NPU'
+      : engineState.model?.includes('CPU') ? 'CPU' : 'GPU';
+    modeBadge = `<span class="text-green-700 font-medium">LLM active (${backend})</span>`;
   } else if (engineState.mode === 'fallback') {
     dot = '<span class="inline-block w-2 h-2 rounded-full bg-orange-400"></span>';
     const reason = engineState.failReason ? ` — ${engineState.failReason}` : '';
@@ -235,15 +240,13 @@ function getText(id) {
 async function initLLM() {
 
   // iOS Safari: web-llm compute shaders unsupported, Transformers.js needs
-  // COOP/COEP headers (Cross-Origin-Opener-Policy / Embedder-Policy) for
-  // SharedArrayBuffer — a basic file server won't send these.
-  // Skip LLM entirely and use template mode with a helpful message.
+  // COOP/COEP headers for SharedArrayBuffer — skip LLM entirely.
   if (isIOSSafari()) {
     engineState.webgpu = false;
+    engineState.webnn  = false;
     engineState.mode = 'fallback';
     engineState.failReason = 'iOS Safari — LLM requires server headers (COOP/COEP)';
     updateEngineStatus();
-    // Hide model selector — not useful on iOS
     const row = document.getElementById('model-selector-row');
     if (row) row.classList.add('hidden');
     console.log('⚠️ iOS Safari detected — skipping LLM, using template mode');
@@ -253,6 +256,7 @@ async function initLLM() {
   // --- Attempt 1: WebGPU via web-llm ---
   const hasGpuAPI = !!navigator.gpu;
   engineState.webgpu = hasGpuAPI;
+  engineState.webnn  = false;
 
   if (hasGpuAPI) {
     try {
@@ -286,8 +290,51 @@ async function initLLM() {
     }
   }
 
-  // --- Attempt 2: CPU via Transformers.js (WASM, no GPU needed) ---
-  engineState.webgpu = hasGpuAPI && !!navigator.gpu;
+  // --- Attempt 2: WebNN via Transformers.js ---
+  // Targets NPU on Snapdragon, Intel Core Ultra, Copilot+ PCs, Pixel 8+
+  // Falls through silently if navigator.ml is absent or device has no NPU
+  if (typeof navigator.ml !== 'undefined') {
+    engineState.mode = 'loading';
+    engineState.loadProgress = 0;
+    engineState.failReason = null;
+    updateEngineStatus();
+    console.log('🧠 WebNN API detected — trying NPU path…');
+
+    try {
+      const { pipeline, env } = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3/+esm');
+      env.allowLocalModels = false;
+      env.useBrowserCache  = true;
+
+      // Phi-3 Mini is the best model available in ONNX for WebNN
+      const MODEL = 'microsoft/Phi-3-mini-4k-instruct-onnx-web';
+
+      const pipe = await pipeline('text-generation', MODEL, {
+        device: 'webnn',
+        dtype:  'q4',
+        progress_callback: (p) => {
+          if (p.progress != null) {
+            engineState.loadProgress = Math.round(p.progress);
+            updateEngineStatus();
+          }
+        }
+      });
+
+      llmEngine = wrapTransformersPipe(pipe);
+      engineState.mode   = 'llm';
+      engineState.model  = `${MODEL} (WebNN)`;
+      engineState.webnn  = true;
+      engineState.loadProgress = null;
+      engineState.failReason   = null;
+      updateEngineStatus();
+      console.log('✅ Transformers.js (WebNN/NPU) loaded');
+      return;
+    } catch (e) {
+      console.warn('WebNN attempt failed:', e.message);
+      engineState.webnn = false;
+    }
+  }
+
+  // --- Attempt 3: CPU via Transformers.js WASM ---
   engineState.mode = 'loading';
   engineState.loadProgress = 0;
   engineState.failReason = null;
@@ -295,9 +342,8 @@ async function initLLM() {
 
   try {
     const { pipeline, env } = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3/+esm');
-
     env.allowLocalModels = false;
-    env.useBrowserCache = true;
+    env.useBrowserCache  = true;
 
     const MODEL = 'HuggingFaceTB/SmolLM2-135M-Instruct';
 
@@ -311,29 +357,13 @@ async function initLLM() {
       }
     });
 
-    llmEngine = {
-      _pipe: pipe,
-      chat: {
-        completions: {
-          create: async ({ messages, temperature }) => {
-            const result = await pipe(messages, {
-              max_new_tokens: 512,
-              temperature: temperature ?? 0.1,
-              do_sample: temperature > 0,
-            });
-            const text = result[0]?.generated_text?.at(-1)?.content ?? '';
-            return { choices: [{ message: { content: text } }] };
-          }
-        }
-      }
-    };
-
-    engineState.mode = 'llm';
-    engineState.model = `${MODEL} (CPU)`;
+    llmEngine = wrapTransformersPipe(pipe);
+    engineState.mode   = 'llm';
+    engineState.model  = `${MODEL} (CPU)`;
     engineState.loadProgress = null;
-    engineState.failReason = null;
+    engineState.failReason   = null;
     updateEngineStatus();
-    console.log('✅ Transformers.js (CPU) loaded');
+    console.log('✅ Transformers.js (CPU/WASM) loaded');
 
   } catch (e) {
     console.warn('CPU LLM also failed:', e.message);
@@ -345,6 +375,26 @@ async function initLLM() {
       : `WebGPU not supported + CPU fallback failed: ${e.message?.slice(0, 60)}`;
     updateEngineStatus();
   }
+}
+
+// Wrap a Transformers.js pipeline into the web-llm-compatible interface
+function wrapTransformersPipe(pipe) {
+  return {
+    _pipe: pipe,
+    chat: {
+      completions: {
+        create: async ({ messages, temperature }) => {
+          const result = await pipe(messages, {
+            max_new_tokens: 512,
+            temperature:    temperature ?? 0.1,
+            do_sample:      (temperature ?? 0.1) > 0,
+          });
+          const text = result[0]?.generated_text?.at(-1)?.content ?? '';
+          return { choices: [{ message: { content: text } }] };
+        }
+      }
+    }
+  };
 }
 
 // Remove repeated sentences from LLM output — common with small models
