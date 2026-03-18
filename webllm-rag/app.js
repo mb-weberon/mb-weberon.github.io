@@ -30,7 +30,7 @@ const MODELS = [
   { id: 'Phi-3.5-mini-instruct-q4f32_1-MLC',   label: 'Phi-3.5 Mini 3.8B (WebGPU)',   backend: 'webgpu', minMemoryGB: 8 },
   { id: 'Llama-3.2-1B-Instruct-q4f32_1-MLC',   label: 'Llama 3.2 1B (WebGPU)',        backend: 'webgpu', minMemoryGB: 2 },
   // WebNN models (ONNX, runs on NPU/DirectML)
-  { id: 'microsoft/Phi-3-mini-4k-instruct-onnx-web', label: 'Phi-3 Mini (WebNN/NPU)', backend: 'webnn',  minMemoryGB: 4 },
+  { id: 'onnx-community/Phi-3.5-mini-instruct-onnx-web', label: 'Phi-3.5 Mini (WebNN/NPU)', backend: 'webnn',  minMemoryGB: 4 },
   { id: 'HuggingFaceTB/SmolLM2-360M-Instruct',       label: 'SmolLM2 360M (WebNN)',   backend: 'webnn',  minMemoryGB: 2 },
   // CPU WASM fallback
   { id: 'HuggingFaceTB/SmolLM2-135M-Instruct',       label: 'SmolLM2 135M (CPU)',     backend: 'cpu',    minMemoryGB: 1 },
@@ -42,13 +42,162 @@ function getDeviceMemoryGB() {
   return navigator.deviceMemory ?? Infinity;
 }
 
-// Detect which backend is available on this device
+// Detect which backends are available on this device.
+// Returns an object with flags for each backend rather than a single winner —
+// a device can have both WebGPU and WebNN available simultaneously.
+async function detectAvailableBackends() {
+  const result = {
+    secureContext: window.isSecureContext,
+    isIOSSafari:   isIOSSafari(),
+    webgpu:        false,
+    webgpuAdapter: false,
+    webnn:         false,
+    webnnDevice:   null,   // 'npu' | 'gpu' | 'cpu' | null
+    wasm:          typeof WebAssembly !== 'undefined',
+  };
+
+  console.group('🔍 Backend detection');
+  console.log('Secure context:', result.secureContext);
+  console.log('iOS Safari:', result.isIOSSafari);
+  console.log('navigator.gpu present:', !!navigator.gpu);
+  console.log('navigator.ml present:', !!navigator.ml);
+  console.log('WebAssembly present:', result.wasm);
+
+  if (!result.secureContext) {
+    console.warn('⚠️ Not a secure context — all ML APIs unavailable');
+    console.groupEnd();
+    return result;
+  }
+
+  if (result.isIOSSafari) {
+    console.warn('⚠️ iOS Safari — skipping ML API checks');
+    console.groupEnd();
+    return result;
+  }
+
+  // --- WebGPU ---
+  if (navigator.gpu) {
+    result.webgpu = true;
+    try {
+      const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+      if (adapter) {
+        result.webgpuAdapter = true;
+        const info = await adapter.requestAdapterInfo?.() ?? {};
+        console.log('✅ WebGPU adapter found:', {
+          vendor:       info.vendor      ?? 'unknown',
+          architecture: info.architecture ?? 'unknown',
+          device:       info.device       ?? 'unknown',
+          description:  info.description  ?? 'unknown',
+        });
+      } else {
+        console.warn('⚠️ WebGPU API present but no adapter returned');
+      }
+    } catch (e) {
+      console.warn('⚠️ WebGPU adapter request failed:', e.message);
+    }
+  } else {
+    console.log('❌ WebGPU not available (navigator.gpu absent)');
+  }
+
+  // --- WebNN ---
+  if (navigator.ml) {
+    result.webnn = true;
+    // Try to get a context for each device type to see what's actually available
+    for (const deviceType of ['npu', 'gpu', 'cpu']) {
+      try {
+        const ctx = await navigator.ml.createContext({ deviceType });
+        if (ctx) {
+          result.webnnDevice = deviceType;
+          console.log(`✅ WebNN context created — device: ${deviceType}`);
+          break;
+        }
+      } catch (e) {
+        console.log(`   WebNN ${deviceType}: ${e.message}`);
+      }
+    }
+    if (!result.webnnDevice) {
+      console.warn('⚠️ navigator.ml present but no WebNN context could be created');
+      result.webnn = false;
+    }
+  } else {
+    console.log('❌ WebNN not available (navigator.ml absent)');
+    console.log('   On Edge/Chrome Windows: check edge://flags or chrome://flags for WebNN');
+  }
+
+  console.log('\n📊 Backend summary:', {
+    webgpu:      result.webgpuAdapter ? '✅ adapter ready' : result.webgpu ? '⚠️ API only, no adapter' : '❌',
+    webnn:       result.webnn ? `✅ ${result.webnnDevice}` : '❌',
+    wasm:        result.wasm ? '✅' : '❌',
+  });
+  console.groupEnd();
+
+  return result;
+}
+
+// Cache detected backends after first call
+let _detectedBackends = null;
+async function getBackends() {
+  if (!_detectedBackends) _detectedBackends = await detectAvailableBackends();
+  return _detectedBackends;
+}
+
+// Synchronous hint for UI — used before async detection completes
+// Errs on the side of showing all options rather than hiding them
 function detectAvailableBackend() {
   if (!window.isSecureContext) return 'none';
   if (isIOSSafari())           return 'none';
-  if (navigator.gpu)           return 'webgpu'; // will verify adapter later
-  if (navigator.ml)            return 'webnn';
+  // If WebNN is present, prefer it over WebGPU for model selection hint
+  // (actual capability verified async in initLLM)
+  if (navigator.ml)  return 'webnn';
+  if (navigator.gpu) return 'webgpu';
   return 'cpu';
+}
+
+// Update dropdown graying once async detection completes
+async function updateModelSelectorWithBackends() {
+  const backends = await getBackends();
+  const sel = document.getElementById('model-select');
+  if (!sel) return;
+
+  Array.from(sel.options).forEach(opt => {
+    const model = MODELS.find(m => m.id === opt.value);
+    if (!model) return;
+
+    // Reset previous styling
+    opt.style.color = '';
+    opt.title = '';
+
+    const memGB    = getDeviceMemoryGB();
+    const tooLarge = memGB !== Infinity && memGB < model.minMemoryGB;
+
+    if (tooLarge) {
+      opt.text  = opt.text.replace(' ⚠️ may OOM', '') + ' ⚠️ may OOM';
+      opt.style.color = '#9ca3af';
+      return;
+    }
+
+    if (model.backend === 'webgpu' && !backends.webgpuAdapter) {
+      opt.style.color = '#9ca3af';
+      opt.title = 'WebGPU adapter not available on this device';
+    } else if (model.backend === 'webnn' && !backends.webnn) {
+      opt.style.color = '#9ca3af';
+      opt.title = `WebNN not available — navigator.ml: ${!!navigator.ml}, secure context: ${backends.secureContext}`;
+    }
+  });
+
+  // Re-select best model based on actual detected backends
+  const bestBackend = backends.webnn ? 'webnn'
+    : backends.webgpuAdapter ? 'webgpu'
+    : 'cpu';
+  const viable = MODELS.filter(m => {
+    const memOk      = getDeviceMemoryGB() >= m.minMemoryGB || getDeviceMemoryGB() === Infinity;
+    const backendOk  = m.backend === bestBackend || m.backend === 'cpu';
+    return memOk && backendOk;
+  });
+  if (viable.length && !storageGet('user_selected_model')) {
+    sel.value = viable[0].id;
+    console.log(`🤖 Model selector updated to: ${viable[0].label}`);
+  }
 }
 
 // Pick the best model for this device and backend
@@ -78,30 +227,43 @@ function setDefaultModel() {
 
   const bestId  = pickDefaultModel();
   const memGB   = getDeviceMemoryGB();
-  const backend = detectAvailableBackend();
+  const backend = detectAvailableBackend(); // sync hint
 
-  // Group options by backend — grey out unavailable backends and OOM models
+  // Apply initial gray-out based on sync hint
   Array.from(sel.options).forEach(opt => {
     const model = MODELS.find(m => m.id === opt.value);
     if (!model) return;
-    const tooLarge      = memGB !== Infinity && memGB < model.minMemoryGB;
-    const wrongBackend  = backend !== 'none' && model.backend !== 'cpu' && model.backend !== backend;
+    const tooLarge     = memGB !== Infinity && memGB < model.minMemoryGB;
+    const wrongBackend = backend !== 'none' && model.backend !== 'cpu' && model.backend !== backend;
     if (tooLarge) {
       opt.text += ' ⚠️ may OOM';
       opt.style.color = '#9ca3af';
     } else if (wrongBackend) {
       opt.style.color = '#9ca3af';
-      opt.title = `Requires ${model.backend} — not detected on this device`;
+      opt.title = `Requires ${model.backend} — verifying…`;
     }
   });
 
-  sel.value = bestId;
+  // Only set default if user hasn't manually picked a model
+  if (!storageGet('user_selected_model')) {
+    sel.value = bestId;
+  }
+
+  // Async: refine graying once we've actually probed the hardware
+  updateModelSelectorWithBackends();
 }
 
 function getSelectedModel() {
   const sel = document.getElementById('model-select');
   return sel ? sel.value : pickDefaultModel();
 }
+
+// Remember user's manual model choice so auto-detection doesn't override it
+window.onModelChange = function() {
+  storageSet('user_selected_model', getSelectedModel());
+  const btn = document.getElementById('reload-model-btn');
+  if (btn) btn.classList.remove('hidden');
+};
 
 function getMaxSources() {
   const el = document.getElementById('sources-count');
@@ -314,44 +476,41 @@ async function initLLM() {
   }
 
   // --- Attempt 1: WebGPU via web-llm ---
-  const hasGpuAPI = !!navigator.gpu;
+  const backends    = await getBackends();
+  const hasGpuAPI   = backends.webgpu;
   engineState.webgpu = hasGpuAPI;
   engineState.webnn  = false;
 
-  if (hasGpuAPI) {
+  if (backends.webgpuAdapter) {
     try {
-      const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
-      if (adapter) {
-        engineState.webgpu = true;
-        engineState.mode = 'loading';
-        engineState.loadProgress = 0;
-        updateEngineStatus();
+      engineState.mode = 'loading';
+      engineState.loadProgress = 0;
+      updateEngineStatus();
 
-        const webllm = await import('https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm/+esm');
-        const MODEL = getSelectedModel();
+      const webllm = await import('https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm/+esm');
+      const MODEL  = getSelectedModel();
 
-        llmEngine = await webllm.CreateMLCEngine(MODEL, {
-          initProgressCallback: (p) => {
-            engineState.loadProgress = Math.round((p.progress ?? 0) * 100);
-            updateEngineStatus();
-          }
-        });
+      llmEngine = await webllm.CreateMLCEngine(MODEL, {
+        initProgressCallback: (p) => {
+          engineState.loadProgress = Math.round((p.progress ?? 0) * 100);
+          updateEngineStatus();
+        }
+      });
 
-        engineState.mode = 'llm';
-        engineState.model = MODEL;
-        engineState.loadProgress = null;
-        engineState.failReason = null;
-        updateEngineStatus();
-        console.log('✅ WebLLM (WebGPU) loaded');
-        return;
-      }
+      engineState.mode = 'llm';
+      engineState.model = MODEL;
+      engineState.loadProgress = null;
+      engineState.failReason = null;
+      updateEngineStatus();
+      console.log('✅ WebLLM (WebGPU) loaded');
+      return;
     } catch (e) {
       console.warn('WebGPU/web-llm failed:', e.message);
     }
   }
 
   // --- Attempt 2: WebNN via Transformers.js ---
-  if (typeof navigator.ml !== 'undefined') {
+  if (backends.webnn) {
     engineState.mode = 'loading';
     engineState.loadProgress = 0;
     engineState.failReason = null;
@@ -368,11 +527,12 @@ async function initLLM() {
       const selectedMeta = MODELS.find(m => m.id === selectedId);
       const MODEL = (selectedMeta?.backend === 'webnn')
         ? selectedId
-        : 'microsoft/Phi-3-mini-4k-instruct-onnx-web';
+        : 'onnx-community/Phi-3.5-mini-instruct-onnx-web';
 
       const pipe = await pipeline('text-generation', MODEL, {
         device: 'webnn',
-        dtype:  'q4',
+        dtype:  'fp32',
+        use_external_data_format: false,
         progress_callback: (p) => {
           if (p.progress != null) {
             engineState.loadProgress = Math.round(p.progress);
