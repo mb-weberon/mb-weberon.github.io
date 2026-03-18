@@ -195,7 +195,7 @@ async function updateModelSelectorWithBackends() {
     const backendOk  = m.backend === bestBackend || m.backend === 'cpu';
     return memOk && backendOk;
   });
-  if (viable.length && !storageGet('user_selected_model')) {
+  if (viable.length && !storageGet('user_selected_model') && engineState.mode !== 'llm') {
     sel.value = viable[0].id;
     console.log(`🤖 Model selector updated to: ${viable[0].label}`);
   }
@@ -226,32 +226,14 @@ function setDefaultModel() {
   const sel = document.getElementById('model-select');
   if (!sel) return;
 
-  const bestId  = pickDefaultModel();
-  const memGB   = getDeviceMemoryGB();
-  const backend = detectAvailableBackend(); // sync hint
-
-  // Apply initial gray-out based on sync hint
-  Array.from(sel.options).forEach(opt => {
-    const model = MODELS.find(m => m.id === opt.value);
-    if (!model) return;
-    const tooLarge     = memGB !== Infinity && memGB < model.minMemoryGB;
-    const wrongBackend = backend !== 'none' && model.backend !== 'cpu' && model.backend !== backend;
-    if (tooLarge) {
-      opt.text += ' ⚠️ may OOM';
-      opt.style.color = '#9ca3af';
-    } else if (wrongBackend) {
-      opt.style.color = '#9ca3af';
-      opt.title = `Requires ${model.backend} — verifying…`;
-    }
-  });
+  const bestId = pickDefaultModel();
 
   // Only set default if user hasn't manually picked a model
   if (!storageGet('user_selected_model')) {
     sel.value = bestId;
   }
-
-  // Async: refine graying once we've actually probed the hardware
-  updateModelSelectorWithBackends();
+  // Graying is applied only after engine loads via syncDropdownToLoadedModel —
+  // probing hardware before the engine is ready gives false negatives
 }
 
 function getSelectedModel() {
@@ -332,7 +314,14 @@ function updateEngineStatus() {
   }
 
   const modelLabel = engineState.model
-    ? `<span class="text-gray-400 text-xs">${engineState.model}</span>`
+    ? (() => {
+        // Find the short label for the loaded model, fall back to a trimmed ID
+        const found = MODELS.find(m => engineState.model.startsWith(m.id));
+        const shortLabel = found
+          ? found.label
+          : engineState.model.split('/').pop().replace(/-q4.*/, '').slice(0, 30);
+        return `<span class="text-gray-400 text-xs">${shortLabel}</span>`;
+      })()
     : '';
 
   bar.innerHTML = `
@@ -471,13 +460,19 @@ async function initLLM() {
   }
 
   // --- Attempt 1: WebGPU via web-llm ---
-  const backends    = await getBackends();
-  const hasGpuAPI   = backends.webgpu;
+  // Probe adapter fresh here — don't use cached detectAvailableBackends()
+  // because that probe runs too early (before GPU process warms up) and
+  // caches a false negative that blocks this attempt.
+  const hasGpuAPI = !!navigator.gpu;
   engineState.webgpu = hasGpuAPI;
   engineState.webnn  = false;
 
-  if (backends.webgpuAdapter) {
+  if (hasGpuAPI) {
     try {
+      const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+      if (!adapter) throw new Error('No WebGPU adapter returned');
+
+      console.log('✅ WebGPU adapter obtained — loading web-llm…');
       engineState.mode = 'loading';
       engineState.loadProgress = 0;
       updateEngineStatus();
@@ -496,6 +491,7 @@ async function initLLM() {
       engineState.model = MODEL;
       engineState.loadProgress = null;
       engineState.failReason = null;
+      syncDropdownToLoadedModel(MODEL);
       updateEngineStatus();
       console.log('✅ WebLLM (WebGPU) loaded');
       return;
@@ -505,7 +501,7 @@ async function initLLM() {
   }
 
   // --- Attempt 2: WebNN via Transformers.js ---
-  if (backends.webnn) {
+  if (navigator.ml) {
     engineState.mode = 'loading';
     engineState.loadProgress = 0;
     engineState.failReason = null;
@@ -541,6 +537,7 @@ async function initLLM() {
       engineState.webnn  = true;
       engineState.loadProgress = null;
       engineState.failReason   = null;
+      syncDropdownToLoadedModel(MODEL);
       updateEngineStatus();
       console.log('✅ Transformers.js (WebNN/NPU) loaded');
       return;
@@ -578,6 +575,7 @@ async function initLLM() {
     engineState.model  = `${MODEL} (CPU)`;
     engineState.loadProgress = null;
     engineState.failReason   = null;
+    syncDropdownToLoadedModel(MODEL);
     updateEngineStatus();
     console.log('✅ Transformers.js (CPU/WASM) loaded');
 
@@ -863,7 +861,42 @@ function parseSystemCommand(query) {
   return 'help';
 }
 
-// Fallback NLP detection — tight patterns only, for the most obvious cases
+// Sync the model dropdown to reflect what's actually running —
+// prevents async backend detection from overwriting it after load
+function syncDropdownToLoadedModel(modelId) {
+  const sel = document.getElementById('model-select');
+  if (!sel) return;
+
+  // Reset ALL graying — we now know what actually works on this device
+  Array.from(sel.options).forEach(opt => {
+    opt.style.color = '';
+    opt.title = '';
+    // Remove OOM warnings — let the user decide
+    opt.text = opt.text.replace(' ⚠️ may OOM', '');
+  });
+
+  // Mark only models of the wrong backend as unavailable
+  const loadedModel = MODELS.find(m => modelId.startsWith(m.id));
+  if (loadedModel) {
+    Array.from(sel.options).forEach(opt => {
+      const model = MODELS.find(m => m.id === opt.value);
+      if (!model) return;
+      // If loaded backend is webgpu, gray out webnn-only models and vice versa
+      // CPU models are always available as fallback
+      if (model.backend !== 'cpu' && model.backend !== loadedModel.backend) {
+        opt.style.color = '#9ca3af';
+        opt.title = `Requires ${model.backend} — current engine uses ${loadedModel.backend}`;
+      }
+    });
+  }
+
+  // Set dropdown to the loaded model
+  const exists = Array.from(sel.options).some(o => o.value === modelId);
+  if (exists) sel.value = modelId;
+
+  // Invalidate the backend cache so next reload re-probes cleanly
+  _detectedBackends = null;
+}
 function detectMetaQuery(query) {
   const q = query.toLowerCase().trim();
   return (
