@@ -502,7 +502,11 @@ async function search(query, k = 5) {
       return metaDocs
         .map((doc, i) => {
           const slice = embMatrix.subarray(i * DIMS, (i + 1) * DIMS);
-          return { ...doc, score: cosineSimilarity(queryVec, slice) };
+          const sim   = cosineSimilarity(queryVec, slice);
+          // Boost contact chunks — they contain info (address, phone, name)
+          // that tends to be semantically distant from how users phrase queries
+          const boost = doc.type === 'contact' ? 0.15 : 0;
+          return { ...doc, score: sim + boost };
         })
         .sort((a, b) => b.score - a.score)
         .slice(0, k);
