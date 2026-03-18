@@ -459,13 +459,12 @@ const CATEGORIES = [
 ];
 
 function detectCategoryQuery(query) {
-  const q = query.toLowerCase();
-  // Must have a summary/overview intent
-  const hasIntent = /\b(summar|overview|list|show|what|give|all|tell me about)\b/.test(q);
-  if (!hasIntent) return null;
-  return CATEGORIES.find(cat =>
-    cat.keywords.some(kw => q.includes(kw))
-  ) ?? null;
+  const q = query.toLowerCase().trim();
+  // Require an explicit listing/overview intent word before checking category keywords
+  const hasListingIntent = /^(list|show|give me|display|what are|overview of|summarize)\b/.test(q) ||
+    /\b(all|every)\b.{0,20}\b(report|seller|buyer|landing|coaching|seminar)\b/.test(q);
+  if (!hasListingIntent) return null;
+  return CATEGORIES.find(cat => cat.keywords.some(kw => q.includes(kw))) ?? null;
 }
 
 async function handleCategoryQuery(category) {
@@ -504,26 +503,8 @@ async function handleCategoryQuery(category) {
   };
 }
 
-// Detect meta-queries about the index itself
-function detectMetaQuery(query) {
-  const q = query.toLowerCase();
-  const urlPatterns = [
-    /\b(list|show|dump|give|what|all)\b.{0,30}\b(url|urls|pages|links|page)\b/,
-    /\b(url|urls|pages|links)\b.{0,30}\b(index|indexed|available|site)\b/,
-    /how many (pages|urls|documents|files)/,
-    /what (pages|urls|content) (do you|are) (have|indexed|available)/,
-  ];
-  return urlPatterns.some(re => re.test(q));
-}
-
-function detectSummaryQuery(query) {
-  const q = query.toLowerCase();
-  return /\b(summar|overview|describe|what('?s| is) (on|in|about)|about each|each page|all pages)\b/.test(q);
-}
-
-// Handle meta-queries directly from metaDocs — no RAG, no LLM needed
-function handleMetaQuery(query) {
-  // Collect all unique URLs with their titles
+// Handle meta-queries — list all pages
+function handleMetaQuery() {
   const seen = new Set();
   const pages = [];
   for (const doc of metaDocs) {
@@ -532,42 +513,131 @@ function handleMetaQuery(query) {
       pages.push({ url: doc.url, title: doc.title });
     }
   }
-
   const answer = `This site has **${pages.length} indexed pages**:\n\n` +
     pages.map((p, i) => `[${i + 1}] ${p.title || p.url}`).join('\n');
-
   return {
     answer,
     sources: pages.map((p, i) => ({ id: i, url: p.url, title: p.title, score: 1 }))
   };
 }
 
-// Summarize each page from first chunk's text — no LLM needed
+// Handle summary queries — first snippet of each page
 async function handleSummaryQuery() {
   await ensureTextLoaded();
-
   const seen = new Set();
   const pages = [];
   for (const doc of metaDocs) {
     if (!seen.has(doc.url)) {
       seen.add(doc.url);
-      const text = getText(doc.id);
-      // First 200 chars of the first chunk as the summary
-      const snippet = text.replace(/\s+/g, ' ').trim().substring(0, 200);
+      const snippet = getText(doc.id).replace(/\s+/g, ' ').trim().substring(0, 200);
       pages.push({ url: doc.url, title: doc.title, snippet });
     }
   }
-
   const answer = `Here's a summary of all **${pages.length} pages** on this site:\n\n` +
-    pages.map((p, i) =>
-      `[${i + 1}] **${p.title || p.url}**\n${p.snippet}…`
-    ).join('\n\n');
-
+    pages.map((p, i) => `[${i + 1}] **${p.title || p.url}**\n${p.snippet}…`).join('\n\n');
   return {
     answer,
     sources: pages.map((p, i) => ({ id: i, url: p.url, title: p.title, score: 1 }))
   };
 }
+
+// ---------------------------------------------------------------------------
+// Meta-query dispatch
+//
+// Preferred: use %SYSTEM% prefix for explicit admin commands, e.g.:
+//   %SYSTEM% list urls
+//   %SYSTEM% summarize pages
+//   %SYSTEM% seller resources
+//   %SYSTEM% buyer resources
+//   %SYSTEM% reports
+//   %SYSTEM% count
+//
+// NLP detection below is kept as a fallback for obvious cases only,
+// with tight patterns to minimise false positives on normal queries.
+// ---------------------------------------------------------------------------
+
+const SYSTEM_PREFIX = /^%system%\s*/i;
+
+function parseSystemCommand(query) {
+  if (!SYSTEM_PREFIX.test(query)) return null;
+  const cmd = query.replace(SYSTEM_PREFIX, '').trim().toLowerCase();
+
+  if (/^(list\s+)?(all\s+)?(url|urls|pages|links)$/.test(cmd) || cmd === 'list' || cmd === 'urls') {
+    return 'list-urls';
+  }
+  if (/^(summarize?|summary|overview)(\s+all)?(\s+pages?)?$/.test(cmd)) {
+    return 'summarize-pages';
+  }
+  if (/^(count|how many)$/.test(cmd)) {
+    return 'count';
+  }
+  // Check category keywords
+  const matchedCat = CATEGORIES.find(cat => cat.keywords.some(kw => cmd.includes(kw)));
+  if (matchedCat) return { type: 'category', category: matchedCat };
+
+  // Unknown system command — show help
+  return 'help';
+}
+
+// Fallback NLP detection — tight patterns only, for the most obvious cases
+function detectMetaQuery(query) {
+  const q = query.toLowerCase().trim();
+  return (
+    /^(list|dump|show|print|display)\s+(all\s+)?(url|urls|pages|links)$/.test(q) ||
+    /^how many (pages|urls|documents|files)(\s+do you have)?$/.test(q)
+  );
+}
+
+function detectSummaryQuery(query) {
+  const q = query.toLowerCase().trim();
+  return /^(summarize|overview of|describe)\s+all\s+(pages|urls|content)$/.test(q) ||
+    /^(each page|all pages|every page)$/.test(q);
+}
+
+function detectCategoryQuery(query) {
+  const q = query.toLowerCase().trim();
+  const hasListingIntent = /^(list|show|give me all|display all)\s/.test(q);
+  if (!hasListingIntent) return null;
+  return CATEGORIES.find(cat => cat.keywords.some(kw => q.includes(kw))) ?? null;
+}
+
+// RAG + LLM generation
+async function chat(query) {
+
+  // --- %SYSTEM% prefix: explicit admin command, zero false positives ---
+  const sysCmd = parseSystemCommand(query);
+  if (sysCmd) {
+    if (sysCmd === 'list-urls')       return handleMetaQuery(query);
+    if (sysCmd === 'summarize-pages') return await handleSummaryQuery();
+    if (sysCmd === 'count') {
+      const n = new Set(metaDocs.map(d => d.url)).size;
+      return { answer: `The index contains **${n} unique pages**.`, sources: [] };
+    }
+    if (sysCmd?.type === 'category')  return await handleCategoryQuery(sysCmd.category);
+    if (sysCmd === 'help') {
+      return {
+        answer: `**%SYSTEM% commands:**\n\n` +
+          `\`%SYSTEM% urls\` — list all indexed URLs\n` +
+          `\`%SYSTEM% summarize\` — summarize every page\n` +
+          `\`%SYSTEM% count\` — how many pages are indexed\n` +
+          `\`%SYSTEM% seller resources\` — seller pages\n` +
+          `\`%SYSTEM% buyer resources\` — buyer pages\n` +
+          `\`%SYSTEM% reports\` — report pages\n` +
+          `\`%SYSTEM% coaching\` — coaching pages\n` +
+          `\`%SYSTEM% seminars\` — seminar pages\n` +
+          `\`%SYSTEM% landing pages\` — landing pages`,
+        sources: []
+      };
+    }
+  }
+
+  // --- Fallback NLP detection for obvious cases ---
+  const matchedCategory = detectCategoryQuery(query);
+  if (matchedCategory) return await handleCategoryQuery(matchedCategory);
+  if (detectSummaryQuery(query))  return await handleSummaryQuery();
+  if (detectMetaQuery(query))     return handleMetaQuery(query);
+
+  // --- Normal RAG path ---
 
 // RAG + LLM generation
 async function chat(query) {
@@ -640,7 +710,17 @@ async function chat(query) {
         messages: [
           {
             role: 'system',
-            content: `You are a helpful assistant. Answer the user's question using ONLY the numbered passages below. You may use the conversation history for context on follow-up questions. Cite passages as [1], [2], [3]. If the passages don't contain the answer, say so briefly.\n\nPassages:\n${trimmedContext}`
+            content: `You are a knowledgeable, helpful assistant for a real estate website. Answer the user's question thoroughly and with nuance using ONLY the numbered passages below. You may use conversation history for follow-up context.
+
+Guidelines:
+- Give complete, well-reasoned answers — don't just echo the passage text
+- Explain the "why" behind facts where the passages support it
+- If multiple passages are relevant, synthesize them into a coherent answer
+- Cite passages inline as [1], [2], [3] only where directly relevant
+- If the passages don't contain enough to answer well, say so briefly
+- Never repeat the same point twice
+
+Passages:\n${trimmedContext}`
           },
           ...history,
           {
@@ -648,9 +728,9 @@ async function chat(query) {
             content: query
           }
         ],
-        temperature: 0.4,      // higher than 0.1 — prevents repetition loops
-        repetition_penalty: 1.3, // penalise tokens already generated
-        max_tokens: 300
+        temperature: 0.4,
+        repetition_penalty: 1.3,
+        max_tokens: 400
       });
 
       const raw = reply.choices[0].message.content;
