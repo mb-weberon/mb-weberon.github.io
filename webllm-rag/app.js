@@ -639,23 +639,6 @@ async function chat(query) {
 
   // --- Normal RAG path ---
 
-// RAG + LLM generation
-async function chat(query) {
-
-  // Handle category queries — filtered summaries by topic
-  const matchedCategory = detectCategoryQuery(query);
-  if (matchedCategory) {
-    return await handleCategoryQuery(matchedCategory);
-  }
-
-  // Handle meta-queries about the index directly
-  if (detectSummaryQuery(query)) {
-    return await handleSummaryQuery();
-  }
-  if (detectMetaQuery(query)) {
-    return handleMetaQuery(query);
-  }
-
   const maxSources = getMaxSources();
   // Fetch enough candidates to find maxSources unique URLs even if chunks cluster
   const sources = await search(query, maxSources * 3);
