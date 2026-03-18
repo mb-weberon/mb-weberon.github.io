@@ -55,10 +55,19 @@
           class="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-300"
           onchange="onModelChange()"
         >
-          <option value="Qwen2.5-1.5B-Instruct-q4f32_1-MLC">Qwen 2.5 1.5B — best small model (recommended)</option>
-          <option value="gemma-2-2b-it-q4f32_1-MLC">Gemma 2 2B — better quality, ~2.5GB</option>
-          <option value="Phi-3.5-mini-instruct-q4f32_1-MLC">Phi-3.5 Mini 3.8B — best quality, ~2.2GB</option>
-          <option value="Llama-3.2-1B-Instruct-q4f32_1-MLC">Llama 3.2 1B — smallest, fastest</option>
+          <optgroup label="⚡ WebGPU models (MLC)">
+            <option value="Qwen2.5-1.5B-Instruct-q4f32_1-MLC">Qwen 2.5 1.5B (WebGPU)</option>
+            <option value="gemma-2-2b-it-q4f32_1-MLC">Gemma 2 2B (WebGPU)</option>
+            <option value="Phi-3.5-mini-instruct-q4f32_1-MLC">Phi-3.5 Mini 3.8B (WebGPU)</option>
+            <option value="Llama-3.2-1B-Instruct-q4f32_1-MLC">Llama 3.2 1B (WebGPU)</option>
+          </optgroup>
+          <optgroup label="🧠 WebNN models (ONNX/NPU)">
+            <option value="microsoft/Phi-3-mini-4k-instruct-onnx-web">Phi-3 Mini (WebNN/NPU) — recommended for X Elite</option>
+            <option value="HuggingFaceTB/SmolLM2-360M-Instruct">SmolLM2 360M (WebNN)</option>
+          </optgroup>
+          <optgroup label="💻 CPU models (WASM)">
+            <option value="HuggingFaceTB/SmolLM2-135M-Instruct">SmolLM2 135M (CPU fallback)</option>
+          </optgroup>
         </select>
         <button
           id="reload-model-btn"

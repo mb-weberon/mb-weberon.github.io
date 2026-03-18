@@ -20,11 +20,20 @@ function isIOSSafari() {
 
 // Ranked model list — all use q4f32 (no shader-f16 required, works on all WebGPU setups)
 // minMemoryGB = minimum navigator.deviceMemory to safely offer this model
+// backend: 'webgpu' = MLC compiled, requires web-llm
+//          'webnn'  = ONNX, requires Transformers.js + WebNN
+//          'cpu'    = ONNX/WASM, Transformers.js CPU fallback
 const MODELS = [
-  { id: 'Qwen2.5-1.5B-Instruct-q4f32_1-MLC',  label: 'Qwen 2.5 1.5B',  minMemoryGB: 4  },
-  { id: 'gemma-2-2b-it-q4f32_1-MLC',           label: 'Gemma 2 2B',      minMemoryGB: 6  },
-  { id: 'Phi-3.5-mini-instruct-q4f32_1-MLC',   label: 'Phi-3.5 Mini',    minMemoryGB: 8  },
-  { id: 'Llama-3.2-1B-Instruct-q4f32_1-MLC',   label: 'Llama 3.2 1B',   minMemoryGB: 2  },
+  // WebGPU models (MLC compiled)
+  { id: 'Qwen2.5-1.5B-Instruct-q4f32_1-MLC',  label: 'Qwen 2.5 1.5B (WebGPU)',       backend: 'webgpu', minMemoryGB: 4 },
+  { id: 'gemma-2-2b-it-q4f32_1-MLC',           label: 'Gemma 2 2B (WebGPU)',           backend: 'webgpu', minMemoryGB: 6 },
+  { id: 'Phi-3.5-mini-instruct-q4f32_1-MLC',   label: 'Phi-3.5 Mini 3.8B (WebGPU)',   backend: 'webgpu', minMemoryGB: 8 },
+  { id: 'Llama-3.2-1B-Instruct-q4f32_1-MLC',   label: 'Llama 3.2 1B (WebGPU)',        backend: 'webgpu', minMemoryGB: 2 },
+  // WebNN models (ONNX, runs on NPU/DirectML)
+  { id: 'microsoft/Phi-3-mini-4k-instruct-onnx-web', label: 'Phi-3 Mini (WebNN/NPU)', backend: 'webnn',  minMemoryGB: 4 },
+  { id: 'HuggingFaceTB/SmolLM2-360M-Instruct',       label: 'SmolLM2 360M (WebNN)',   backend: 'webnn',  minMemoryGB: 2 },
+  // CPU WASM fallback
+  { id: 'HuggingFaceTB/SmolLM2-135M-Instruct',       label: 'SmolLM2 135M (CPU)',     backend: 'cpu',    minMemoryGB: 1 },
 ];
 
 // Detect device memory (GB). navigator.deviceMemory is rounded to nearest power of 2:
@@ -33,37 +42,56 @@ function getDeviceMemoryGB() {
   return navigator.deviceMemory ?? Infinity;
 }
 
-// Pick the best model the device can safely run.
-// On low-memory devices, filter to models that fit, pick the highest-quality one.
-// Always falls back to Llama 1B if nothing else fits.
+// Detect which backend is available on this device
+function detectAvailableBackend() {
+  if (!window.isSecureContext) return 'none';
+  if (isIOSSafari())           return 'none';
+  if (navigator.gpu)           return 'webgpu'; // will verify adapter later
+  if (navigator.ml)            return 'webnn';
+  return 'cpu';
+}
+
+// Pick the best model for this device and backend
 function pickDefaultModel() {
-  const memGB = getDeviceMemoryGB();
-  console.log(`📱 Device memory: ${memGB === Infinity ? 'unknown (desktop)' : memGB + 'GB'}`);
+  const memGB   = getDeviceMemoryGB();
+  const backend = detectAvailableBackend();
+  console.log(`📱 Device memory: ${memGB === Infinity ? 'unknown (desktop)' : memGB + 'GB'}, backend hint: ${backend}`);
 
-  // Filter to models that fit in available memory
+  // Prefer models matching the detected backend, within memory budget
+  const preferred = MODELS.filter(m => m.backend === backend && memGB >= m.minMemoryGB);
+  if (preferred.length) {
+    console.log(`🤖 Auto-selected: ${preferred[0].label}`);
+    return preferred[0].id;
+  }
+
+  // Fall back to best affordable model regardless of backend
   const viable = MODELS.filter(m => memGB >= m.minMemoryGB);
-
-  // Pick the best viable model (first in ranked order = highest quality)
-  // Exclude Llama from "best" unless it's the only option
-  const best = viable.find(m => !m.id.includes('Llama')) ?? MODELS[MODELS.length - 1];
-  console.log(`🤖 Auto-selected model: ${best.label} (${best.id})`);
+  const best   = viable[0] ?? MODELS[MODELS.length - 1];
+  console.log(`🤖 Auto-selected (fallback): ${best.label}`);
   return best.id;
 }
 
-// Set the dropdown to the memory-appropriate default
+// Set the dropdown to the memory/backend-appropriate default
 function setDefaultModel() {
   const sel = document.getElementById('model-select');
   if (!sel) return;
 
-  const bestId = pickDefaultModel();
-  const memGB = getDeviceMemoryGB();
+  const bestId  = pickDefaultModel();
+  const memGB   = getDeviceMemoryGB();
+  const backend = detectAvailableBackend();
 
-  // Grey out / add warning to options that exceed device memory
+  // Group options by backend — grey out unavailable backends and OOM models
   Array.from(sel.options).forEach(opt => {
     const model = MODELS.find(m => m.id === opt.value);
-    if (model && memGB !== Infinity && memGB < model.minMemoryGB) {
+    if (!model) return;
+    const tooLarge      = memGB !== Infinity && memGB < model.minMemoryGB;
+    const wrongBackend  = backend !== 'none' && model.backend !== 'cpu' && model.backend !== backend;
+    if (tooLarge) {
       opt.text += ' ⚠️ may OOM';
-      opt.style.color = '#9ca3af'; // gray out
+      opt.style.color = '#9ca3af';
+    } else if (wrongBackend) {
+      opt.style.color = '#9ca3af';
+      opt.title = `Requires ${model.backend} — not detected on this device`;
     }
   });
 
@@ -323,8 +351,6 @@ async function initLLM() {
   }
 
   // --- Attempt 2: WebNN via Transformers.js ---
-  // Targets NPU on Snapdragon, Intel Core Ultra, Copilot+ PCs, Pixel 8+
-  // Falls through silently if navigator.ml is absent or device has no NPU
   if (typeof navigator.ml !== 'undefined') {
     engineState.mode = 'loading';
     engineState.loadProgress = 0;
@@ -337,8 +363,12 @@ async function initLLM() {
       env.allowLocalModels = false;
       env.useBrowserCache  = true;
 
-      // Phi-3 Mini is the best model available in ONNX for WebNN
-      const MODEL = 'microsoft/Phi-3-mini-4k-instruct-onnx-web';
+      // Use the dropdown selection if it's a WebNN model, otherwise default to Phi-3 Mini
+      const selectedId = getSelectedModel();
+      const selectedMeta = MODELS.find(m => m.id === selectedId);
+      const MODEL = (selectedMeta?.backend === 'webnn')
+        ? selectedId
+        : 'microsoft/Phi-3-mini-4k-instruct-onnx-web';
 
       const pipe = await pipeline('text-generation', MODEL, {
         device: 'webnn',
