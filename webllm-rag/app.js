@@ -239,6 +239,38 @@ function getText(id) {
 // Skips both on iOS Safari where neither works reliably without special server headers
 async function initLLM() {
 
+  // --- Secure context check ---
+  // WebGPU, WebNN, and SharedArrayBuffer (WASM threads) all require HTTPS or localhost.
+  // Plain http:// on a LAN address silently disables all of them.
+  if (!window.isSecureContext) {
+    engineState.webgpu = false;
+    engineState.webnn  = false;
+    engineState.mode   = 'fallback';
+    engineState.failReason = 'http:// detected — serve over https:// or localhost for LLM';
+    updateEngineStatus();
+
+    // Show a persistent warning banner above the chat
+    const messages = document.getElementById('messages');
+    if (messages && !document.getElementById('secure-context-warning')) {
+      const banner = document.createElement('div');
+      banner.id = 'secure-context-warning';
+      banner.className = 'mx-3 mt-3 p-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800';
+      banner.innerHTML = `
+        <strong>⚠️ LLM unavailable — insecure context</strong><br>
+        This page is served over <code>http://</code> on a network address.
+        WebGPU, WebNN, and WASM threads all require a secure context.<br><br>
+        <strong>To enable LLM:</strong><br>
+        • Use <code>http://localhost</code> (always secure)<br>
+        • Or serve with HTTPS: <code>npx serve . --ssl-cert cert.pem --ssl-key key.pem</code><br>
+        • Or generate a local cert: <code>mkcert localhost 192.168.x.x</code>
+      `;
+      messages.parentNode.insertBefore(banner, messages);
+    }
+
+    console.warn('⚠️ Not a secure context — WebGPU/WebNN/WASM threads unavailable');
+    return;
+  }
+
   // iOS Safari: web-llm compute shaders unsupported, Transformers.js needs
   // COOP/COEP headers for SharedArrayBuffer — skip LLM entirely.
   if (isIOSSafari()) {
