@@ -593,19 +593,33 @@ async function initLLM() {
   }
 }
 
-// Wrap a Transformers.js pipeline into the web-llm-compatible interface
+// Wrap a Transformers.js pipeline into the web-llm-compatible streaming interface
 function wrapTransformersPipe(pipe) {
   return {
     _pipe: pipe,
     chat: {
       completions: {
-        create: async ({ messages, temperature }) => {
+        create: async ({ messages, temperature, max_tokens, stream, signal }) => {
+          // Transformers.js doesn't support streaming natively —
+          // run inference then yield the full result as a single chunk
+          if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+
           const result = await pipe(messages, {
-            max_new_tokens: 512,
+            max_new_tokens: max_tokens ?? 512,
             temperature:    temperature ?? 0.1,
             do_sample:      (temperature ?? 0.1) > 0,
           });
+
+          if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+
           const text = result[0]?.generated_text?.at(-1)?.content ?? '';
+
+          if (stream) {
+            // Return an async iterable that yields one chunk then done
+            return (async function*() {
+              yield { choices: [{ delta: { content: text } }] };
+            })();
+          }
           return { choices: [{ message: { content: text } }] };
         }
       }
@@ -959,10 +973,12 @@ async function chat(query, signal = null) {
             : m.content
         }));
 
-      // Throw immediately if already aborted before we even called the LLM
+      // Throw immediately if already aborted
       if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
-      const reply = await llmEngine.chat.completions.create({
+      // Use streaming so we can abort between tokens —
+      // non-streaming holds the JS thread until fully done, abort never fires
+      const stream = await llmEngine.chat.completions.create({
         messages: [
           {
             role: 'system',
@@ -987,10 +1003,15 @@ Passages:\n${trimmedContext}`
         temperature: 0.4,
         repetition_penalty: 1.3,
         max_tokens: 400,
-        ...(signal ? { signal } : {}),  // pass abort signal if supported by engine
+        stream: true,
       });
 
-      const raw = reply.choices[0].message.content;
+      // Accumulate streamed tokens, checking abort between each chunk
+      let raw = '';
+      for await (const chunk of stream) {
+        if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+        raw += chunk.choices[0]?.delta?.content ?? '';
+      }
 
       // Strip duplicate sentences — split on ., !, ? then dedupe preserving order
       const deduped = deduplicateSentences(raw);
