@@ -44,6 +44,7 @@ const DEFAULT_SETTINGS = {
     historyExchanges:  1,
   },
   retrieval: {
+    ragEnabled:             true,
     passageCharLimit:       200,
     contactBoost:           0.15,
     candidatesMultiplier:   3,
