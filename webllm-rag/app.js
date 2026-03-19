@@ -948,48 +948,41 @@ async function chat(query, signal = null) {
 
   // --- Normal RAG path ---
 
-  const ragEnabled = RAGConfig.get('retrieval.ragEnabled') !== false; // default true
   const maxSources = getMaxSources();
+  // Fetch enough candidates to find maxSources unique URLs even if chunks cluster
+  const sources = await search(query, maxSources * RAGConfig.get('retrieval.candidatesMultiplier'));
 
-  let uniqueSources = [];
-
-  if (ragEnabled) {
-    // Fetch enough candidates to find maxSources unique URLs even if chunks cluster
-    const sources = await search(query, maxSources * RAGConfig.get('retrieval.candidatesMultiplier'));
-
-    // Dedupe to at most maxSources unique URLs — naturally fewer if not enough distinct pages match
-    const seenUrls = new Set();
-    sources.forEach(s => {
-      if (!seenUrls.has(s.url) && uniqueSources.length < maxSources) {
-        seenUrls.add(s.url);
-        uniqueSources.push(s);
-      }
-    });
-
-    // Attach a short snippet to each source for footnote display
-    await ensureTextLoaded();
-    uniqueSources.forEach(s => {
-      if (!s.snippet) {
-        s.snippet = getText(s.id).replace(/\s+/g, ' ').trim().substring(0, RAGConfig.get('retrieval.footnoteSnippetLength'));
-      }
-    });
+  if (sources.length === 0) {
+    return { answer: "No relevant content found in your site.", sources: [] };
   }
+
+  // Dedupe to at most maxSources unique URLs — naturally fewer if not enough distinct pages match
+  const uniqueSources = [];
+  const seenUrls = new Set();
+  sources.forEach(s => {
+    if (!seenUrls.has(s.url) && uniqueSources.length < maxSources) {
+      seenUrls.add(s.url);
+      uniqueSources.push(s);
+    }
+  });
+
+  // Attach a short snippet to each source for footnote display
+  await ensureTextLoaded();
+  uniqueSources.forEach(s => {
+    if (!s.snippet) {
+      s.snippet = getText(s.id).replace(/\s+/g, ' ').trim().substring(0, RAGConfig.get('retrieval.footnoteSnippetLength'));
+    }
+  });
 
   // LLM path
   if (llmEngine) {
     try {
-      // Build context block — empty string when RAG is disabled
-      const trimmedContext = ragEnabled && uniqueSources.length
-        ? uniqueSources.map((s, i) =>
-            `[${i+1}] ${getText(s.id).substring(0, RAGConfig.get('retrieval.passageCharLimit'))}`
-          ).join('\n\n')
-        : '';
+      // Keep context short to minimise prefill time — prefill is uninterruptible
+      const trimmedContext = uniqueSources.map((s, i) =>
+        `[${i+1}] ${getText(s.id).substring(0, RAGConfig.get('retrieval.passageCharLimit'))}`
+      ).join('\n\n');
 
-      if (ragEnabled) {
-        console.log('📤 Sending context to LLM:\n', trimmedContext);
-      } else {
-        console.log('📤 RAG disabled — sending query directly to LLM (no retrieved context)');
-      }
+      console.log('📤 Sending context to LLM:\n', trimmedContext);
 
       // Only last N exchanges for history — reduces prefill tokens significantly
       const HISTORY_EXCHANGES = RAGConfig.get('llm.historyExchanges');
@@ -1011,11 +1004,6 @@ async function chat(query, signal = null) {
       const typingText = document.querySelector('#typing-indicator span.text-gray-400');
       if (typingText) typingText.textContent = 'Reading…';
 
-      // Build system message — only append passages section when RAG is enabled and has results
-      const systemContent = ragEnabled && trimmedContext
-        ? `${RAGConfig.get('llm.systemPrompt')}\n\nPassages:\n${trimmedContext}`
-        : RAGConfig.get('llm.systemPrompt');
-
       // Use streaming so we can abort between tokens —
       // non-streaming holds the JS thread until fully done, abort never fires
       const stream = await llmEngine.chat.completions.create({
@@ -1023,7 +1011,7 @@ async function chat(query, signal = null) {
           {
             role: 'system',
             // Shorter system prompt = fewer prefill tokens = faster interruptibility
-            content: systemContent
+            content: `${RAGConfig.get('llm.systemPrompt')}\n\nPassages:\n${trimmedContext}`
           },
           ...history,
           {
@@ -1066,15 +1054,7 @@ async function chat(query, signal = null) {
     }
   }
 
-  // Template fallback (no LLM available)
-  if (!ragEnabled) {
-    return { answer: '_LLM not available and RAG is disabled — no response can be generated._', sources: [] };
-  }
-
-  if (uniqueSources.length === 0) {
-    return { answer: "No relevant content found in your site.", sources: [] };
-  }
-
+  // Template fallback
   const answer = `Here's what I found on the site:\n\n` +
     uniqueSources.map((s, i) => `[${i+1}] ${getText(s.id).substring(0, RAGConfig.get("retrieval.passageCharLimit"))}...`).join('\n\n');
 
@@ -1335,6 +1315,68 @@ async function generateWelcome() {
   messages.push({ role: 'assistant', content: welcomeText, sources: [], isWelcome: true });
   renderMessages();
 }
+
+// ---------------------------------------------------------------------------
+// Chat export — structured JSON for system prompt fine-tuning
+// ---------------------------------------------------------------------------
+window.downloadChat = function() {
+  // Build Q&A pairs — each user message paired with the assistant reply that follows it
+  const pairs = [];
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i];
+    if (m.role !== 'user') continue;
+    const next = messages[i + 1];
+    if (!next || next.role !== 'assistant' || next.isWelcome) continue;
+
+    // Strip HTML from assistant response (footnote divs etc.)
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = next.content;
+    const plainResponse = tempDiv.textContent.replace(/\s+/g, ' ').trim();
+
+    pairs.push({
+      query:    m.content,
+      response: plainResponse,
+      sources:  (next.sources ?? []).map(s => ({ url: s.url, title: s.title })),
+    });
+  }
+
+  if (pairs.length === 0) {
+    alert('No completed exchanges to export yet.');
+    return;
+  }
+
+  const payload = {
+    exported:     new Date().toISOString(),
+    exchange_count: pairs.length,
+    system_prompt: RAGConfig.get('llm.systemPrompt'),
+    settings_snapshot: {
+      llm: {
+        temperature:        RAGConfig.get('llm.temperature'),
+        repetitionPenalty:  RAGConfig.get('llm.repetitionPenalty'),
+        maxTokens:          RAGConfig.get('llm.maxTokens'),
+        historyExchanges:   RAGConfig.get('llm.historyExchanges'),
+      },
+      retrieval: {
+        ragEnabled:           RAGConfig.get('retrieval.ragEnabled'),
+        passageCharLimit:     RAGConfig.get('retrieval.passageCharLimit'),
+        contactBoost:         RAGConfig.get('retrieval.contactBoost'),
+        candidatesMultiplier: RAGConfig.get('retrieval.candidatesMultiplier'),
+      },
+    },
+    model: engineState.model ?? 'unknown',
+    exchanges: pairs,
+  };
+
+  const json = JSON.stringify(payload, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  const date = new Date().toISOString().slice(0, 10);
+  a.href     = url;
+  a.download = `wllmrag-chat-${date}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+};
 
 window.clearChat = function() {
   messages = [];
