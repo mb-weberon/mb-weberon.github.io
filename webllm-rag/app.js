@@ -948,41 +948,47 @@ async function chat(query, signal = null) {
 
   // --- Normal RAG path ---
 
+  const ragEnabled = RAGConfig.get('retrieval.ragEnabled') !== false; // default true
   const maxSources = getMaxSources();
-  // Fetch enough candidates to find maxSources unique URLs even if chunks cluster
-  const sources = await search(query, maxSources * RAGConfig.get('retrieval.candidatesMultiplier'));
+  let uniqueSources = [];
 
-  if (sources.length === 0) {
-    return { answer: "No relevant content found in your site.", sources: [] };
+  if (ragEnabled) {
+    // Fetch enough candidates to find maxSources unique URLs even if chunks cluster
+    const sources = await search(query, maxSources * RAGConfig.get('retrieval.candidatesMultiplier'));
+
+    // Dedupe to at most maxSources unique URLs
+    const seenUrls = new Set();
+    sources.forEach(s => {
+      if (!seenUrls.has(s.url) && uniqueSources.length < maxSources) {
+        seenUrls.add(s.url);
+        uniqueSources.push(s);
+      }
+    });
+
+    // Attach a short snippet to each source for footnote display
+    await ensureTextLoaded();
+    uniqueSources.forEach(s => {
+      if (!s.snippet) {
+        s.snippet = getText(s.id).replace(/\s+/g, ' ').trim().substring(0, RAGConfig.get('retrieval.footnoteSnippetLength'));
+      }
+    });
   }
-
-  // Dedupe to at most maxSources unique URLs — naturally fewer if not enough distinct pages match
-  const uniqueSources = [];
-  const seenUrls = new Set();
-  sources.forEach(s => {
-    if (!seenUrls.has(s.url) && uniqueSources.length < maxSources) {
-      seenUrls.add(s.url);
-      uniqueSources.push(s);
-    }
-  });
-
-  // Attach a short snippet to each source for footnote display
-  await ensureTextLoaded();
-  uniqueSources.forEach(s => {
-    if (!s.snippet) {
-      s.snippet = getText(s.id).replace(/\s+/g, ' ').trim().substring(0, RAGConfig.get('retrieval.footnoteSnippetLength'));
-    }
-  });
 
   // LLM path
   if (llmEngine) {
     try {
-      // Keep context short to minimise prefill time — prefill is uninterruptible
-      const trimmedContext = uniqueSources.map((s, i) =>
-        `[${i+1}] ${getText(s.id).substring(0, RAGConfig.get('retrieval.passageCharLimit'))}`
-      ).join('\n\n');
+      // Build context block — empty when RAG is disabled
+      const trimmedContext = ragEnabled && uniqueSources.length
+        ? uniqueSources.map((s, i) =>
+            `[${i+1}] ${getText(s.id).substring(0, RAGConfig.get('retrieval.passageCharLimit'))}`
+          ).join('\n\n')
+        : '';
 
-      console.log('📤 Sending context to LLM:\n', trimmedContext);
+      if (ragEnabled) {
+        console.log('📤 Sending context to LLM:\n', trimmedContext);
+      } else {
+        console.log('📤 RAG disabled — sending query directly to LLM (no retrieved context)');
+      }
 
       // Only last N exchanges for history — reduces prefill tokens significantly
       const HISTORY_EXCHANGES = RAGConfig.get('llm.historyExchanges');
@@ -1004,14 +1010,18 @@ async function chat(query, signal = null) {
       const typingText = document.querySelector('#typing-indicator span.text-gray-400');
       if (typingText) typingText.textContent = 'Reading…';
 
+      // Build system message — only append passages when RAG is enabled and has results
+      const systemContent = ragEnabled && trimmedContext
+        ? `${RAGConfig.get('llm.systemPrompt')}\n\nPassages:\n${trimmedContext}`
+        : RAGConfig.get('llm.systemPrompt');
+
       // Use streaming so we can abort between tokens —
       // non-streaming holds the JS thread until fully done, abort never fires
       const stream = await llmEngine.chat.completions.create({
         messages: [
           {
             role: 'system',
-            // Shorter system prompt = fewer prefill tokens = faster interruptibility
-            content: `${RAGConfig.get('llm.systemPrompt')}\n\nPassages:\n${trimmedContext}`
+            content: systemContent
           },
           ...history,
           {
@@ -1050,13 +1060,30 @@ async function chat(query, signal = null) {
       return { answer, sources: uniqueSources };
     } catch (e) {
       if (e.name === 'AbortError') throw e; // propagate abort to ask()
-      console.warn('LLM failed, falling back to template:', e);
+      // GPU device lost — null the engine so subsequent queries don't hit the dead engine
+      if (e.message?.includes('Device was lost') || e.message?.includes('external Instance')) {
+        console.warn('⚠️ GPU device lost — resetting engine, please reload model');
+        llmEngine = null;
+        engineState.mode = 'fallback';
+        engineState.failReason = 'GPU device lost — use Load button to reload model';
+        updateEngineStatus();
+      } else {
+        console.warn('LLM failed, falling back to template:', e);
+      }
     }
   }
 
-  // Template fallback
+  // Template fallback (no LLM, or LLM failed)
+  if (!ragEnabled) {
+    return { answer: '_LLM not available and RAG is disabled — no response can be generated._', sources: [] };
+  }
+
+  if (uniqueSources.length === 0) {
+    return { answer: 'No relevant content found in your site.', sources: [] };
+  }
+
   const answer = `Here's what I found on the site:\n\n` +
-    uniqueSources.map((s, i) => `[${i+1}] ${getText(s.id).substring(0, RAGConfig.get("retrieval.passageCharLimit"))}...`).join('\n\n');
+    uniqueSources.map((s, i) => `[${i+1}] ${getText(s.id).substring(0, RAGConfig.get('retrieval.passageCharLimit'))}...`).join('\n\n');
 
   return { answer, sources: uniqueSources };
 }
