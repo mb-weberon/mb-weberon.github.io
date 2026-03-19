@@ -9,36 +9,11 @@
   <title>Site Notebook</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    /* Prevent iOS bounce scroll on body, only allow inside #messages */
     html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
-
-    /* Smooth momentum scroll in messages */
     #messages { -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; }
-
-    /* Keep input bar above iOS keyboard and home indicator with breathing room */
-    #input-bar {
-      padding-bottom: max(env(safe-area-inset-bottom, 0px), 16px);
-    }
-
-    /* Load button — always reserve space so it never gets squeezed off screen */
-    #reload-model-btn {
-      display: none;       /* hidden by default */
-      flex-shrink: 0;      /* never shrink, never disappear */
-      min-width: 3rem;
-    }
-    #reload-model-btn.visible {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    /* Prevent tap highlight flash on mobile */
+    #input-bar { padding-bottom: max(env(safe-area-inset-bottom, 0px), 16px); }
     button, input { -webkit-tap-highlight-color: transparent; }
-
-    /* Prevent iOS input zoom — font-size must be >= 16px */
     #input { font-size: 16px; }
-
-    /* Typing dots */
     @keyframes bounce {
       0%, 80%, 100% { transform: translateY(0); }
       40%           { transform: translateY(-5px); }
@@ -46,6 +21,145 @@
     .dot { animation: bounce 1.2s infinite ease-in-out; }
     .dot:nth-child(2) { animation-delay: 0.15s; }
     .dot:nth-child(3) { animation-delay: 0.30s; }
+
+    /* Load button */
+    #reload-model-btn { display: none; flex-shrink: 0; min-width: 3rem; }
+    #reload-model-btn.visible { display: inline-flex; align-items: center; justify-content: center; }
+
+    /* ------------------------------------------------------------------ */
+    /* Settings panel                                                       */
+    /* ------------------------------------------------------------------ */
+    #settings-backdrop {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.4);
+      z-index: 40;
+      opacity: 0;
+      transition: opacity 0.25s;
+    }
+    #settings-backdrop.open { display: block; opacity: 1; }
+
+    #settings-panel {
+      position: fixed;
+      top: 0; right: 0; bottom: 0;
+      width: min(420px, 100vw);
+      background: #fff;
+      z-index: 50;
+      display: flex;
+      flex-direction: column;
+      transform: translateX(100%);
+      transition: transform 0.28s cubic-bezier(0.4,0,0.2,1);
+      box-shadow: -4px 0 24px rgba(0,0,0,0.12);
+    }
+    #settings-panel.open { transform: translateX(0); }
+
+    /* On portrait mobile, slide up from bottom instead */
+    @media (max-width: 480px) {
+      #settings-panel {
+        top: auto; left: 0; right: 0; bottom: 0;
+        width: 100%; height: 92dvh;
+        border-radius: 16px 16px 0 0;
+        transform: translateY(100%);
+      }
+      #settings-panel.open { transform: translateY(0); }
+    }
+
+    .sp-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 16px; border-bottom: 1px solid #e5e7eb;
+      font-weight: 700; font-size: 15px; flex-shrink: 0;
+    }
+    .sp-close { background: none; border: none; font-size: 18px; cursor: pointer; color: #6b7280; padding: 4px 8px; }
+    .sp-close:hover { color: #111; }
+
+    /* Tabs */
+    .sp-tabs {
+      display: flex; gap: 2px; padding: 8px 12px 0;
+      border-bottom: 1px solid #e5e7eb; flex-shrink: 0;
+      overflow-x: auto; scrollbar-width: none;
+    }
+    .sp-tabs::-webkit-scrollbar { display: none; }
+    .sp-tab-btn {
+      flex-shrink: 0; padding: 6px 10px; border-radius: 6px 6px 0 0;
+      font-size: 11px; font-weight: 500; color: #6b7280;
+      background: none; border: none; cursor: pointer;
+      border-bottom: 2px solid transparent; margin-bottom: -1px;
+    }
+    .sp-tab-btn.active { color: #2563eb; border-bottom-color: #2563eb; background: #eff6ff; }
+
+    /* Pane */
+    .sp-body {
+      flex: 1; overflow-y: auto; padding: 14px 16px;
+      -webkit-overflow-scrolling: touch;
+    }
+    .sp-tab-pane.hidden { display: none; }
+
+    /* Fields */
+    .sp-field { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+    .sp-field label { font-size: 11px; font-weight: 600; color: #374151; }
+    .sp-field-grow { flex: 1 1 auto; }
+    .sp-field-shrink { flex: 0 0 auto; }
+    .sp-field-action { justify-content: flex-end; align-self: flex-end; }
+    .sp-row { display: flex; gap: 8px; align-items: flex-end; margin-bottom: 10px; flex-wrap: wrap; }
+    .sp-hint { font-weight: 400; color: #9ca3af; }
+
+    .sp-input {
+      width: 100%; padding: 6px 8px; border: 1px solid #d1d5db;
+      border-radius: 6px; font-size: 12px; background: #f9fafb;
+      outline: none; transition: border-color 0.15s;
+    }
+    .sp-input:focus { border-color: #3b82f6; background: #fff; }
+    textarea.sp-input { resize: vertical; font-family: monospace; font-size: 11px; }
+
+    /* Sliders */
+    .sp-slider-row { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+    .sp-slider-label { font-size: 11px; font-weight: 600; color: #374151; flex: 0 0 140px; }
+    .sp-slider { flex: 1; accent-color: #3b82f6; }
+    .sp-slider-val { font-size: 11px; color: #2563eb; font-weight: 700; flex: 0 0 36px; text-align: right; }
+    .sp-slider-tip { font-size: 10px; color: #9ca3af; margin-top: -8px; margin-bottom: 10px; padding-left: 150px; }
+
+    /* Model cards */
+    .sp-model-card { border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 10px; background: #f9fafb; }
+    .sp-model-card-inner { padding: 10px 12px; }
+
+    /* Buttons */
+    .sp-btn { padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; border: none; }
+    .sp-btn-primary { background: #3b82f6; color: #fff; }
+    .sp-btn-primary:hover { background: #2563eb; }
+    .sp-btn-secondary { background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; }
+    .sp-btn-secondary:hover { background: #e5e7eb; }
+    .sp-btn-danger { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 6px 10px; border-radius: 6px; font-size: 13px; cursor: pointer; }
+    .sp-btn-danger:hover { background: #fee2e2; }
+    .sp-btn-warn { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+
+    /* Section headers inside panes */
+    .sp-section-title { font-size: 12px; font-weight: 700; color: #374151; margin: 14px 0 8px; border-bottom: 1px solid #f3f4f6; padding-bottom: 4px; }
+
+    /* Footer */
+    .sp-footer {
+      display: flex; gap: 8px; padding: 12px 16px;
+      border-top: 1px solid #e5e7eb; flex-shrink: 0;
+    }
+
+    /* Import diff */
+    .sp-diff-summary { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 8px 10px; margin: 8px 0; font-size: 11px; }
+    .sp-diff-pre { margin-top: 6px; white-space: pre-wrap; font-family: monospace; font-size: 10px; color: #374151; max-height: 120px; overflow-y: auto; }
+
+    /* Import/export section cards */
+    .sp-ie-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+    .sp-ie-card h3 { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+    .sp-ie-card p  { font-size: 11px; color: #6b7280; margin-bottom: 8px; }
+
+    /* Toast */
+    .sp-toast {
+      position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%) translateY(20px);
+      background: #1f2937; color: #fff; padding: 8px 16px; border-radius: 20px;
+      font-size: 13px; z-index: 100; opacity: 0; transition: opacity 0.2s, transform 0.2s;
+      pointer-events: none; white-space: nowrap;
+    }
+    .sp-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .sp-toast-error { background: #dc2626; }
+    .sp-toast-warn  { background: #d97706; }
   </style>
 </head>
 <body class="bg-gray-50">
@@ -58,12 +172,12 @@
         <h1 class="text-lg font-bold tracking-tight">📚 Site Notebook</h1>
         <div class="flex items-center gap-3">
           <div id="engine-status" class="text-xs"></div>
+          <button id="settings-gear-btn" class="text-gray-400 hover:text-gray-700 active:text-gray-900 text-base px-1" title="Settings">⚙️</button>
           <button onclick="clearChat()" class="text-xs text-gray-400 hover:text-red-500 active:text-red-500">🗑</button>
         </div>
       </div>
       <!-- Model selector + sources count -->
       <div id="model-selector-row" class="mt-2 space-y-1.5">
-        <!-- Row 1: Model label + select, Load button on its own line when visible -->
         <div class="flex items-center gap-2 min-w-0">
           <label for="model-select" class="text-xs text-gray-500 whitespace-nowrap flex-none">Model:</label>
           <select
@@ -71,37 +185,17 @@
             class="flex-1 min-w-0 w-0 text-xs border border-gray-200 rounded-lg px-2 py-1 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-300"
             onchange="onModelChange()"
           >
-            <optgroup label="⚡ WebGPU models (MLC)">
-              <option value="Qwen2.5-1.5B-Instruct-q4f32_1-MLC">Qwen 2.5 1.5B (WebGPU)</option>
-              <option value="gemma-2-2b-it-q4f32_1-MLC">Gemma 2 2B (WebGPU)</option>
-              <option value="Phi-3.5-mini-instruct-q4f32_1-MLC">Phi-3.5 Mini 3.8B (WebGPU)</option>
-              <option value="Llama-3.2-1B-Instruct-q4f32_1-MLC">Llama 3.2 1B (WebGPU)</option>
-            </optgroup>
-            <optgroup label="🧠 WebNN models (ONNX/NPU)">
-              <option value="onnx-community/Qwen2.5-0.5B-Instruct">Qwen2.5 0.5B (WebNN/NPU) — recommended</option>
-              <option value="HuggingFaceTB/SmolLM2-360M-Instruct">SmolLM2 360M (WebNN)</option>
-            </optgroup>
-            <optgroup label="🖥 WebGPU ONNX models">
-              <option value="onnx-community/Phi-3.5-mini-instruct-onnx-web">Phi-3.5 Mini (WebGPU/ONNX)</option>
-            </optgroup>
-            <optgroup label="💻 CPU models (WASM)">
-              <option value="HuggingFaceTB/SmolLM2-135M-Instruct">SmolLM2 135M (CPU fallback)</option>
-            </optgroup>
+            <!-- Populated dynamically by buildModelDropdown() in app.js -->
           </select>
         </div>
-        <!-- Load button on its own full-width row — always has room, never squeezed -->
         <button
           id="reload-model-btn"
           onclick="reloadModel()"
           class="w-full text-xs bg-blue-500 hover:bg-blue-600 active:bg-blue-700 text-white px-3 py-2 rounded-lg transition-colors"
         >⬇ Load selected model</button>
-        <!-- Row 2: Sources -->
         <div class="flex items-center gap-2">
           <label for="sources-count" class="text-xs text-gray-500 whitespace-nowrap">Sources:</label>
-          <select
-            id="sources-count"
-            class="text-xs border border-gray-200 rounded-lg px-2 py-1 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-300"
-          >
+          <select id="sources-count" class="text-xs border border-gray-200 rounded-lg px-2 py-1 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-300">
             <option value="1">1</option>
             <option value="2">2</option>
             <option value="3" selected>3</option>
@@ -115,7 +209,7 @@
     <!-- Messages -->
     <div id="messages" class="flex-1 overflow-y-auto px-3 py-4 space-y-3"></div>
 
-    <!-- Status (loading indicator) -->
+    <!-- Status -->
     <div id="status" class="flex-none text-xs text-center text-gray-400 px-4 py-1 min-h-[1.25rem]"></div>
 
     <!-- Input bar -->
@@ -141,6 +235,149 @@
 
   </div>
 
+  <!-- -------------------------------------------------------------------- -->
+  <!-- Settings panel                                                         -->
+  <!-- -------------------------------------------------------------------- -->
+  <div id="settings-backdrop"></div>
+
+  <div id="settings-panel" role="dialog" aria-label="Settings">
+
+    <div class="sp-header">
+      <span>⚙️ Settings</span>
+      <button class="sp-close" id="sp-close-btn" aria-label="Close">✕</button>
+    </div>
+
+    <div class="sp-tabs">
+      <button class="sp-tab-btn active" data-tab="prompt">Prompt</button>
+      <button class="sp-tab-btn" data-tab="inference">Inference</button>
+      <button class="sp-tab-btn" data-tab="retrieval">Retrieval</button>
+      <button class="sp-tab-btn" data-tab="models">Models</button>
+      <button class="sp-tab-btn" data-tab="import-export">Import/Export</button>
+    </div>
+
+    <div class="sp-body">
+
+      <!-- Prompt tab -->
+      <div class="sp-tab-pane" data-pane="prompt">
+        <div class="sp-field" style="margin-bottom:12px">
+          <label>System prompt <span class="sp-hint">(passages are appended automatically)</span></label>
+          <textarea id="sp-system-prompt" class="sp-input" rows="7" placeholder="You are a helpful assistant…"></textarea>
+        </div>
+        <div class="sp-field" style="margin-bottom:12px">
+          <label>System command prefix <span class="sp-hint">(no spaces)</span></label>
+          <input id="sp-sys-cmd-prefix" class="sp-input" placeholder="%SYSTEM%">
+        </div>
+        <div class="sp-field">
+          <label>Welcome message <span class="sp-hint">(leave empty to auto-generate from index)</span></label>
+          <textarea id="sp-welcome-msg" class="sp-input" rows="3" placeholder="Welcome! This site covers…"></textarea>
+        </div>
+      </div>
+
+      <!-- Inference tab -->
+      <div class="sp-tab-pane hidden" data-pane="inference">
+        <div class="sp-slider-row">
+          <span class="sp-slider-label">Temperature</span>
+          <input id="sp-temperature" class="sp-slider" type="range" min="0" max="1" step="0.05">
+          <span id="sp-temperature-val" class="sp-slider-val"></span>
+        </div>
+        <p class="sp-slider-tip">Higher = more creative, lower = more deterministic. Default: 0.4</p>
+
+        <div class="sp-slider-row">
+          <span class="sp-slider-label">Repetition penalty</span>
+          <input id="sp-repetition-penalty" class="sp-slider" type="range" min="1" max="1.5" step="0.05">
+          <span id="sp-repetition-penalty-val" class="sp-slider-val"></span>
+        </div>
+        <p class="sp-slider-tip">Penalises tokens already generated. Reduces looping. Default: 1.3</p>
+
+        <div class="sp-slider-row">
+          <span class="sp-slider-label">Max tokens</span>
+          <input id="sp-max-tokens" class="sp-slider" type="range" min="100" max="1000" step="50">
+          <span id="sp-max-tokens-val" class="sp-slider-val"></span>
+        </div>
+        <p class="sp-slider-tip">Maximum response length. Default: 400</p>
+
+        <div class="sp-slider-row">
+          <span class="sp-slider-label">History exchanges</span>
+          <input id="sp-history-exchanges" class="sp-slider" type="range" min="0" max="5" step="1">
+          <span id="sp-history-exchanges-val" class="sp-slider-val"></span>
+        </div>
+        <p class="sp-slider-tip">Prior Q&A pairs sent to LLM for follow-up context. Higher = longer prefill. Default: 1</p>
+      </div>
+
+      <!-- Retrieval tab -->
+      <div class="sp-tab-pane hidden" data-pane="retrieval">
+        <div class="sp-slider-row">
+          <span class="sp-slider-label">Passage char limit</span>
+          <input id="sp-passage-char-limit" class="sp-slider" type="range" min="50" max="600" step="50">
+          <span id="sp-passage-char-limit-val" class="sp-slider-val"></span>
+        </div>
+        <p class="sp-slider-tip">Characters of each source chunk sent to the LLM. Higher = more context but slower prefill. Default: 200</p>
+
+        <div class="sp-slider-row">
+          <span class="sp-slider-label">Contact boost</span>
+          <input id="sp-contact-boost" class="sp-slider" type="range" min="0" max="0.5" step="0.05">
+          <span id="sp-contact-boost-val" class="sp-slider-val"></span>
+        </div>
+        <p class="sp-slider-tip">Extra relevance score added to contact/footer chunks. Helps surface address and phone queries. Default: 0.15</p>
+
+        <div class="sp-slider-row">
+          <span class="sp-slider-label">Candidates multiplier</span>
+          <input id="sp-candidates-multiplier" class="sp-slider" type="range" min="1" max="10" step="1">
+          <span id="sp-candidates-multiplier-val" class="sp-slider-val"></span>
+        </div>
+        <p class="sp-slider-tip">Fetch this many × sources before deduplicating to final count. Default: 3</p>
+
+        <div class="sp-slider-row">
+          <span class="sp-slider-label">Footnote snippet</span>
+          <input id="sp-footnote-snippet-length" class="sp-slider" type="range" min="50" max="300" step="25">
+          <span id="sp-footnote-snippet-length-val" class="sp-slider-val"></span>
+        </div>
+        <p class="sp-slider-tip">Preview text shown under each source link in responses. Default: 120</p>
+      </div>
+
+      <!-- Models tab -->
+      <div class="sp-tab-pane hidden" data-pane="models">
+        <div id="sp-model-cards"></div>
+        <div style="display:flex; gap:8px; margin-top:4px; flex-wrap:wrap;">
+          <button id="sp-add-model-btn" class="sp-btn sp-btn-secondary">+ Add model</button>
+          <button id="sp-upload-models-btn" class="sp-btn sp-btn-secondary">📂 Upload models JSON</button>
+        </div>
+      </div>
+
+      <!-- Import/Export tab -->
+      <div class="sp-tab-pane hidden" data-pane="import-export">
+        <div class="sp-ie-card">
+          <h3>⬇ Export</h3>
+          <p>Download all current settings and models as a JSON file you can reload later.</p>
+          <button id="sp-export-btn" class="sp-btn sp-btn-primary">Download settings.json</button>
+        </div>
+
+        <div class="sp-ie-card">
+          <h3>📂 Import</h3>
+          <p>Upload a previously exported settings file. A summary of changes will be shown before applying.</p>
+          <button id="sp-import-btn" class="sp-btn sp-btn-secondary">Upload settings.json</button>
+          <div id="sp-import-diff" class="hidden" style="margin-top:8px;"></div>
+          <button id="sp-import-apply" class="sp-btn sp-btn-primary hidden" style="margin-top:8px;">Apply imported settings</button>
+        </div>
+
+        <div class="sp-ie-card" style="border-color:#fecaca;">
+          <h3 style="color:#dc2626;">⚠️ Reset</h3>
+          <p>Restore all settings and models to factory defaults. Chat history is kept. Page will reload.</p>
+          <button id="sp-reset-defaults-btn" class="sp-btn sp-btn-warn">Reset to defaults</button>
+        </div>
+      </div>
+
+    </div><!-- end sp-body -->
+
+    <div class="sp-footer">
+      <button id="sp-save-btn" class="sp-btn sp-btn-primary" style="flex:1">Save settings</button>
+      <button id="sp-reset-btn" class="sp-btn sp-btn-secondary">Reset</button>
+    </div>
+
+  </div><!-- end settings-panel -->
+
+  <script src="config.js" defer></script>
+  <script src="settings-panel.js" defer></script>
   <script src="app.js" defer></script>
 </body>
 </html>

@@ -9,7 +9,7 @@ function storageSet(key, val) {
   try { localStorage.setItem(key, val); } catch(e) {}
 }
 
-let messages = JSON.parse(storageGet('chat_messages') || '[]');
+let messages = JSON.parse(storageGet(RAGConfig.KEYS.chatMessages) || '[]');
 
 // Detect iOS Safari — WebGPU exists but web-llm compute shaders don't work,
 // and Transformers.js WASM threading requires COOP/COEP headers not sent by basic servers
@@ -18,24 +18,9 @@ function isIOSSafari() {
   return /iPad|iPhone|iPod/.test(ua) && /WebKit/.test(ua) && !/CriOS|FxiOS|OPiOS/.test(ua);
 }
 
-// Ranked model list — all use q4f32 (no shader-f16 required, works on all WebGPU setups)
-// minMemoryGB = minimum navigator.deviceMemory to safely offer this model
-// backend: 'webgpu' = MLC compiled, requires web-llm
-//          'webnn'  = ONNX, requires Transformers.js + WebNN
-//          'cpu'    = ONNX/WASM, Transformers.js CPU fallback
-const MODELS = [
-  // WebGPU models (MLC compiled)
-  { id: 'Qwen2.5-1.5B-Instruct-q4f32_1-MLC',  label: 'Qwen 2.5 1.5B (WebGPU)',       backend: 'webgpu', minMemoryGB: 4 },
-  { id: 'gemma-2-2b-it-q4f32_1-MLC',           label: 'Gemma 2 2B (WebGPU)',           backend: 'webgpu', minMemoryGB: 6 },
-  { id: 'Phi-3.5-mini-instruct-q4f32_1-MLC',   label: 'Phi-3.5 Mini 3.8B (WebGPU)',   backend: 'webgpu', minMemoryGB: 8 },
-  { id: 'Llama-3.2-1B-Instruct-q4f32_1-MLC',   label: 'Llama 3.2 1B (WebGPU)',        backend: 'webgpu', minMemoryGB: 2 },
-  // WebNN models (ONNX, runs on NPU/DirectML)
-  { id: 'onnx-community/Phi-3.5-mini-instruct-onnx-web', label: 'Phi-3.5 Mini (WebGPU/ONNX)', backend: 'webgpu', minMemoryGB: 4 },
-  { id: 'onnx-community/Qwen2.5-0.5B-Instruct',          label: 'Qwen2.5 0.5B (WebNN/NPU)',  backend: 'webnn',  minMemoryGB: 2 },
-  { id: 'HuggingFaceTB/SmolLM2-360M-Instruct',       label: 'SmolLM2 360M (WebNN)',   backend: 'webnn',  minMemoryGB: 2 },
-  // CPU WASM fallback
-  { id: 'HuggingFaceTB/SmolLM2-135M-Instruct',       label: 'SmolLM2 135M (CPU)',     backend: 'cpu',    minMemoryGB: 1 },
-];
+// Models are loaded from RAGConfig (config.js) — see DEFAULT_MODELS for the list
+// Use RAGConfig.models at runtime; this getter always reflects current config
+function getModels() { return RAGConfig.models; }
 
 // Detect device memory (GB). navigator.deviceMemory is rounded to nearest power of 2:
 // 0.25, 0.5, 1, 2, 4, 8. Returns Infinity if API unavailable (desktop assumed capable).
@@ -161,7 +146,7 @@ async function updateModelSelectorWithBackends() {
   if (!sel) return;
 
   Array.from(sel.options).forEach(opt => {
-    const model = MODELS.find(m => m.id === opt.value);
+    const model = getModels().find(m => m.id === opt.value);
     if (!model) return;
 
     // Reset previous styling
@@ -190,12 +175,12 @@ async function updateModelSelectorWithBackends() {
   const bestBackend = backends.webnn ? 'webnn'
     : backends.webgpuAdapter ? 'webgpu'
     : 'cpu';
-  const viable = MODELS.filter(m => {
+  const viable = getModels().filter(m => {
     const memOk      = getDeviceMemoryGB() >= m.minMemoryGB || getDeviceMemoryGB() === Infinity;
     const backendOk  = m.backend === bestBackend || m.backend === 'cpu';
     return memOk && backendOk;
   });
-  if (viable.length && !storageGet('user_selected_model') && engineState.mode !== 'llm') {
+  if (viable.length && !storageGet(RAGConfig.KEYS.selectedModel) && engineState.mode !== 'llm') {
     sel.value = viable[0].id;
     console.log(`🤖 Model selector updated to: ${viable[0].label}`);
   }
@@ -208,15 +193,15 @@ function pickDefaultModel() {
   console.log(`📱 Device memory: ${memGB === Infinity ? 'unknown (desktop)' : memGB + 'GB'}, backend hint: ${backend}`);
 
   // Prefer models matching the detected backend, within memory budget
-  const preferred = MODELS.filter(m => m.backend === backend && memGB >= m.minMemoryGB);
+  const preferred = getModels().filter(m => m.backend === backend && memGB >= m.minMemoryGB);
   if (preferred.length) {
     console.log(`🤖 Auto-selected: ${preferred[0].label}`);
     return preferred[0].id;
   }
 
   // Fall back to best affordable model regardless of backend
-  const viable = MODELS.filter(m => memGB >= m.minMemoryGB);
-  const best   = viable[0] ?? MODELS[MODELS.length - 1];
+  const viable = getModels().filter(m => memGB >= m.minMemoryGB);
+  const best   = viable[0] ?? getModels()[getModels().length - 1];
   console.log(`🤖 Auto-selected (fallback): ${best.label}`);
   return best.id;
 }
@@ -229,7 +214,7 @@ function setDefaultModel() {
   const bestId = pickDefaultModel();
 
   // Only set default if user hasn't manually picked a model
-  if (!storageGet('user_selected_model')) {
+  if (!storageGet(RAGConfig.KEYS.selectedModel)) {
     sel.value = bestId;
   }
   // Graying is applied only after engine loads via syncDropdownToLoadedModel —
@@ -243,7 +228,7 @@ function getSelectedModel() {
 
 // Remember user's manual model choice so auto-detection doesn't override it
 window.onModelChange = function() {
-  storageSet('user_selected_model', getSelectedModel());
+  storageSet(RAGConfig.KEYS.selectedModel, getSelectedModel());
   const btn = document.getElementById('reload-model-btn');
   if (btn) btn.classList.add('visible');
 };
@@ -316,7 +301,7 @@ function updateEngineStatus() {
   const modelLabel = engineState.model
     ? (() => {
         // Find the short label for the loaded model, fall back to a trimmed ID
-        const found = MODELS.find(m => engineState.model.startsWith(m.id));
+        const found = getModels().find(m => engineState.model.startsWith(m.id));
         const shortLabel = found
           ? found.label
           : engineState.model.split('/').pop().replace(/-q4.*/, '').slice(0, 30);
@@ -515,7 +500,7 @@ async function initLLM() {
 
       // Use the dropdown selection if it's a WebNN model, otherwise default to Qwen2.5 0.5B
       const selectedId   = getSelectedModel();
-      const selectedMeta = MODELS.find(m => m.id === selectedId);
+      const selectedMeta = getModels().find(m => m.id === selectedId);
       const MODEL = (selectedMeta?.backend === 'webnn')
         ? selectedId
         : 'onnx-community/Qwen2.5-0.5B-Instruct';
@@ -671,7 +656,7 @@ async function search(query, k = 5) {
           const sim   = cosineSimilarity(queryVec, slice);
           // Boost contact chunks — they contain info (address, phone, name)
           // that tends to be semantically distant from how users phrase queries
-          const boost = doc.type === 'contact' ? 0.15 : 0;
+          const boost = doc.type === 'contact' ? RAGConfig.get('retrieval.contactBoost') : 0;
           return { ...doc, score: sim + boost };
         })
         .sort((a, b) => b.score - a.score)
@@ -762,7 +747,7 @@ async function handleCategoryQuery(category) {
     const matchesTitle = category.titlePatterns.some(re => re.test(doc.title ?? ''));
     if (matchesUrl || matchesTitle) {
       seen.add(doc.url);
-      const text = getText(doc.id).replace(/\s+/g, ' ').trim().substring(0, 200);
+      const text = getText(doc.id).replace(/\s+/g, ' ').trim().substring(0, RAGConfig.get("retrieval.footnoteSnippetLength"));
       pages.push({ url: doc.url, title: doc.title, snippet: text });
     }
   }
@@ -811,7 +796,7 @@ async function handleSummaryQuery() {
   for (const doc of metaDocs) {
     if (!seen.has(doc.url)) {
       seen.add(doc.url);
-      const snippet = getText(doc.id).replace(/\s+/g, ' ').trim().substring(0, 200);
+      const snippet = getText(doc.id).replace(/\s+/g, ' ').trim().substring(0, RAGConfig.get("retrieval.footnoteSnippetLength"));
       pages.push({ url: doc.url, title: doc.title, snippet });
     }
   }
@@ -838,11 +823,17 @@ async function handleSummaryQuery() {
 // with tight patterns to minimise false positives on normal queries.
 // ---------------------------------------------------------------------------
 
-const SYSTEM_PREFIX = /^%system%\s*/i;
+// Build system command prefix regex from config — rebuilt on each call so
+// it reflects any changes made in the settings panel without page reload
+function getSystemPrefix() {
+  const prefix = RAGConfig.get('ui.systemCommandPrefix') || '%SYSTEM%';
+  return new RegExp('^' + prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*', 'i');
+}
 
 function parseSystemCommand(query) {
-  if (!SYSTEM_PREFIX.test(query)) return null;
-  const cmd = query.replace(SYSTEM_PREFIX, '').trim().toLowerCase();
+  const prefix = getSystemPrefix();
+  if (!prefix.test(query)) return null;
+  const cmd = query.replace(prefix, '').trim().toLowerCase();
 
   if (/^(list\s+)?(all\s+)?(url|urls|pages|links)$/.test(cmd) || cmd === 'list' || cmd === 'urls') {
     return 'list-urls';
@@ -876,10 +867,10 @@ function syncDropdownToLoadedModel(modelId) {
   });
 
   // Mark only models of the wrong backend as unavailable
-  const loadedModel = MODELS.find(m => modelId.startsWith(m.id));
+  const loadedModel = getModels().find(m => modelId.startsWith(m.id));
   if (loadedModel) {
     Array.from(sel.options).forEach(opt => {
-      const model = MODELS.find(m => m.id === opt.value);
+      const model = getModels().find(m => m.id === opt.value);
       if (!model) return;
       // If loaded backend is webgpu, gray out webnn-only models and vice versa
       // CPU models are always available as fallback
@@ -932,17 +923,18 @@ async function chat(query, signal = null) {
     }
     if (sysCmd?.type === 'category')  return await handleCategoryQuery(sysCmd.category);
     if (sysCmd === 'help') {
+      const p = RAGConfig.get('ui.systemCommandPrefix');
       return {
-        answer: `**%SYSTEM% commands:**\n\n` +
-          `\`%SYSTEM% urls\` — list all indexed URLs\n` +
-          `\`%SYSTEM% summarize\` — summarize every page\n` +
-          `\`%SYSTEM% count\` — how many pages are indexed\n` +
-          `\`%SYSTEM% seller resources\` — seller pages\n` +
-          `\`%SYSTEM% buyer resources\` — buyer pages\n` +
-          `\`%SYSTEM% reports\` — report pages\n` +
-          `\`%SYSTEM% coaching\` — coaching pages\n` +
-          `\`%SYSTEM% seminars\` — seminar pages\n` +
-          `\`%SYSTEM% landing pages\` — landing pages`,
+        answer: `**${p} commands:**\n\n` +
+          `\`${p} urls\` — list all indexed URLs\n` +
+          `\`${p} summarize\` — summarize every page\n` +
+          `\`${p} count\` — how many pages are indexed\n` +
+          `\`${p} seller resources\` — seller pages\n` +
+          `\`${p} buyer resources\` — buyer pages\n` +
+          `\`${p} reports\` — report pages\n` +
+          `\`${p} coaching\` — coaching pages\n` +
+          `\`${p} seminars\` — seminar pages\n` +
+          `\`${p} landing pages\` — landing pages`,
         sources: []
       };
     }
@@ -958,7 +950,7 @@ async function chat(query, signal = null) {
 
   const maxSources = getMaxSources();
   // Fetch enough candidates to find maxSources unique URLs even if chunks cluster
-  const sources = await search(query, maxSources * 3);
+  const sources = await search(query, maxSources * RAGConfig.get('retrieval.candidatesMultiplier'));
 
   if (sources.length === 0) {
     return { answer: "No relevant content found in your site.", sources: [] };
@@ -978,36 +970,39 @@ async function chat(query, signal = null) {
   await ensureTextLoaded();
   uniqueSources.forEach(s => {
     if (!s.snippet) {
-      s.snippet = getText(s.id).replace(/\s+/g, ' ').trim().substring(0, 120);
+      s.snippet = getText(s.id).replace(/\s+/g, ' ').trim().substring(0, RAGConfig.get('retrieval.footnoteSnippetLength'));
     }
   });
 
   // LLM path
   if (llmEngine) {
     try {
+      // Keep context short to minimise prefill time — prefill is uninterruptible
       const trimmedContext = uniqueSources.map((s, i) =>
-        `[${i+1}] ${getText(s.id).substring(0, 400)}`
+        `[${i+1}] ${getText(s.id).substring(0, RAGConfig.get('retrieval.passageCharLimit'))}`
       ).join('\n\n');
 
       console.log('📤 Sending context to LLM:\n', trimmedContext);
 
-      // Build recent history — last 3 exchanges (6 messages), excluding
-      // welcome messages and the current user message (already in query)
-      const HISTORY_EXCHANGES = 3;
+      // Only last N exchanges for history — reduces prefill tokens significantly
+      const HISTORY_EXCHANGES = RAGConfig.get('llm.historyExchanges');
       const history = messages
-        .filter(m => !m.isWelcome && m.role !== 'user' || !m.isWelcome)
+        .filter(m => !m.isWelcome)
         .filter(m => m.role === 'user' || m.role === 'assistant')
-        .slice(-(HISTORY_EXCHANGES * 2 + 1), -1) // exclude the current message
+        .slice(-(HISTORY_EXCHANGES * 2 + 1), -1)
         .map(m => ({
           role: m.role,
-          // For assistant messages strip footnote HTML, keep plain text
           content: m.role === 'assistant'
-            ? m.content.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().substring(0, 300)
-            : m.content
+            ? m.content.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().substring(0, 150)
+            : m.content.substring(0, 100)
         }));
 
       // Throw immediately if already aborted
       if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+
+      // Update typing indicator to show prefill phase
+      const typingText = document.querySelector('#typing-indicator span.text-gray-400');
+      if (typingText) typingText.textContent = 'Reading…';
 
       // Use streaming so we can abort between tokens —
       // non-streaming holds the JS thread until fully done, abort never fires
@@ -1015,17 +1010,8 @@ async function chat(query, signal = null) {
         messages: [
           {
             role: 'system',
-            content: `You are a knowledgeable, helpful assistant for a real estate website. Answer the user's question thoroughly and with nuance using ONLY the numbered passages below. You may use conversation history for follow-up context.
-
-Guidelines:
-- Give complete, well-reasoned answers — don't just echo the passage text
-- Explain the "why" behind facts where the passages support it
-- If multiple passages are relevant, synthesize them into a coherent answer
-- Cite passages inline as [1], [2], [3] only where directly relevant
-- If the passages don't contain enough to answer well, say so briefly
-- Never repeat the same point twice
-
-Passages:\n${trimmedContext}`
+            // Shorter system prompt = fewer prefill tokens = faster interruptibility
+            content: `${RAGConfig.get('llm.systemPrompt')}\n\nPassages:\n${trimmedContext}`
           },
           ...history,
           {
@@ -1033,17 +1019,25 @@ Passages:\n${trimmedContext}`
             content: query
           }
         ],
-        temperature: 0.4,
-        repetition_penalty: 1.3,
-        max_tokens: 400,
+        temperature:       RAGConfig.get('llm.temperature'),
+        repetition_penalty: RAGConfig.get('llm.repetitionPenalty'),
+        max_tokens:        RAGConfig.get('llm.maxTokens'),
         stream: true,
       });
+
+      // Switch indicator to generating phase on first token
+      let firstToken = true;
 
       // Accumulate streamed tokens, checking abort between each chunk
       let raw = '';
       for await (const chunk of stream) {
         if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
-        raw += chunk.choices[0]?.delta?.content ?? '';
+        const token = chunk.choices[0]?.delta?.content ?? '';
+        if (token && firstToken) {
+          firstToken = false;
+          if (typingText) typingText.textContent = 'Generating…';
+        }
+        raw += token;
       }
 
       // Strip duplicate sentences — split on ., !, ? then dedupe preserving order
@@ -1062,7 +1056,7 @@ Passages:\n${trimmedContext}`
 
   // Template fallback
   const answer = `Here's what I found on the site:\n\n` +
-    uniqueSources.map((s, i) => `[${i+1}] ${getText(s.id).substring(0, 300)}...`).join('\n\n');
+    uniqueSources.map((s, i) => `[${i+1}] ${getText(s.id).substring(0, RAGConfig.get("retrieval.passageCharLimit"))}...`).join('\n\n');
 
   return { answer, sources: uniqueSources };
 }
@@ -1072,6 +1066,13 @@ Passages:\n${trimmedContext}`
 let _abortController = null;
 
 window.stopGeneration = function() {
+  // web-llm: use built-in interruptGenerate() — stops after current token,
+  // keeps engine alive for next query
+  if (llmEngine?.interruptGenerate) {
+    llmEngine.interruptGenerate();
+    console.log('⏹ Generation interrupted via interruptGenerate()');
+  }
+  // Signal the streaming loop to stop consuming tokens
   if (_abortController) {
     _abortController.abort();
     _abortController = null;
@@ -1179,7 +1180,7 @@ function linkify(text) {
 }
 
 function saveMessages() {
-  storageSet('chat_messages', JSON.stringify(messages));
+  storageSet(RAGConfig.KEYS.chatMessages, JSON.stringify(messages));
 }
 
 function renderMessages() {
@@ -1259,8 +1260,36 @@ function renderMessages() {
   });
 }
 
-// Generate a welcome message summarising the site from the index — no LLM needed
+// Build model dropdown from RAGConfig.models — called on init and after model list changes
+function buildModelDropdown() {
+  const sel = document.getElementById('model-select');
+  if (!sel) return;
+  const models = getModels();
+  const backends = { webgpu: '⚡ WebGPU models (MLC)', webnn: '🧠 WebNN models (ONNX/NPU)', cpu: '💻 CPU models (WASM)' };
+  const groups = {};
+  models.forEach(m => {
+    if (!groups[m.backend]) groups[m.backend] = [];
+    groups[m.backend].push(m);
+  });
+  sel.innerHTML = Object.entries(backends)
+    .filter(([b]) => groups[b]?.length)
+    .map(([b, label]) =>
+      `<optgroup label="${label}">${
+        groups[b].map(m => `<option value="${m.id}">${m.label}</option>`).join('')
+      }</optgroup>`
+    ).join('');
+}
+
+// Generate a welcome message — uses config welcome if set, else auto-generates from index
 async function generateWelcome() {
+  // Use configured welcome message if set
+  const configWelcome = RAGConfig.get('ui.welcomeMessage');
+  if (configWelcome && configWelcome.trim()) {
+    messages.push({ role: 'assistant', content: configWelcome.trim(), sources: [], isWelcome: true });
+    renderMessages();
+    return;
+  }
+
   if (!metaDocs.length) return;
 
   const seen = new Set();
@@ -1313,6 +1342,9 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     });
   }
+
+  // Build model dropdown from config
+  buildModelDropdown();
 
   // Set memory-appropriate default model before loading index
   setDefaultModel();
