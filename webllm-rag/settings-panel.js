@@ -54,11 +54,10 @@ function populatePanel() {
   const ragEnabledEl = document.getElementById('sp-rag-enabled');
   if (ragEnabledEl) {
     ragEnabledEl.checked = s.retrieval.ragEnabled !== false;
-    // Sync visual state
     const ragTrack = document.getElementById('sp-rag-toggle-track');
     const ragThumb = document.getElementById('sp-rag-toggle-thumb');
     if (ragTrack) ragTrack.style.background = ragEnabledEl.checked ? '#3b82f6' : '#d1d5db';
-    if (ragThumb) ragThumb.style.transform = ragEnabledEl.checked ? 'translateX(18px)' : 'translateX(0)';
+    if (ragThumb) ragThumb.style.transform   = ragEnabledEl.checked ? 'translateX(18px)' : 'translateX(0)';
   }
   _slider('sp-passage-char-limit',      s.retrieval.passageCharLimit);
   _slider('sp-contact-boost',           s.retrieval.contactBoost);
@@ -97,24 +96,14 @@ function initSliders() {
 
   // RAG toggle visual wiring
   const ragCheckbox = document.getElementById('sp-rag-enabled');
-  const ragTrack = document.getElementById('sp-rag-toggle-track');
-  const ragThumb = document.getElementById('sp-rag-toggle-thumb');
+  const ragTrack    = document.getElementById('sp-rag-toggle-track');
+  const ragThumb    = document.getElementById('sp-rag-toggle-thumb');
   function updateRagToggleVisual() {
     if (!ragCheckbox || !ragTrack || !ragThumb) return;
-    if (ragCheckbox.checked) {
-      ragTrack.style.background = '#3b82f6';
-      ragThumb.style.transform = 'translateX(18px)';
-    } else {
-      ragTrack.style.background = '#d1d5db';
-      ragThumb.style.transform = 'translateX(0)';
-    }
+    ragTrack.style.background  = ragCheckbox.checked ? '#3b82f6' : '#d1d5db';
+    ragThumb.style.transform   = ragCheckbox.checked ? 'translateX(18px)' : 'translateX(0)';
   }
-  if (ragCheckbox) {
-    ragCheckbox.addEventListener('change', updateRagToggleVisual);
-    // Make the whole toggle area clickable
-    const toggleArea = ragCheckbox.closest('label');
-    if (toggleArea) toggleArea.style.cursor = 'pointer';
-  }
+  if (ragCheckbox) ragCheckbox.addEventListener('change', updateRagToggleVisual);
 }
 
 // ---------------------------------------------------------------------------

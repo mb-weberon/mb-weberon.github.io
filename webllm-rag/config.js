@@ -261,7 +261,11 @@ const _state = {
   models:   _doLoadModels(),
 };
 
+const APP_VERSION = 'v1.2';
+
 window.RAGConfig = {
+  version: APP_VERSION,
+
   // Read a dot-path value, e.g. RAGConfig.get('llm.temperature')
   get(path) {
     return getByPath(_state.settings, path);
@@ -332,6 +336,13 @@ window.RAGConfig = {
 };
 
 console.log('✅ RAGConfig loaded', {
+  version: APP_VERSION,
   settingsKeys: Object.keys(_state.settings),
   modelCount: _state.models.length,
+});
+
+// Stamp version into the header as soon as the DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+  const el = document.getElementById('app-version');
+  if (el) el.textContent = APP_VERSION;
 });
