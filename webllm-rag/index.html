@@ -176,8 +176,9 @@
         <h1 class="text-lg font-bold tracking-tight">📚 Site Notebook <span id="app-version" class="text-xs font-normal text-gray-400 ml-1"></span></h1>
         <div class="flex items-center gap-3">
           <div id="engine-status" class="text-xs"></div>
+          <button onclick="downloadChat()" class="text-xs text-gray-400 hover:text-blue-500 active:text-blue-600" title="Download chat as JSON">⬇️</button>
           <button id="settings-gear-btn" class="text-gray-400 hover:text-gray-700 active:text-gray-900 text-base px-1" title="Settings">⚙️</button>
-          <button onclick="clearChat()" class="text-xs text-gray-400 hover:text-red-500 active:text-red-500">🗑</button>
+          <button onclick="clearChat()" class="text-xs text-gray-400 hover:text-red-500 active:text-red-500" title="Clear chat">🗑</button>
         </div>
       </div>
       <!-- Model selector + sources count -->
