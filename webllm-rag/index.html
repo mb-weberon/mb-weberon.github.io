@@ -282,31 +282,31 @@
       <div class="sp-tab-pane hidden" data-pane="inference">
         <div class="sp-slider-row">
           <span class="sp-slider-label">Temperature</span>
-          <input id="sp-temperature" class="sp-slider" type="range" min="0" max="1" step="0.05">
+          <input id="sp-temperature" class="sp-slider" type="range" min="0" max="2" step="0.05">
           <span id="sp-temperature-val" class="sp-slider-val"></span>
         </div>
-        <p class="sp-slider-tip">Higher = more creative, lower = more deterministic. Default: 0.4</p>
+        <p class="sp-slider-tip">Higher = more creative, lower = more deterministic. Safe range: 0.1–0.9. Above 1.2 outputs become erratic. Default: 0.4</p>
 
         <div class="sp-slider-row">
           <span class="sp-slider-label">Repetition penalty</span>
-          <input id="sp-repetition-penalty" class="sp-slider" type="range" min="1" max="1.5" step="0.05">
+          <input id="sp-repetition-penalty" class="sp-slider" type="range" min="1" max="2" step="0.05">
           <span id="sp-repetition-penalty-val" class="sp-slider-val"></span>
         </div>
-        <p class="sp-slider-tip">Penalises tokens already generated. Reduces looping. Default: 1.3</p>
+        <p class="sp-slider-tip">Penalises tokens already generated. Safe range: 1.0–1.4. Above 1.5 may cause incoherent output. Default: 1.3</p>
 
         <div class="sp-slider-row">
           <span class="sp-slider-label">Max tokens</span>
-          <input id="sp-max-tokens" class="sp-slider" type="range" min="100" max="1000" step="50">
+          <input id="sp-max-tokens" class="sp-slider" type="range" min="100" max="4000" step="100">
           <span id="sp-max-tokens-val" class="sp-slider-val"></span>
         </div>
-        <p class="sp-slider-tip">Maximum response length. Default: 400</p>
+        <p class="sp-slider-tip">Maximum response length. Safe range: 200–800 for speed. Higher values slow generation significantly. Default: 400</p>
 
         <div class="sp-slider-row">
           <span class="sp-slider-label">History exchanges</span>
-          <input id="sp-history-exchanges" class="sp-slider" type="range" min="0" max="5" step="1">
+          <input id="sp-history-exchanges" class="sp-slider" type="range" min="0" max="20" step="1">
           <span id="sp-history-exchanges-val" class="sp-slider-val"></span>
         </div>
-        <p class="sp-slider-tip">Prior Q&A pairs sent to LLM for follow-up context. Higher = longer prefill. Default: 1</p>
+        <p class="sp-slider-tip">Prior Q&A pairs sent to LLM for follow-up context. Safe range: 1–3. Higher values grow prefill significantly. Default: 1</p>
       </div>
 
       <!-- Retrieval tab -->

@@ -881,9 +881,17 @@ function syncDropdownToLoadedModel(modelId) {
     });
   }
 
-  // Set dropdown to the loaded model
+  // Set dropdown to the loaded model AND persist it — this is the source of
+  // truth so that setDefaultModel()'s guard sees it and doesn't override
   const exists = Array.from(sel.options).some(o => o.value === modelId);
-  if (exists) sel.value = modelId;
+  if (exists) {
+    sel.value = modelId;
+    storageSet(RAGConfig.KEYS.selectedModel, modelId);
+  }
+
+  // Hide the Load button — dropdown now matches what's running
+  const btn = document.getElementById('reload-model-btn');
+  if (btn) btn.classList.remove('visible');
 
   // Invalidate the backend cache so next reload re-probes cleanly
   _detectedBackends = null;
