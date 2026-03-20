@@ -282,31 +282,31 @@
       <div class="sp-tab-pane hidden" data-pane="inference">
         <div class="sp-slider-row">
           <span class="sp-slider-label">Temperature</span>
-          <input id="sp-temperature" class="sp-slider" type="range" min="0" max="2" step="0.05">
+          <input id="sp-temperature" class="sp-slider" type="range" min="0" max="1" step="0.05">
           <span id="sp-temperature-val" class="sp-slider-val"></span>
         </div>
-        <p class="sp-slider-tip">Higher = more creative, lower = more deterministic. Safe range: 0.1–0.9. Above 1.2 outputs become erratic. Default: 0.4</p>
+        <p class="sp-slider-tip">Higher = more creative, lower = more deterministic. Default: 0.4</p>
 
         <div class="sp-slider-row">
           <span class="sp-slider-label">Repetition penalty</span>
-          <input id="sp-repetition-penalty" class="sp-slider" type="range" min="1" max="2" step="0.05">
+          <input id="sp-repetition-penalty" class="sp-slider" type="range" min="1" max="1.5" step="0.05">
           <span id="sp-repetition-penalty-val" class="sp-slider-val"></span>
         </div>
-        <p class="sp-slider-tip">Penalises tokens already generated. Safe range: 1.0–1.4. Above 1.5 may cause incoherent output. Default: 1.3</p>
+        <p class="sp-slider-tip">Penalises tokens already generated. Reduces looping. Default: 1.3</p>
 
         <div class="sp-slider-row">
           <span class="sp-slider-label">Max tokens</span>
-          <input id="sp-max-tokens" class="sp-slider" type="range" min="100" max="4000" step="100">
+          <input id="sp-max-tokens" class="sp-slider" type="range" min="100" max="1000" step="50">
           <span id="sp-max-tokens-val" class="sp-slider-val"></span>
         </div>
-        <p class="sp-slider-tip">Maximum response length. Safe range: 200–800 for speed. Higher values slow generation significantly. Default: 400</p>
+        <p class="sp-slider-tip">Maximum response length. Default: 400</p>
 
         <div class="sp-slider-row">
           <span class="sp-slider-label">History exchanges</span>
-          <input id="sp-history-exchanges" class="sp-slider" type="range" min="0" max="20" step="1">
+          <input id="sp-history-exchanges" class="sp-slider" type="range" min="0" max="5" step="1">
           <span id="sp-history-exchanges-val" class="sp-slider-val"></span>
         </div>
-        <p class="sp-slider-tip">Prior Q&A pairs sent to LLM for follow-up context. Safe range: 1–3. Higher values grow prefill significantly. Default: 1</p>
+        <p class="sp-slider-tip">Prior Q&A pairs sent to LLM for follow-up context. Higher = longer prefill. Default: 1</p>
       </div>
 
       <!-- Retrieval tab -->
@@ -359,6 +359,33 @@
           <span id="sp-footnote-snippet-length-val" class="sp-slider-val"></span>
         </div>
         <p class="sp-slider-tip">Preview text shown under each source link in responses. Default: 120</p>
+
+        <!-- Content deduplication -->
+        <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 12px; background:#f9fafb; border:1px solid #e5e7eb; border-radius:8px; margin-bottom:14px;">
+          <div>
+            <div style="font-size:12px; font-weight:700; color:#374151;">Deduplicate by content</div>
+            <div style="font-size:11px; color:#6b7280; margin-top:2px;">Remove sources with near-identical text even when served under different URLs. Fixes sites where the same page lives at multiple addresses.</div>
+          </div>
+          <label style="position:relative; display:inline-block; width:40px; height:22px; flex-shrink:0; margin-left:12px; cursor:pointer;">
+            <input type="checkbox" id="sp-dedupe-snippets" style="opacity:0; width:0; height:0; position:absolute;">
+            <span id="sp-dedupe-toggle-track" style="
+              position:absolute; cursor:pointer; inset:0;
+              background:#d1d5db; border-radius:11px; transition:background 0.2s;
+            "></span>
+            <span id="sp-dedupe-toggle-thumb" style="
+              position:absolute; height:16px; width:16px; left:3px; top:3px;
+              background:white; border-radius:50%; transition:transform 0.2s;
+              box-shadow:0 1px 3px rgba(0,0,0,0.2);
+            "></span>
+          </label>
+        </div>
+
+        <div class="sp-slider-row">
+          <span class="sp-slider-label">Dedup threshold</span>
+          <input id="sp-dedupe-threshold" class="sp-slider" type="range" min="0.5" max="1.0" step="0.05">
+          <span id="sp-dedupe-threshold-val" class="sp-slider-val"></span>
+        </div>
+        <p class="sp-slider-tip">How similar two passages must be (0–1) to count as duplicates. 0.9 = very similar only. Lower = more aggressive. Default: 0.9</p>
       </div>
 
       <!-- Models tab -->

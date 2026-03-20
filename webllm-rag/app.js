@@ -653,6 +653,30 @@ function cosineSimilarity(a, b) {
   return dot / (Math.sqrt(normA) * Math.sqrt(normB) + 1e-8);
 }
 
+// Normalise a text snippet for similarity comparison:
+// lowercase, collapse whitespace, strip punctuation
+function normaliseSnippet(text) {
+  return text.toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+// Jaccard similarity on word-level bigrams — fast, no embeddings needed.
+// Good enough to catch duplicate content served under different URLs.
+function snippetSimilarity(a, b) {
+  const words = (t) => normaliseSnippet(t).split(' ');
+  const bigrams = (ws) => {
+    const s = new Set();
+    for (let i = 0; i < ws.length - 1; i++) s.add(ws[i] + '|' + ws[i+1]);
+    return s;
+  };
+  const sa = bigrams(words(a));
+  const sb = bigrams(words(b));
+  if (!sa.size && !sb.size) return 1;
+  if (!sa.size || !sb.size) return 0;
+  let inter = 0;
+  sa.forEach(bg => { if (sb.has(bg)) inter++; });
+  return inter / (sa.size + sb.size - inter);
+}
+
 // Semantic search using packed Float32Array embeddings, keyword fallback
 async function search(query, k = 5) {
   if (!metaDocs.length) return [];
@@ -974,20 +998,41 @@ async function chat(query, signal = null) {
   let uniqueSources = [];
 
   if (ragEnabled) {
-    // Fetch enough candidates to find maxSources unique URLs even if chunks cluster
+    // Fetch enough candidates to find maxSources unique results even if chunks cluster
     const sources = await search(query, maxSources * RAGConfig.get('retrieval.candidatesMultiplier'));
 
-    // Dedupe to at most maxSources unique URLs
+    // Ensure text is loaded so we can compare content
+    await ensureTextLoaded();
+
+    const dedupeSnippets = RAGConfig.get('retrieval.deduplicateSnippets') !== false;
+    const dedupeThreshold = RAGConfig.get('retrieval.snippetDedupeThreshold') ?? 0.9;
+
+    // Dedupe: always by URL, optionally also by content similarity
     const seenUrls = new Set();
+    const acceptedTexts = []; // normalised texts of accepted sources
+
     sources.forEach(s => {
-      if (!seenUrls.has(s.url) && uniqueSources.length < maxSources) {
-        seenUrls.add(s.url);
-        uniqueSources.push(s);
+      if (uniqueSources.length >= maxSources) return;
+      if (seenUrls.has(s.url)) return;
+
+      if (dedupeSnippets) {
+        // Compare this chunk's text against already-accepted chunks
+        const sText = getText(s.id).substring(0, RAGConfig.get('retrieval.passageCharLimit'));
+        const isDuplicate = acceptedTexts.some(
+          accepted => snippetSimilarity(accepted, sText) >= dedupeThreshold
+        );
+        if (isDuplicate) {
+          console.log(`🔁 Deduped similar content from ${s.url} (threshold ${dedupeThreshold})`);
+          return;
+        }
+        acceptedTexts.push(sText);
       }
+
+      seenUrls.add(s.url);
+      uniqueSources.push(s);
     });
 
     // Attach a short snippet to each source for footnote display
-    await ensureTextLoaded();
     uniqueSources.forEach(s => {
       if (!s.snippet) {
         s.snippet = getText(s.id).replace(/\s+/g, ' ').trim().substring(0, RAGConfig.get('retrieval.footnoteSnippetLength'));
