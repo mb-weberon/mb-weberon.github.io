@@ -1,0 +1,60 @@
+{
+    "initial": "P1",
+    "states": {
+        "P1": {
+            "message": "Welcome! Please enter your email.",
+            "inputType": "text",
+            "storeKey": "email",
+            "placeholder": "email@example.com",
+            "regEx": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+            "onValid": "P2",
+            "errorMessage": "Please provide a valid email address."
+        },
+        "P2": {
+            "message": "Do you rent or own?",
+            "inputType": "choice",
+            "storeKey": "status",
+            "choices": [
+                { "label": "1-Rent", "next": "P4_Timing" },
+                { "label": "2-Own", "next": "P3_Sell" }
+            ]
+        },
+        "P3_Sell": {
+            "message": "Buy or Sell first?",
+            "inputType": "choice",
+            "storeKey": "order",
+            "choices": [
+                { "label": "1-Buy First", "next": "P4_Timing" },
+                { "label": "2-Sell First", "next": "P4_Timing" }
+            ]
+        },
+        "P4_Timing": {
+            "message": "When are you moving?",
+            "inputType": "choice",
+            "storeKey": "timing",
+            "choices": [
+                { "label": "Soon (Near)", "next": "P5" },
+                { "label": "Later (Far)", "next": "P5" }
+            ]
+        },
+        "P5": {
+            "message": "What is your phone number?",
+            "inputType": "text",
+            "storeKey": "phone",
+            "regEx": "^\\d{7,15}$",
+            "onValid": "GATE_P6",
+            "errorMessage": "Enter at least 7 digits."
+        },
+        "GATE_P6": {
+            "type": "logic",
+            "condition": "timing",
+            "map": {
+                "Soon (Near)": "P6_Near",
+                "Later (Far)": "P6_Far"
+            }
+        },
+	"P6_Near": { "message": "Booking appt...", "inputType": "choice", "storeKey": "completionStatus", "choices": [{ "label": "Finish", "next": "P7" }] },
+        "P6_Far": { "message": "Checking in later...", "inputType": "choice", "choices": [{ "label": "Finish", "next": "P7" }] },
+        "P7": { "message": "Goodbye!", "inputType": "choice", "choices": [] }
+    }
+}
