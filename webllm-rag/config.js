@@ -261,7 +261,7 @@ const _state = {
   models:   _doLoadModels(),
 };
 
-const APP_VERSION = 'v1.3';
+const APP_VERSION = 'v1.4';
 
 window.RAGConfig = {
   version: APP_VERSION,

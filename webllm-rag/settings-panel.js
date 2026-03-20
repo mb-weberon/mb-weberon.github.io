@@ -148,10 +148,22 @@ function saveSettings() {
   const validModels = models.filter(m => m.id && m.label);
   if (validModels.length) {
     RAGConfig.applyModels(validModels);
-    // Rebuild dropdown in app
+    // Rebuild dropdown only when models actually changed
     if (typeof buildModelDropdown === 'function') {
       buildModelDropdown();
       setDefaultModel();
+    }
+  }
+
+  // After settings save, re-sync the Load button state:
+  // hide it if the dropdown now shows the already-loaded model
+  if (typeof engineState !== 'undefined' && engineState.model) {
+    const sel = document.getElementById('model-select');
+    const btn = document.getElementById('reload-model-btn');
+    if (sel && btn) {
+      if (engineState.model.startsWith(sel.value)) {
+        btn.classList.remove('visible');
+      }
     }
   }
 

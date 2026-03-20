@@ -211,14 +211,17 @@ function setDefaultModel() {
   const sel = document.getElementById('model-select');
   if (!sel) return;
 
-  const bestId = pickDefaultModel();
-
-  // Only set default if user hasn't manually picked a model
-  if (!storageGet(RAGConfig.KEYS.selectedModel)) {
-    sel.value = bestId;
+  // If we have a stored model (loaded or manually chosen), restore it —
+  // this is the value syncDropdownToLoadedModel wrote, so it survives
+  // buildModelDropdown() wiping innerHTML
+  const stored = storageGet(RAGConfig.KEYS.selectedModel);
+  if (stored) {
+    const exists = Array.from(sel.options).some(o => o.value === stored);
+    if (exists) { sel.value = stored; return; }
   }
-  // Graying is applied only after engine loads via syncDropdownToLoadedModel —
-  // probing hardware before the engine is ready gives false negatives
+
+  // Nothing stored yet — pick the best default for this device
+  sel.value = pickDefaultModel();
 }
 
 function getSelectedModel() {
@@ -240,6 +243,16 @@ function getMaxSources() {
 
 // Called when user clicks Load after changing model
 window.reloadModel = async function() {
+  const selected = getSelectedModel();
+
+  // No-op if the selected model is already what's running
+  if (engineState.mode === 'llm' && engineState.model && engineState.model.startsWith(selected)) {
+    const btn = document.getElementById('reload-model-btn');
+    if (btn) btn.classList.remove('visible');
+    console.log('ℹ️ Selected model already loaded — skipping reload');
+    return;
+  }
+
   const btn = document.getElementById('reload-model-btn');
   if (btn) btn.classList.remove('visible');
   llmEngine = null;
