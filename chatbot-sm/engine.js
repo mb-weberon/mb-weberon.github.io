@@ -39,17 +39,12 @@ function resetEngine() {
     render();
 }
 
-/**
- * Replay Feature: Accepts an array of strings.
- * For choices, it matches based on the start of the label (e.g., "1" matches "1-Rent").
- */
 async function replayFlow(inputs) {
     if (isReplaying || !inputs || !Array.isArray(inputs)) return;
     isReplaying = true;
     resetEngine();
 
     for (const input of inputs) {
-        // Delay to allow the user to follow the visual changes
         await new Promise(resolve => setTimeout(resolve, 800));
         
         const state = chatConfig.states[currentState];
@@ -58,7 +53,6 @@ async function replayFlow(inputs) {
         if (state.inputType === "text") {
             handleUserAction(input, state.onValid, state.storeKey);
         } else if (state.choices) {
-            // Flexible matching: check full label OR if label starts with input (e.g. "1")
             const choice = state.choices.find(c => 
                 c.label === input || c.label.startsWith(input)
             );
@@ -67,8 +61,9 @@ async function replayFlow(inputs) {
             }
         }
     }
+    
     isReplaying = false;
-    render(); 
+    refreshInputArea(); 
 }
 
 function logEvent(type, details) {
@@ -81,18 +76,19 @@ function logEvent(type, details) {
     historyStack.push(entry);
 }
 
-function dumpStackToConsole() {
-    console.group("🚀 Flow Execution Trace");
-    console.table(historyStack);
-    
-    // Generate a copy-pasteable replay array for the user
-    const replayArray = historyStack
-        .filter(e => e.type === "USER_ACTION")
-        .map(e => e.label);
-    
-    console.log("📋 Replay Script (JSON Array):");
-    console.log(JSON.stringify(replayArray));
-    console.groupEnd();
+function refreshInputArea() {
+    const state = chatConfig.states[currentState];
+    const area = document.getElementById('input-area');
+    area.innerHTML = ''; 
+
+    if (state.inputType === "text") {
+        renderTextInput(state);
+    } else if (state.choices && state.choices.length > 0) {
+        renderChoices(state);
+    } else {
+        renderExit();
+    }
+    renderControlButtons();
 }
 
 async function render() {
@@ -101,16 +97,44 @@ async function render() {
     if (state.type === "logic") {
         const val = context[state.condition];
         const nextState = state.map[val] || Object.values(state.map)[0];
-        
         logEvent("LOGIC_GATE_TRANSITION", { gate: currentState, value: val, target: nextState });
-
         lastState = currentState;
         currentState = nextState;
         return render();
     }
 
     updateDiagram();
-    document.getElementById('profile-viewer').innerText = "Lead Profile: " + JSON.stringify(context, null, 2);
+
+    const replayArray = historyStack
+        .filter(e => e.type === "USER_ACTION")
+        .map(e => e.label);
+
+    // NEW UI: Replay Script is now a TEXTAREA that you can edit and RUN
+    document.getElementById('profile-viewer').innerHTML = `
+        <div style="min-height: 450px; display: flex; flex-direction: column;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                <strong>Replay Script (Editable):</strong>
+                <button id="run-script-btn" class="debug-btn" style="background: #2ed573; color: white; padding: 2px 10px;">▶️ Run</button>
+            </div>
+            <textarea id="live-replay-script" style="background: #eee; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-family: monospace; font-size: 11px; height: 100px; resize: vertical; margin-bottom: 15px;">${JSON.stringify(replayArray)}</textarea>
+            
+            <div style="flex-grow: 1;">
+                <strong>Lead Profile:</strong>
+                <pre style="font-size: 13px; background: #fff; padding: 10px; border: 1px solid #ddd; border-radius: 4px; height: 250px; overflow-y: auto;">${JSON.stringify(context, null, 2)}</pre>
+            </div>
+        </div>
+    `;
+
+    // Attach listener to the new "Run" button in the profile area
+    document.getElementById('run-script-btn').onclick = () => {
+        try {
+            const rawData = document.getElementById('live-replay-script').value;
+            const data = JSON.parse(rawData);
+            replayFlow(data);
+        } catch (e) {
+            alert("Invalid JSON format in the script area.");
+        }
+    };
     
     addMessage(state.message, 'bot');
 
@@ -122,61 +146,21 @@ async function render() {
         return;
     }
 
-    if (state.inputType === "text") {
-        renderTextInput(state);
-    } else if (state.choices && state.choices.length > 0) {
-        renderChoices(state);
-    } else {
-        renderExit();
-    }
-    
-    renderControlButtons();
+    refreshInputArea();
 }
 
 function renderControlButtons() {
     const area = document.getElementById('input-area');
     const controlGroup = document.createElement('div');
-    controlGroup.style.cssText = "margin-top: 20px; display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;";
-
-    const traceBtn = document.createElement('button');
-    traceBtn.innerText = "🔍 Trace";
-    traceBtn.className = "debug-btn";
-    traceBtn.onclick = dumpStackToConsole;
+    controlGroup.style.cssText = "margin-top: 20px; display: flex; gap: 10px; justify-content: center;";
 
     const resetBtn = document.createElement('button');
     resetBtn.innerText = "🔄 Restart";
     resetBtn.className = "debug-btn restart-btn";
     resetBtn.onclick = () => { if(confirm("Restart flow?")) resetEngine(); };
 
-    const importReplayBtn = document.createElement('button');
-    importReplayBtn.innerText = "📥 Import Replay";
-    importReplayBtn.className = "debug-btn";
-    importReplayBtn.onclick = renderReplayImport;
-
-    controlGroup.append(traceBtn, resetBtn, importReplayBtn);
+    controlGroup.append(resetBtn);
     area.appendChild(controlGroup);
-}
-
-function renderReplayImport() {
-    const area = document.getElementById('input-area');
-    area.innerHTML = `
-        <div style="width: 100%; text-align: center; background: #f8f9fa; padding: 15px; border-radius: 8px;">
-            <p style="font-size: 12px; color: #666; margin-bottom: 8px;">Paste Replay Array (JSON):</p>
-            <textarea id="replay-data" placeholder='["email@test.com", "1", "2"]' style="width: 90%; height: 60px; font-family: monospace; padding: 5px;"></textarea><br>
-            <button id="run-import-btn" class="debug-btn" style="background: #2ed573; color: white; margin-top: 10px;">▶️ Run</button>
-            <button id="cancel-import-btn" class="debug-btn" style="margin-top: 10px;">Cancel</button>
-        </div>
-    `;
-
-    document.getElementById('run-import-btn').onclick = () => {
-        try {
-            const data = JSON.parse(document.getElementById('replay-data').value);
-            replayFlow(data);
-        } catch (e) {
-            alert("Invalid format. Please provide a JSON array of strings.");
-        }
-    };
-    document.getElementById('cancel-import-btn').onclick = render;
 }
 
 function renderTextInput(state) {
@@ -186,21 +170,15 @@ function renderTextInput(state) {
     input.className = "chat-input";
     input.placeholder = state.placeholder || "";
 
-    input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-            const val = input.value.trim();
-            if (new RegExp(state.regEx || ".*").test(val)) {
-                handleUserAction(val, state.onValid, state.storeKey);
-            }
-        }
-    });
-
-    const btn = document.createElement('button');
-    btn.innerText = "Submit";
-    btn.onclick = () => {
+    const submit = () => {
         const val = input.value.trim();
         if (new RegExp(state.regEx || ".*").test(val)) handleUserAction(val, state.onValid, state.storeKey);
     };
+
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+    const btn = document.createElement('button');
+    btn.innerText = "Submit";
+    btn.onclick = submit;
     container.append(input, btn);
     input.focus();
 }
@@ -278,7 +256,10 @@ function addMessage(text, side) {
 
 function renderExit() {
     const container = document.getElementById('input-area');
-    container.innerHTML = '<div style="text-align:center; padding: 10px; font-weight: bold;">Flow Completed.</div>';
+    const exitDiv = document.createElement('div');
+    exitDiv.style.cssText = "text-align:center; padding: 10px; font-weight: bold;";
+    exitDiv.innerText = "Flow Completed.";
+    container.appendChild(exitDiv);
 }
 
 document.getElementById('config-upload').addEventListener('change', function(e) {
