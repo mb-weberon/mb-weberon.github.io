@@ -33,8 +33,8 @@
             "inputType": "choice",
             "storeKey": "timing",
             "choices": [
-                { "label": "Soon (Near)", "next": "P5" },
-                { "label": "Later (Far)", "next": "P5" }
+                { "label": "1-Soon (Near)", "next": "P5" },
+                { "label": "2-Later (Far)", "next": "P5" }
             ]
         },
         "P5": {
@@ -49,12 +49,12 @@
             "type": "logic",
             "condition": "timing",
             "map": {
-                "Soon (Near)": "P6_Near",
-                "Later (Far)": "P6_Far"
+                "1-Soon (Near)": "P6_Near",
+                "2-Later (Far)": "P6_Far"
             }
         },
-	"P6_Near": { "message": "Booking appt...", "inputType": "choice", "storeKey": "completionStatus", "choices": [{ "label": "Finish", "next": "P7" }] },
-        "P6_Far": { "message": "Checking in later...", "inputType": "choice", "choices": [{ "label": "Finish", "next": "P7" }] },
+	"P6_Near": { "message": "Booking appt...", "inputType": "choice", "storeKey": "completionStatus", "choices": [{ "label": "1-Finish", "next": "P7" }] },
+        "P6_Far": { "message": "Checking in later...", "inputType": "choice", "choices": [{ "label": "1-Finish", "next": "P7" }] },
         "P7": { "message": "Goodbye!", "inputType": "choice", "choices": [] }
     }
 }
