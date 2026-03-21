@@ -1,96 +1,209 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Flow Engine Documentation</title>
     <style>
-        body { font-family: -apple-system, system-ui, sans-serif; line-height: 1.6; padding: 20px; color: #2f3542; max-width: 900px; margin: auto; background: #f8f9fa; }
-        h1 { color: #ff4757; border-bottom: 2px solid #ddd; padding-bottom: 10px; }
-        h2 { margin-top: 30px; color: #2f3542; border-left: 4px solid #ff4757; padding-left: 10px; }
-        h3 { color: #4b4b4b; }
-        code { background: #e9ecef; padding: 2px 5px; border-radius: 4px; font-family: 'Courier New', monospace; font-weight: bold; }
-        pre { background: #2f3542; color: #f8f9fa; padding: 15px; border-radius: 8px; overflow-x: auto; font-size: 13px; }
-        .card { background: #fff; border: 1px solid #ddd; padding: 20px; border-radius: 8px; margin: 15px 0; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
-        .tag { display: inline-block; background: #747d8c; color: #fff; padding: 2px 8px; border-radius: 12px; font-size: 11px; text-transform: uppercase; margin-right: 5px; }
-        .back-link { display: inline-block; margin-bottom: 20px; text-decoration: none; color: #57606f; font-weight: bold; }
-        .tool-tip { background: #fff9db; border-left: 4px solid #fcc419; padding: 10px; margin: 10px 0; font-size: 14px; }
-        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-        th, td { text-align: left; padding: 12px; border-bottom: 1px solid #ddd; }
-        th { background: #f1f2f6; }
+      body {
+        font-family: -apple-system, system-ui, sans-serif;
+        line-height: 1.6;
+        padding: 20px;
+        color: #2f3542;
+        max-width: 900px;
+        margin: auto;
+        background: #f8f9fa;
+      }
+      h1 {
+        color: #ff4757;
+        border-bottom: 2px solid #ddd;
+        padding-bottom: 10px;
+      }
+      h2 {
+        margin-top: 30px;
+        color: #2f3542;
+        border-left: 4px solid #ff4757;
+        padding-left: 10px;
+      }
+      h3 {
+        color: #4b4b4b;
+      }
+      code {
+        background: #e9ecef;
+        padding: 2px 5px;
+        border-radius: 4px;
+        font-family: "Courier New", monospace;
+        font-weight: bold;
+      }
+      pre {
+        background: #2f3542;
+        color: #f8f9fa;
+        padding: 15px;
+        border-radius: 8px;
+        overflow-x: auto;
+        font-size: 13px;
+      }
+      .card {
+        background: #fff;
+        border: 1px solid #ddd;
+        padding: 20px;
+        border-radius: 8px;
+        margin: 15px 0;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+      }
+      .tag {
+        display: inline-block;
+        background: #747d8c;
+        color: #fff;
+        padding: 2px 8px;
+        border-radius: 12px;
+        font-size: 11px;
+        text-transform: uppercase;
+        margin-right: 5px;
+      }
+      .back-link {
+        display: inline-block;
+        margin-bottom: 20px;
+        text-decoration: none;
+        color: #57606f;
+        font-weight: bold;
+      }
+      .tool-tip {
+        background: #fff9db;
+        border-left: 4px solid #fcc419;
+        padding: 10px;
+        margin: 10px 0;
+        font-size: 14px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 20px 0;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 12px;
+        border-bottom: 1px solid #ddd;
+      }
+      th {
+        background: #f1f2f6;
+      }
     </style>
-</head>
-<body>
+  </head>
+  <body>
     <a href="index.html" class="back-link">← Back to Flow Engine</a>
     <h1>Flow Engine User & Dev Guide</h1>
 
     <div class="card">
-        <h2>🛠️ Testing & Replay Tools</h2>
-        
-        <h3>📋 Live Session Trace (Output)</h3>
-        <p>This area records every valid action you take in the chat. It generates a clean JSON array (e.g., <code>["user@test.com", "1", "2"]</code>).</p>
-        <ul>
-            <li><strong>💾 Save .json:</strong> Click this to download your current path as a file for future testing.</li>
-            <li><strong>Manual Copy:</strong> You can also copy the text directly from the dashed box.</li>
-        </ul>
+      <h2>🛠️ Testing & Replay Tools</h2>
 
-        <h3>📥 Replay Command (Input)</h3>
-        <p>The "Steering Wheel" of the engine. Paste a previously saved JSON array here and click <strong>▶️ Run</strong>.</p>
-        <div class="tool-tip">
-            <strong>Pro Tip:</strong> Replay uses the exact same validation logic as manual typing. If your script contains an invalid email or a non-existent choice, the replay will halt and show an error in the chat history.
-        </div>
+      <h3>📋 Live Session Trace (Output)</h3>
+      <p>
+        This area records every valid action you take in the chat. It generates
+        a clean JSON array (e.g., <code>["user@test.com", "1", "2"]</code>).
+      </p>
+      <ul>
+        <li>
+          <strong>💾 Save .json:</strong> Click this to download your current
+          path as a file for future testing.
+        </li>
+        <li>
+          <strong>Manual Copy:</strong> You can also copy the text directly from
+          the dashed box.
+        </li>
+      </ul>
+
+      <h3>📥 Replay Command (Input)</h3>
+      <p>
+        The "Steering Wheel" of the engine. Paste a previously saved JSON array
+        here and click <strong>▶️ Run</strong>.
+      </p>
+      <div class="tool-tip">
+        <strong>Pro Tip:</strong> Replay uses the exact same validation logic as
+        manual typing. If your script contains an invalid email or a
+        non-existent choice, the replay will halt and show an error in the chat
+        history.
+      </div>
     </div>
 
     <div class="card">
-        <h2>🏗️ Configuration Architecture (config.json)</h2>
-        <p>This engine is a <strong>Finite State Machine (FSM)</strong>, closely following the <strong>SCXML</strong> (State Chart XML) standard for declarative logic.</p>
+      <h2>🏗️ Configuration Architecture (config.json)</h2>
+      <p>
+        This engine is a <strong>Finite State Machine (FSM)</strong>, closely
+        following the <strong>SCXML</strong> (State Chart XML) standard for
+        declarative logic.
+      </p>
 
-        <h3>Root Components</h3>
-        <ul>
-            <li><code>initial</code>: The ID of the starting node.</li>
-            <li><code>states</code>: A dictionary where each key is a unique State ID.</li>
-        </ul>
+      <h3>Root Components</h3>
+      <ul>
+        <li><code>initial</code>: The ID of the starting node.</li>
+        <li>
+          <code>states</code>: A dictionary where each key is a unique State ID.
+        </li>
+      </ul>
 
-        <h3>State Definition Table</h3>
-        <table>
-            <tr>
-                <th>Type</th>
-                <th>Description</th>
-                <th>Logic Path</th>
-            </tr>
-            <tr>
-                <td><strong>Interactive</strong></td>
-                <td>Wait for user text or button click.</td>
-                <td>Follows <code>onValid</code> or <code>choices[].next</code></td>
-            </tr>
-            <tr>
-                <td><strong>Logic Gate</strong></td>
-                <td>Automatic branch based on <code>storeKey</code> data.</td>
-                <td>Uses <code>map</code> to find the next state.</td>
-            </tr>
-        </table>
+      <h3>State Definition Table</h3>
+      <table>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Logic Path</th>
+        </tr>
+        <tr>
+          <td><strong>Interactive</strong></td>
+          <td>Wait for user text or button click.</td>
+          <td>Follows <code>onValid</code> or <code>choices[].next</code></td>
+        </tr>
+        <tr>
+          <td><strong>Logic Gate</strong></td>
+          <td>Automatic branch based on <code>storeKey</code> data.</td>
+          <td>Uses <code>map</code> to find the next state.</td>
+        </tr>
+      </table>
     </div>
 
     <div class="card">
-        <h2>Schema Example</h2>
-        <pre>
+      <h2>Schema Example</h2>
+      <pre>
 {
   "initial": "ask_email",
   "states": {
     "ask_email": {
-      "message": "Enter email:",
+      "message": "Welcome. Please enter your email to proceed:",
       "inputType": "text",
       "regEx": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
       "storeKey": "user_email",
-      "onValid": "next_node"
+      "onValid": "logic_gate"
     },
     "logic_gate": {
       "type": "logic",
       "condition": "user_email",
       "map": {
         "admin@test.com": "admin_dash",
-        "default": "user_dash"
+        "default@default.com": "user_dash"
       }
+    },
+    "admin_dash": {
+      "message": "System Administrator Authenticated. Select a system action:",
+      "inputType": "choice",
+      "choices": [
+        { "label": "1-View Logs", "next": "ask_email" },
+        { "label": "2-Exit", "next": "exit_node" }
+      ]
+    },
+    "user_dash": {
+      "message": "Standard User Portal. Would you like to restart?",
+      "inputType": "choice",
+      "choices": [
+        { "label": "1-Yes", "next": "ask_email" },
+        { "label": "2-No", "next": "exit_node" }
+      ]
+    },
+    "exit_node": {
+      "message": "Thank you for using the system. Goodbye!",
+      "inputType": "choice",
+      "choices": []
     }
   }
 }
@@ -98,12 +211,30 @@
     </div>
 
     <div class="card">
-        <h2>Property Glossary</h2>
-        <p><span class="tag">regEx</span> Standard JS regex. Only applied to <code>inputType: "text"</code>.</p>
-        <p><span class="tag">storeKey</span> The variable name used in the <strong>Lead Profile</strong>.</p>
-        <p><span class="tag">condition</span> The variable name the Logic Gate looks for in the Profile.</p>
+      <h2>Property Glossary</h2>
+      <p>
+        <span class="tag">regEx</span> Standard JS regex. Only applied to
+        <code>inputType: "text"</code>.
+      </p>
+      <p>
+        <span class="tag">storeKey</span> The variable name used to save data
+        into the <strong>Session Context</strong>.
+      </p>
+      <p>
+        <span class="tag">condition</span> The variable name the Logic Gate
+        looks for in the <strong>Session Context</strong> to make a decision.
+      </p>
     </div>
 
-    <p style="text-align: center; color: #a4b0be; font-size: 12px; margin-top: 50px;">Documentation v2.2 | Optimized for Debugging & Replay</p>
-</body>
+    <p
+      style="
+        text-align: center;
+        color: #a4b0be;
+        font-size: 12px;
+        margin-top: 50px;
+      "
+    >
+      Documentation v2.2 | Optimized for Debugging & Replay
+    </p>
+  </body>
 </html>

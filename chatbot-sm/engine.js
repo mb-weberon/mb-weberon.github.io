@@ -178,8 +178,8 @@ async function render() {
                 </div>
 
                 <div style="flex-grow: 1;">
-                    <strong>👤 Lead Profile</strong>
-                    <pre id="profile-display" style="background: #fff; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; height: 180px; overflow-y: auto; margin-top: 5px;"></pre>
+		    <strong>⚙️ Session Context</strong>
+                    <pre id="context-display" style="background: #fff; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; height: 180px; overflow-y: auto; margin-top: 5px;"></pre>
                 </div>
             </div>
         `;
@@ -199,7 +199,7 @@ async function render() {
     }
 
     document.getElementById('live-trace-display').innerText = JSON.stringify(sessionTrace);
-    document.getElementById('profile-display').innerText = JSON.stringify(context, null, 2);
+    document.getElementById('context-display').innerText = JSON.stringify(context, null, 2);
     
     addMessage(state.message, 'bot');
     refreshInputArea();
