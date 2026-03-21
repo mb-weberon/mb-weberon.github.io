@@ -5,6 +5,9 @@ let context = {};
 let historyStack = [];
 let isReplaying = false; 
 
+/**
+ * CORE ENGINE STARTUP
+ */
 async function init() {
     try {
         if (!chatConfig) {
@@ -32,13 +35,16 @@ function resetEngine() {
     context = {};
     historyStack = [];
     
-    document.getElementById('messages').innerHTML = '';
-    document.getElementById('error-display').innerText = '';
+    const msgContainer = document.getElementById('messages');
+    if (msgContainer) msgContainer.innerHTML = '';
     
     logEvent("RESET_FLOW", { state: currentState });
     render();
 }
 
+/**
+ * REPLAY LOGIC
+ */
 async function replayFlow(inputs) {
     if (isReplaying || !inputs || !Array.isArray(inputs)) return;
     isReplaying = true;
@@ -50,15 +56,32 @@ async function replayFlow(inputs) {
         const state = chatConfig.states[currentState];
         if (!state) break;
 
+        let validated = false;
+
         if (state.inputType === "text") {
-            handleUserAction(input, state.onValid, state.storeKey);
+            const regex = new RegExp(state.regEx || ".*");
+            if (regex.test(input)) {
+                handleUserAction(input, state.onValid, state.storeKey);
+                validated = true;
+            } else {
+                addMessage(`⚠️ Validation Failed: "${input}" doesn't match pattern for ${currentState}`, 'bot');
+            }
         } else if (state.choices) {
             const choice = state.choices.find(c => 
                 c.label === input || c.label.startsWith(input)
             );
             if (choice) {
                 handleUserAction(choice.label, choice.next, state.storeKey);
+                validated = true;
+            } else {
+                addMessage(`⚠️ Choice Error: "${input}" not valid in ${currentState}`, 'bot');
             }
+        }
+
+        if (!validated) {
+            isReplaying = false;
+            refreshInputArea();
+            return; 
         }
     }
     
@@ -70,27 +93,45 @@ function logEvent(type, details) {
     const entry = {
         timestamp: new Date().toLocaleTimeString(),
         type: type,
-        ...details,
-        currentContext: { ...context }
+        from: details.from || lastState || "START",
+        to: details.to || currentState || "END",
+        label: details.label || "N/A",
+        context_snapshot: { ...context }
     };
+
+    // Restore the console "State Table" dump
+    console.groupCollapsed(`%c FLOW_EVENT: ${type} @ ${entry.timestamp}`, "color: #ff4757; font-weight: bold;");
+    console.table({
+        "Event Type": entry.type,
+        "From State": entry.from,
+        "To State": entry.to,
+        "Input/Label": entry.label,
+        "Timestamp": entry.timestamp
+    });
+    console.log("Context Snapshot:", entry.context_snapshot);
+    console.groupEnd();
+
     historyStack.push(entry);
 }
 
-function refreshInputArea() {
-    const state = chatConfig.states[currentState];
-    const area = document.getElementById('input-area');
-    area.innerHTML = ''; 
-
-    if (state.inputType === "text") {
-        renderTextInput(state);
-    } else if (state.choices && state.choices.length > 0) {
-        renderChoices(state);
-    } else {
-        renderExit();
-    }
-    renderControlButtons();
+/**
+ * FILE DOWNLOAD HELPER
+ */
+function downloadTrace(data) {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `flow-trace-${new Date().getTime()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
 }
 
+/**
+ * UI RENDERING LOGIC
+ */
 async function render() {
     const state = chatConfig.states[currentState];
     
@@ -105,48 +146,83 @@ async function render() {
 
     updateDiagram();
 
-    const replayArray = historyStack
+    const sessionTrace = historyStack
         .filter(e => e.type === "USER_ACTION")
         .map(e => e.label);
 
-    // NEW UI: Replay Script is now a TEXTAREA that you can edit and RUN
-    document.getElementById('profile-viewer').innerHTML = `
-        <div style="min-height: 450px; display: flex; flex-direction: column;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
-                <strong>Replay Script (Editable):</strong>
-                <button id="run-script-btn" class="debug-btn" style="background: #2ed573; color: white; padding: 2px 10px;">▶️ Run</button>
-            </div>
-            <textarea id="live-replay-script" style="background: #eee; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-family: monospace; font-size: 11px; height: 100px; resize: vertical; margin-bottom: 15px;">${JSON.stringify(replayArray)}</textarea>
-            
-            <div style="flex-grow: 1;">
-                <strong>Lead Profile:</strong>
-                <pre style="font-size: 13px; background: #fff; padding: 10px; border: 1px solid #ddd; border-radius: 4px; height: 250px; overflow-y: auto;">${JSON.stringify(context, null, 2)}</pre>
-            </div>
-        </div>
-    `;
+    const profileViewer = document.getElementById('profile-viewer');
+    
+    // Inject the Sidebar structure if not present
+    if (!profileViewer.querySelector('#replay-command-text')) {
+        profileViewer.innerHTML = `
+            <div style="min-height: 550px; display: flex; flex-direction: column; gap: 15px;">
+                <div style="text-align: right;">
+                    <a href="help.html" target="_blank" style="font-size: 12px; color: #57606f; text-decoration: none; font-weight: bold;">❓ User Guide</a>
+                </div>
 
-    // Attach listener to the new "Run" button in the profile area
-    document.getElementById('run-script-btn').onclick = () => {
-        try {
-            const rawData = document.getElementById('live-replay-script').value;
-            const data = JSON.parse(rawData);
-            replayFlow(data);
-        } catch (e) {
-            alert("Invalid JSON format in the script area.");
-        }
-    };
+                <div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                        <strong>📥 Replay Command (Input)</strong>
+                        <button id="run-script-btn" style="background: #2ed573; color: white; border: none; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-weight: bold;">▶️ Run</button>
+                    </div>
+                    <textarea id="replay-command-text" placeholder='Paste JSON array here...' 
+                        style="width: 100%; height: 60px; font-family: monospace; font-size: 11px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; resize: vertical; box-sizing: border-box;"></textarea>
+                </div>
+
+                <div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                        <strong>📋 Live Session Trace (Output)</strong>
+                        <button id="download-trace-btn" style="background: #57606f; color: white; border: none; padding: 3px 8px; border-radius: 4px; cursor: pointer; font-size: 10px;">💾 Save .json</button>
+                    </div>
+                    <pre id="live-trace-display" style="background: #e9ecef; padding: 10px; border: 1px dashed #adb5bd; border-radius: 4px; word-break: break-all; white-space: pre-wrap; font-size: 11px; color: #495057; margin-top: 5px;"></pre>
+                </div>
+
+                <div style="flex-grow: 1;">
+                    <strong>👤 Lead Profile</strong>
+                    <pre id="profile-display" style="background: #fff; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; height: 180px; overflow-y: auto; margin-top: 5px;"></pre>
+                </div>
+            </div>
+        `;
+
+        document.getElementById('run-script-btn').onclick = () => {
+            try {
+                const raw = document.getElementById('replay-command-text').value.trim();
+                if (!raw) return;
+                replayFlow(JSON.parse(raw));
+            } catch (e) { alert("Invalid JSON format."); }
+        };
+
+        document.getElementById('download-trace-btn').onclick = () => {
+            const trace = historyStack.filter(e => e.type === "USER_ACTION").map(e => e.label);
+            downloadTrace(trace);
+        };
+    }
+
+    document.getElementById('live-trace-display').innerText = JSON.stringify(sessionTrace);
+    document.getElementById('profile-display').innerText = JSON.stringify(context, null, 2);
     
     addMessage(state.message, 'bot');
+    refreshInputArea();
+}
 
+function refreshInputArea() {
+    const state = chatConfig.states[currentState];
     const area = document.getElementById('input-area');
     area.innerHTML = ''; 
 
     if (isReplaying) {
-        area.innerHTML = '<div style="color: #ff4757; font-weight: bold; text-align:center;">⏳ Replaying sequence...</div>';
+        area.innerHTML = '<div style="color: #ff4757; font-weight: bold; text-align:center; padding: 10px;">⏳ Running Replay Path...</div>';
         return;
     }
 
-    refreshInputArea();
+    if (state.inputType === "text") {
+        renderTextInput(state);
+    } else if (state.choices && state.choices.length > 0) {
+        renderChoices(state);
+    } else {
+        renderExit();
+    }
+    renderControlButtons();
 }
 
 function renderControlButtons() {
@@ -155,9 +231,9 @@ function renderControlButtons() {
     controlGroup.style.cssText = "margin-top: 20px; display: flex; gap: 10px; justify-content: center;";
 
     const resetBtn = document.createElement('button');
-    resetBtn.innerText = "🔄 Restart";
+    resetBtn.innerText = "🔄 Restart Flow";
     resetBtn.className = "debug-btn restart-btn";
-    resetBtn.onclick = () => { if(confirm("Restart flow?")) resetEngine(); };
+    resetBtn.onclick = () => { if(confirm("Clear current progress and restart?")) resetEngine(); };
 
     controlGroup.append(resetBtn);
     area.appendChild(controlGroup);
@@ -168,11 +244,16 @@ function renderTextInput(state) {
     const input = document.createElement('input');
     input.type = "text";
     input.className = "chat-input";
-    input.placeholder = state.placeholder || "";
+    input.placeholder = state.placeholder || "Type here...";
 
     const submit = () => {
         const val = input.value.trim();
-        if (new RegExp(state.regEx || ".*").test(val)) handleUserAction(val, state.onValid, state.storeKey);
+        if (new RegExp(state.regEx || ".*").test(val)) {
+            handleUserAction(val, state.onValid, state.storeKey);
+        } else {
+            input.style.borderColor = "#ff4757";
+            setTimeout(() => input.style.borderColor = "#ddd", 1000);
+        }
     };
 
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
@@ -247,6 +328,7 @@ function setupKeyboardShortcuts() {
 
 function addMessage(text, side) {
     const m = document.getElementById('messages');
+    if (!m) return;
     const d = document.createElement('div');
     d.className = `msg ${side}`;
     d.innerText = text;
@@ -257,8 +339,8 @@ function addMessage(text, side) {
 function renderExit() {
     const container = document.getElementById('input-area');
     const exitDiv = document.createElement('div');
-    exitDiv.style.cssText = "text-align:center; padding: 10px; font-weight: bold;";
-    exitDiv.innerText = "Flow Completed.";
+    exitDiv.style.cssText = "text-align:center; padding: 15px; font-weight: bold; background: #f1f2f6; border-radius: 8px;";
+    exitDiv.innerText = "✅ Flow Sequence Completed.";
     container.appendChild(exitDiv);
 }
 
@@ -270,7 +352,7 @@ document.getElementById('config-upload').addEventListener('change', function(e) 
         try {
             chatConfig = JSON.parse(e.target.result);
             resetEngine(); 
-        } catch (err) { alert("Error: " + err.message); }
+        } catch (err) { alert("Error loading JSON: " + err.message); }
     };
     reader.readAsText(file);
 });
