@@ -3,6 +3,7 @@ let currentState = "";
 let lastState = null;
 let context = {};
 let historyStack = [];
+let isReplaying = false; 
 
 async function init() {
     try {
@@ -24,21 +25,50 @@ async function init() {
     }
 }
 
-// Centralized reset function to wipe memory and UI
 function resetEngine() {
     if (!chatConfig) return;
-    
     currentState = chatConfig.initial;
     lastState = null;
     context = {};
     historyStack = [];
     
-    // Clear UI elements
     document.getElementById('messages').innerHTML = '';
     document.getElementById('error-display').innerText = '';
     
     logEvent("RESET_FLOW", { state: currentState });
     render();
+}
+
+/**
+ * Replay Feature: Accepts an array of strings.
+ * For choices, it matches based on the start of the label (e.g., "1" matches "1-Rent").
+ */
+async function replayFlow(inputs) {
+    if (isReplaying || !inputs || !Array.isArray(inputs)) return;
+    isReplaying = true;
+    resetEngine();
+
+    for (const input of inputs) {
+        // Delay to allow the user to follow the visual changes
+        await new Promise(resolve => setTimeout(resolve, 800));
+        
+        const state = chatConfig.states[currentState];
+        if (!state) break;
+
+        if (state.inputType === "text") {
+            handleUserAction(input, state.onValid, state.storeKey);
+        } else if (state.choices) {
+            // Flexible matching: check full label OR if label starts with input (e.g. "1")
+            const choice = state.choices.find(c => 
+                c.label === input || c.label.startsWith(input)
+            );
+            if (choice) {
+                handleUserAction(choice.label, choice.next, state.storeKey);
+            }
+        }
+    }
+    isReplaying = false;
+    render(); 
 }
 
 function logEvent(type, details) {
@@ -54,23 +84,25 @@ function logEvent(type, details) {
 function dumpStackToConsole() {
     console.group("🚀 Flow Execution Trace");
     console.table(historyStack);
+    
+    // Generate a copy-pasteable replay array for the user
+    const replayArray = historyStack
+        .filter(e => e.type === "USER_ACTION")
+        .map(e => e.label);
+    
+    console.log("📋 Replay Script (JSON Array):");
+    console.log(JSON.stringify(replayArray));
     console.groupEnd();
 }
 
 async function render() {
     const state = chatConfig.states[currentState];
     
-    // Logic Gate Handler
     if (state.type === "logic") {
         const val = context[state.condition];
         const nextState = state.map[val] || Object.values(state.map)[0];
         
-        logEvent("LOGIC_GATE_TRANSITION", { 
-            gate: currentState, 
-            condition: state.condition, 
-            value: val, 
-            target: nextState 
-        });
+        logEvent("LOGIC_GATE_TRANSITION", { gate: currentState, value: val, target: nextState });
 
         lastState = currentState;
         currentState = nextState;
@@ -78,18 +110,18 @@ async function render() {
     }
 
     updateDiagram();
-    
-    // Update Profile Viewer
     document.getElementById('profile-viewer').innerText = "Lead Profile: " + JSON.stringify(context, null, 2);
     
     addMessage(state.message, 'bot');
 
     const area = document.getElementById('input-area');
-    const err = document.getElementById('error-display');
-    area.innerHTML = '';
-    err.innerText = ''; 
+    area.innerHTML = ''; 
 
-    // Render Inputs based on state type
+    if (isReplaying) {
+        area.innerHTML = '<div style="color: #ff4757; font-weight: bold; text-align:center;">⏳ Replaying sequence...</div>';
+        return;
+    }
+
     if (state.inputType === "text") {
         renderTextInput(state);
     } else if (state.choices && state.choices.length > 0) {
@@ -98,53 +130,67 @@ async function render() {
         renderExit();
     }
     
-    // Add Debug and Reset buttons at every stage
     renderControlButtons();
 }
 
 function renderControlButtons() {
     const area = document.getElementById('input-area');
     const controlGroup = document.createElement('div');
-    controlGroup.style.marginTop = "20px";
-    controlGroup.style.display = "flex";
-    controlGroup.style.gap = "10px";
-    controlGroup.style.justifyContent = "center";
+    controlGroup.style.cssText = "margin-top: 20px; display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;";
 
-    // Trace Button
     const traceBtn = document.createElement('button');
     traceBtn.innerText = "🔍 Trace";
     traceBtn.className = "debug-btn";
     traceBtn.onclick = dumpStackToConsole;
 
-    // Global Reset Button
     const resetBtn = document.createElement('button');
     resetBtn.innerText = "🔄 Restart";
-    resetBtn.className = "debug-btn"; // You can style this differently in CSS
-    resetBtn.style.background = "#6c757d";
-    resetBtn.onclick = () => {
-        if(confirm("Are you sure you want to restart the flow?")) resetEngine();
-    };
+    resetBtn.className = "debug-btn restart-btn";
+    resetBtn.onclick = () => { if(confirm("Restart flow?")) resetEngine(); };
 
-    controlGroup.append(traceBtn, resetBtn);
+    const importReplayBtn = document.createElement('button');
+    importReplayBtn.innerText = "📥 Import Replay";
+    importReplayBtn.className = "debug-btn";
+    importReplayBtn.onclick = renderReplayImport;
+
+    controlGroup.append(traceBtn, resetBtn, importReplayBtn);
     area.appendChild(controlGroup);
+}
+
+function renderReplayImport() {
+    const area = document.getElementById('input-area');
+    area.innerHTML = `
+        <div style="width: 100%; text-align: center; background: #f8f9fa; padding: 15px; border-radius: 8px;">
+            <p style="font-size: 12px; color: #666; margin-bottom: 8px;">Paste Replay Array (JSON):</p>
+            <textarea id="replay-data" placeholder='["email@test.com", "1", "2"]' style="width: 90%; height: 60px; font-family: monospace; padding: 5px;"></textarea><br>
+            <button id="run-import-btn" class="debug-btn" style="background: #2ed573; color: white; margin-top: 10px;">▶️ Run</button>
+            <button id="cancel-import-btn" class="debug-btn" style="margin-top: 10px;">Cancel</button>
+        </div>
+    `;
+
+    document.getElementById('run-import-btn').onclick = () => {
+        try {
+            const data = JSON.parse(document.getElementById('replay-data').value);
+            replayFlow(data);
+        } catch (e) {
+            alert("Invalid format. Please provide a JSON array of strings.");
+        }
+    };
+    document.getElementById('cancel-import-btn').onclick = render;
 }
 
 function renderTextInput(state) {
     const container = document.getElementById('input-area');
     const input = document.createElement('input');
     input.type = "text";
-    input.placeholder = state.placeholder || "";
     input.className = "chat-input";
+    input.placeholder = state.placeholder || "";
 
     input.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
             const val = input.value.trim();
-            const regex = new RegExp(state.regEx || ".*");
-            if (regex.test(val)) {
+            if (new RegExp(state.regEx || ".*").test(val)) {
                 handleUserAction(val, state.onValid, state.storeKey);
-            } else {
-                document.getElementById('error-display').innerText = state.errorMessage || "Invalid Input";
-                input.style.borderColor = "red";
             }
         }
     });
@@ -153,12 +199,7 @@ function renderTextInput(state) {
     btn.innerText = "Submit";
     btn.onclick = () => {
         const val = input.value.trim();
-        const regex = new RegExp(state.regEx || ".*");
-        if (regex.test(val)) {
-            handleUserAction(val, state.onValid, state.storeKey);
-        } else {
-            document.getElementById('error-display').innerText = state.errorMessage || "Invalid";
-        }
+        if (new RegExp(state.regEx || ".*").test(val)) handleUserAction(val, state.onValid, state.storeKey);
     };
     container.append(input, btn);
     input.focus();
@@ -179,12 +220,8 @@ function renderChoices(state) {
 }
 
 function handleUserAction(label, nextState, storeKey) {
-    if (storeKey && storeKey !== "undefined") {
-        context[storeKey] = label;
-    }
-    
+    if (storeKey && storeKey !== "undefined") context[storeKey] = label;
     logEvent("USER_ACTION", { from: currentState, to: nextState, label: label });
-
     addMessage(label, 'user');
     lastState = currentState;
     currentState = nextState;
@@ -198,47 +235,34 @@ async function updateDiagram() {
     stateKeys.forEach(id => {
         const s = chatConfig.states[id];
         const safeId = id.replace(/[^a-zA-Z0-9]/g, '_');
-        
         if (s.choices) {
-            s.choices.forEach((c) => {
-                const safeNext = c.next.replace(/[^a-zA-Z0-9]/g, '_');
-                graph += `  ${safeId} -->|"${c.label}"| ${safeNext}\n`;
-            });
-        } 
-        else if (s.onValid) {
-            const safeNext = s.onValid.replace(/[^a-zA-Z0-9]/g, '_');
-            graph += `  ${safeId} -->|"Valid"| ${safeNext}\n`;
-        } 
-        else if (s.type === "logic") {
+            s.choices.forEach(c => graph += `  ${safeId} -->|"${c.label}"| ${c.next.replace(/[^a-zA-Z0-9]/g, '_')}\n`);
+        } else if (s.onValid) {
+            graph += `  ${safeId} -->|"Valid"| ${s.onValid.replace(/[^a-zA-Z0-9]/g, '_')}\n`;
+        } else if (s.type === "logic") {
             graph += `  ${safeId}{"${s.condition}"}\n`;
             Object.entries(s.map).sort().forEach(([val, target]) => {
-                const safeTarget = target.replace(/[^a-zA-Z0-9]/g, '_');
-                graph += `  ${safeId} -->|"${val}"| ${safeTarget}\n`;
+                graph += `  ${safeId} -->|"${val}"| ${target.replace(/[^a-zA-Z0-9]/g, '_')}\n`;
             });
         }
     });
 
-    const safeCurrent = currentState.replace(/[^a-zA-Z0-9]/g, '_');
-    graph += `\n  class ${safeCurrent} activeNode;`;
+    graph += `\n  class ${currentState.replace(/[^a-zA-Z0-9]/g, '_')} activeNode;`;
     graph += `\n  classDef activeNode fill:#ff4757,stroke:#ff6b81,stroke-width:4px,color:#fff;`;
 
     try {
         const { svg } = await mermaid.render('mermaid-svg-' + Date.now(), graph);
         document.getElementById('mermaid-container').innerHTML = svg;
-    } catch (e) { console.error("Mermaid Render Error", e); }
+    } catch (e) { console.error(e); }
 }
 
 function setupKeyboardShortcuts() {
     window.addEventListener('keydown', (e) => {
+        if (isReplaying) return;
         const state = chatConfig.states[currentState];
         if (state && state.inputType === "choice" && e.target.tagName !== 'INPUT') {
-            const matchedChoice = state.choices.find(c => 
-                c.label.startsWith(e.key) || c.label.startsWith(e.key + "-")
-            );
-            if (matchedChoice) {
-                e.preventDefault(); 
-                handleUserAction(matchedChoice.label, matchedChoice.next, state.storeKey);
-            }
+            const matched = state.choices.find(c => c.label.startsWith(e.key));
+            if (matched) { e.preventDefault(); handleUserAction(matched.label, matched.next, state.storeKey); }
         }
     });
 }
@@ -254,22 +278,9 @@ function addMessage(text, side) {
 
 function renderExit() {
     const container = document.getElementById('input-area');
-    const exitText = document.createElement('div');
-    exitText.innerText = "Flow Completed.";
-    exitText.style.marginBottom = "10px";
-    container.appendChild(exitText);
-
-    // Keyboard listener specifically for the "R" or Enter key at the end
-    const exitHandler = (e) => {
-        if (e.key.toLowerCase() === 'r' || e.key === 'Enter') {
-            window.removeEventListener('keydown', exitHandler);
-            resetEngine();
-        }
-    };
-    window.addEventListener('keydown', exitHandler);
+    container.innerHTML = '<div style="text-align:center; padding: 10px; font-weight: bold;">Flow Completed.</div>';
 }
 
-// File Upload Handler
 document.getElementById('config-upload').addEventListener('change', function(e) {
     const file = e.target.files[0];
     if (!file) return;
@@ -278,7 +289,7 @@ document.getElementById('config-upload').addEventListener('change', function(e) 
         try {
             chatConfig = JSON.parse(e.target.result);
             resetEngine(); 
-        } catch (err) { alert("Error parsing JSON: " + err.message); }
+        } catch (err) { alert("Error: " + err.message); }
     };
     reader.readAsText(file);
 });
