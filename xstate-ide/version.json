@@ -1,9 +1,19 @@
 {
   "major": 0,
   "minor": 3,
-  "patch": 7,
+  "patch": 9,
   "label": "",
   "history": [
+    {
+      "version": "0.3.9",
+      "date": "2026-03-22",
+      "note": "Fix: Load Flow now accepts ZIP, bare .json, bare .js, or .json+.js picked together in one dialog (multiple attribute)"
+    },
+    {
+      "version": "0.3.8",
+      "date": "2026-03-22",
+      "note": "Feature: Save Flow / Load Flow handle machine+services as a paired ZIP; bare .json load still supported for machine-only swaps"
+    },
     {
       "version": "0.3.7",
       "date": "2026-03-22",

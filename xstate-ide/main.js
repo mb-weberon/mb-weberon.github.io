@@ -1,6 +1,7 @@
 import { ChatEngine } from './ChatEngine.js';
 import { realtorServices } from './realtor-services.js';
 import { loadVersion } from './version.js';
+import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
 
 const BASE = new URL('.', import.meta.url).href;
 const fetchLocal = (file) => fetch(BASE + file);
@@ -32,6 +33,12 @@ async function boot() {
         console.error('❌ Failed to load machine config:', e.message);
         return;
     }
+
+    // Cache services source so Save Flow ZIP can bundle it
+    try {
+        const res = await fetchLocal('realtor-services.js');
+        if (res.ok) window._loadedServicesSource = await res.text();
+    } catch (_) { /* non-fatal */ }
 
     // ── UI Hooks ──────────────────────────────────────────────────────────────
     const uiHooks = {
@@ -177,28 +184,96 @@ async function boot() {
     console.log('✅ ChatEngine started');
 
     // ── Global helpers ────────────────────────────────────────────────────────
-    window.downloadConfig = () => {
-        const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
+    // ── Save: ZIP both files together ─────────────────────────────────────────
+    window.downloadPair = () => {
+        const machineStr  = strToU8(JSON.stringify(config, null, 2));
+        const servicesStr = strToU8(window._loadedServicesSource || '// realtor-services.js not available');
+        const zipped = zipSync({
+            'realtor-machine.json':  machineStr,
+            'realtor-services.js':   servicesStr,
+        });
+        const blob = new Blob([zipped], { type: 'application/zip' });
         const a    = document.createElement('a');
         a.href     = URL.createObjectURL(blob);
-        a.download = 'machine.json';
+        a.download = `${config.id || 'flow'}.zip`;
         a.click();
+        console.log('💾 Saved flow ZIP:', a.download);
     };
 
-    window.loadNewConfig = (file) => {
-        const reader  = new FileReader();
-        reader.onload = (e) => {
+    // ── Load: ZIP, bare .json, bare .js, or .json + .js picked together ───────
+    window.loadPair = async (fileList) => {
+        if (!fileList?.length) return;
+        const files = Array.from(fileList);
+
+        const zipFile  = files.find(f => f.name.endsWith('.zip'));
+        const jsonFile = files.find(f => f.name.endsWith('.json'));
+        const jsFile   = files.find(f => f.name.endsWith('.js'));
+
+        const readText = (f) => new Promise((res, rej) => {
+            const r = new FileReader();
+            r.onload  = e => res(e.target.result);
+            r.onerror = rej;
+            r.readAsText(f);
+        });
+
+        if (zipFile) {
+            // ── ZIP path ──────────────────────────────────────────────────────
+            const buf      = await zipFile.arrayBuffer();
+            const unzipped = unzipSync(new Uint8Array(buf));
+
+            const machineEntry  = Object.keys(unzipped).find(k => k.endsWith('.json'));
+            const servicesEntry = Object.keys(unzipped).find(k => k.endsWith('.js'));
+
+            if (!machineEntry) { console.error('❌ ZIP contains no .json file'); return; }
             try {
-                const newConfig = JSON.parse(e.target.result);
+                const newConfig = JSON.parse(strFromU8(unzipped[machineEntry]));
                 Object.assign(config, newConfig);
-                console.log('📂 New config loaded:', newConfig.id);
-                window.currentEngine.restart();
-            } catch (err) {
-                console.error('❌ Failed to parse loaded JSON:', err.message);
+                console.log('📂 [ZIP] Machine loaded:', machineEntry, '→', newConfig.id);
+            } catch (e) { console.error('❌ Failed to parse machine JSON from ZIP:', e.message); return; }
+
+            if (servicesEntry) {
+                await reloadServices(strFromU8(unzipped[servicesEntry]), servicesEntry);
             }
-        };
-        reader.readAsText(file);
+
+        } else {
+            // ── Loose files path (one or two files) ───────────────────────────
+            if (jsonFile) {
+                try {
+                    const newConfig = JSON.parse(await readText(jsonFile));
+                    Object.assign(config, newConfig);
+                    console.log('📂 [JSON] Machine loaded:', jsonFile.name, '→', newConfig.id);
+                } catch (e) { console.error('❌ Failed to parse machine JSON:', e.message); return; }
+            }
+
+            if (jsFile) {
+                await reloadServices(await readText(jsFile), jsFile.name);
+            }
+
+            if (!jsonFile && !jsFile) {
+                console.error('❌ Unsupported file type — drop a .zip, .json, .js, or both');
+                return;
+            }
+        }
+
+        window.currentEngine.restart();
     };
+
+    // Shared helper: dynamically re-import a services JS string
+    async function reloadServices(src, label) {
+        window._loadedServicesSource = src;
+        try {
+            const blob    = new Blob([src], { type: 'text/javascript' });
+            const blobUrl = URL.createObjectURL(blob);
+            const mod     = await import(/* @vite-ignore */ blobUrl);
+            URL.revokeObjectURL(blobUrl);
+            const newServices = mod.realtorServices ?? mod.default ?? mod;
+            Object.assign(window.currentEngine.services, newServices);
+            console.log('📂 Services loaded:', label);
+        } catch (e) {
+            console.warn(`⚠️  Could not re-import services (${label}):`, e.message);
+            console.warn('   Existing services will be used.');
+        }
+    }
 
     window.copyTrace = () => {
         const ctx  = window.currentEngine.actor.getSnapshot().context;

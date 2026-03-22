@@ -7,7 +7,8 @@
     <script type="importmap">
         { "imports": {
             "xstate": "https://unpkg.com/xstate@5/dist/xstate.esm.js",
-            "mermaid": "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs"
+            "mermaid": "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs",
+            "fflate": "https://cdn.jsdelivr.net/npm/fflate@0.8.2/esm/browser.js"
         }}
     </script>
     <style>
@@ -50,9 +51,9 @@
     <div id="right-pane">
         <div id="toolbar">
             <div class="toolbar-left">
-                <button onclick="window.downloadConfig()">💾 Save JSON</button>
-                <button onclick="document.getElementById('upload').click()">📂 Load JSON</button>
-                <input type="file" id="upload" style="display:none" onchange="window.loadNewConfig(this.files[0])">
+                <button onclick="window.downloadPair()">💾 Save Flow</button>
+                <button onclick="document.getElementById('upload').click()">📂 Load Flow</button>
+                <input type="file" id="upload" style="display:none" accept=".zip,.json,.js" multiple onchange="window.loadPair(this.files); this.value='';">
             </div>
             <div id="version-badge"><span id="version-label">—</span></div>
         </div>

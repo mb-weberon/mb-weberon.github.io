@@ -188,7 +188,7 @@
     },
     "closing_soon": {
       "meta": {
-        "text": "Great news — let's get you booked in! We'll reach out to {{user_email}} at {{phone}} to schedule your appointment. Talk soon! 🏡\n\nWould you like a transcript of this conversation emailed to {{user_email}}?"
+        "text": "Great news — let's get you booked in! We'll reach out via email to {{user_email}} at {{phone}} to schedule your appointment about . Talk {{timing}}! 🏡\n\nWould you like a transcript of this conversation emailed to {{user_email}}?"
       },
       "on": {
         "YES": {
@@ -207,7 +207,7 @@
     },
     "closing_later": {
       "meta": {
-        "text": "No rush! We'll check in with you at {{user_email}} when the timing is right. Thanks for chatting! 👋\n\nWould you like a transcript of this conversation emailed to {{user_email}}?"
+        "text": "No rush! We'll check in with you {{timing}} at {{user_email}} when the timing is right. Thanks for chatting! 👋\n\nWould you like a transcript of this conversation emailed to {{user_email}}?"
       },
       "on": {
         "YES": {
@@ -254,7 +254,7 @@
     "finish_screen": {
       "type": "final",
       "meta": {
-        "text": "All done — thanks for chatting! We'll be in touch soon. 😊"
+        "text": "All done — thanks for chatting! We'll be in touch {{timing}}. 😊"
       }
     }
   }
