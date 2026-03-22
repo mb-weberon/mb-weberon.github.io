@@ -1,0 +1,10 @@
+{
+  "major": 0,
+  "minor": 2,
+  "patch": 0,
+  "label": "",
+  "history": [
+    { "version": "0.2.0", "date": "2026-03-22", "note": "Input validation + state-change logging" },
+    { "version": "0.1.0", "date": "2026-03-22", "note": "Initial release" }
+  ]
+}

@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chatbot Logic IDE</title>
+    <script type="importmap">
+        { "imports": { 
+            "xstate": "https://unpkg.com/xstate@5/dist/xstate.esm.js",
+            "mermaid": "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs"
+        }}
+    </script>
+    <style>
+        :root { --bg: #f4f7f6; --panel: #ffffff; --accent: #0084ff; --dark: #1c1e21; }
+        body { display: flex; height: 100vh; margin: 0; font-family: 'Segoe UI', sans-serif; background: var(--bg); overflow: hidden; }
+
+        /* ── Left: Diagram ─────────────────────────────────────────────────── */
+        #diagram-pane { flex: 1; display: flex; flex-direction: column; background: var(--panel); border-right: 1px solid #ddd; padding: 20px; }
+        #mermaid-container {
+            flex: 1; width: 100%; height: 100%; min-height: 400px;
+            display: flex; align-items: center; justify-content: center;
+        }
+
+        /* ── Right: Chat panel ─────────────────────────────────────────────── */
+        #right-pane { width: 450px; display: flex; flex-direction: column; background: var(--panel); box-shadow: -2px 0 10px rgba(0,0,0,0.05); }
+
+        /* ── Toolbar ───────────────────────────────────────────────────────── */
+        #toolbar {
+            padding: 10px 12px; background: var(--dark);
+            display: flex; align-items: center; justify-content: space-between; gap: 8px;
+        }
+        #toolbar .toolbar-left { display: flex; gap: 8px; }
+
+        /* Version badge — read only, always visible */
+        #version-badge {
+            font-family: 'Courier New', monospace; font-size: 11px;
+            color: #61dafb; background: #2a2d35;
+            border: 1px solid #444; border-radius: 4px;
+            padding: 3px 8px; white-space: nowrap;
+        }
+
+        /* ── Context viewer ────────────────────────────────────────────────── */
+        #profile-viewer { height: 200px; padding: 15px; background: #282c34; color: #61dafb; font-family: 'Courier New', monospace; font-size: 12px; overflow-y: auto; border-bottom: 2px solid #444; }
+
+        /* ── Replay bar ────────────────────────────────────────────────────── */
+        #replay-bar { padding: 10px; background: #eee; display: flex; gap: 5px; border-bottom: 1px solid #ddd; }
+
+        /* ── Messages ──────────────────────────────────────────────────────── */
+        #messages { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; background: #fafafa; }
+
+        /* ── Input controls ────────────────────────────────────────────────── */
+        #controls-container { padding: 20px; border-top: 1px solid #eee; background: white; }
+        #input-area { display: flex; gap: 10px; flex-wrap: wrap; }
+
+        /* ── Chat bubbles ──────────────────────────────────────────────────── */
+        .msg { max-width: 80%; padding: 10px 15px; border-radius: 18px; font-size: 14px; line-height: 1.5; }
+        .bot  { background: #e4e6eb; align-self: flex-start; color: #050505; border-bottom-left-radius: 4px; }
+        .user { background: var(--accent); align-self: flex-end; color: white; border-bottom-right-radius: 4px; }
+
+        /* ── General buttons ───────────────────────────────────────────────── */
+        button { padding: 8px 16px; background: var(--accent); color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 13px; transition: opacity 0.2s; }
+        button:hover { opacity: 0.8; }
+        .restart-btn { background: #ff4757; }
+        input[type="text"] { flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 8px; outline: none; }
+        input[type="text"]:focus { border-color: var(--accent); }
+    </style>
+</head>
+<body>
+
+    <!-- ── Diagram pane ──────────────────────────────────────────────────── -->
+    <div id="diagram-pane">
+        <h2 style="margin: 0 0 10px 0; font-size: 18px; color: #555;">Live State Machine</h2>
+        <div id="mermaid-container"></div>
+    </div>
+
+    <!-- ── Right pane ───────────────────────────────────────────────────── -->
+    <div id="right-pane">
+
+        <div id="toolbar">
+            <div class="toolbar-left">
+                <button onclick="window.downloadConfig()">💾 Save JSON</button>
+                <button onclick="document.getElementById('upload').click()">📂 Load JSON</button>
+                <input type="file" id="upload" style="display:none" onchange="window.loadNewConfig(this.files[0])">
+            </div>
+            <!-- Read-only version badge, populated by main.js on boot -->
+            <div id="version-badge" title="App version">
+                <span id="version-label">—</span>
+            </div>
+        </div>
+
+        <div id="profile-viewer">
+            <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+                <strong>CONTEXT (REAL-TIME)</strong>
+                <button id="copy-btn" onclick="window.copyTrace()" style="font-size:10px; padding:2px 6px;">📋 Copy Trace</button>
+            </div>
+            <pre id="profile-view">{}</pre>
+            <div id="state-id" style="font-size:10px; color:#888; margin-top:5px;">State: loading...</div>
+        </div>
+
+        <div id="replay-bar">
+            <button onclick="window.currentEngine.restart()" class="restart-btn">🔄 Restart</button>
+            <input type="text" id="replay-input" placeholder="Paste Replay String...">
+            <button onclick="window.currentEngine.replay(document.getElementById('replay-input').value)">▶ Replay</button>
+        </div>
+
+        <div id="messages"></div>
+
+        <div id="controls-container">
+            <div id="input-area"></div>
+        </div>
+    </div>
+
+    <!-- ── Diagram renderer ──────────────────────────────────────────────── -->
+    <script type="module">
+        import mermaid from 'mermaid';
+        mermaid.initialize({ startOnLoad: false, theme: 'neutral' });
+        console.log('✅ Mermaid initialised');
+
+        window.renderDiagram = async (config, current) => {
+            console.log('🗺️  Building graph, active node:', current);
+            let graph = `graph TD\n`;
+
+            Object.keys(config.states).forEach(id => {
+                const style = id === current ? `:::activeNode` : '';
+                graph += `  ${id}["${id}"]${style}\n`;
+
+                // Regular event transitions
+                if (config.states[id].on) {
+                    Object.entries(config.states[id].on).forEach(([ev, target]) => {
+                        const tId = typeof target === 'string' ? target : target.target;
+                        if (tId) graph += `  ${id} -- "${ev}" --> ${tId}\n`;
+                    });
+                }
+                // Always transitions
+                if (config.states[id].always) {
+                    const targets = Array.isArray(config.states[id].always)
+                        ? config.states[id].always : [config.states[id].always];
+                    targets.forEach(t => graph += `  ${id} ==> ${t.target || t}\n`);
+                }
+                // Invoke (async) transitions
+                if (config.states[id].invoke) {
+                    const inv = config.states[id].invoke;
+                    if (inv.onDone?.target)  graph += `  ${id} -. "done" .-> ${inv.onDone.target}\n`;
+                    if (inv.onError?.target) graph += `  ${id} -. "error" .-> ${inv.onError.target}\n`;
+                }
+            });
+
+            graph += `\nclassDef activeNode fill:#0084ff,stroke:#0051ff,stroke-width:4px,color:#fff;`;
+            console.log('🗺️  Mermaid source:\n' + graph);
+
+            try {
+                const { svg } = await mermaid.render('mermaid-svg-' + Date.now(), graph);
+                document.getElementById('mermaid-container').innerHTML = svg;
+                console.log('✅ Diagram rendered');
+            } catch (e) {
+                console.error('❌ mermaid.render() threw:', e.message);
+                document.getElementById('mermaid-container').innerHTML =
+                    `<pre style="color:red;font-size:11px;">Diagram error:\n${e.message}</pre>`;
+            }
+        };
+    </script>
+
+    <script type="module" src="./main.js"></script>
+
+</body>
+</html>

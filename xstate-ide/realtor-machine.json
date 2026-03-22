@@ -1,0 +1,47 @@
+{
+  "id": "realtor_bot",
+  "initial": "ask_email",
+  "context": { "user_email": "", "status": "", "rate": "pending", "trace": [] },
+  "states": {
+    "ask_email": {
+      "meta": {
+        "text": "Hi! What is your email address?",
+        "input": "text",
+        "pattern": "email",
+        "placeholder": "e.g. name@example.com"
+      },
+      "on": {
+        "SUBMIT": {
+          "target": "ask_status",
+          "actions": [{ "type": "updateContext", "params": { "mapValueTo": "user_email" } }, "record"]
+        }
+      }
+    },
+    "ask_status": {
+      "meta": { "text": "Are you a Renter or an Owner?" },
+      "on": {
+        "RENT": { "target": "fetch_rate", "actions": [{ "type": "updateContext", "params": { "status": "rent" } }, "record"] },
+        "OWN":  { "target": "fetch_rate", "actions": [{ "type": "updateContext", "params": { "status": "own"  } }, "record"] }
+      }
+    },
+    "fetch_rate": {
+      "meta": { "text": "One moment, fetching today's mortgage rates..." },
+      "invoke": {
+        "id": "getMarketRate",
+        "src": "getMarketRate",
+        "onDone": {
+          "target": "final_summary",
+          "actions": [{ "type": "updateContext", "params": { "mapValueTo": "rate", "fromEvent": "output" } }]
+        },
+        "onError": {
+          "target": "final_summary",
+          "actions": [{ "type": "updateContext", "params": { "rate": "unavailable" } }]
+        }
+      }
+    },
+    "final_summary": {
+      "type": "final",
+      "meta": { "text": "Today's rate is {{rate}}. We've sent a guide to {{user_email}}!" }
+    }
+  }
+}
