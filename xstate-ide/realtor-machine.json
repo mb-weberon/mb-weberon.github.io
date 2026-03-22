@@ -11,7 +11,6 @@
     "trace": []
   },
   "states": {
-
     "ask_email": {
       "meta": {
         "text": "Welcome! Please enter your email address.",
@@ -26,7 +25,10 @@
             "actions": [
               {
                 "type": "updateContext",
-                "params": { "inputError": null, "mapValueTo": "user_email" }
+                "params": {
+                  "inputError": null,
+                  "mapValueTo": "user_email"
+                }
               },
               "record"
             ]
@@ -35,74 +37,108 @@
             "actions": [
               {
                 "type": "updateContext",
-                "params": { "inputError": "Please provide a valid email address (e.g. name@example.com)." }
+                "params": {
+                  "inputError": "Please provide a valid email address (e.g. name@example.com)."
+                }
               }
             ]
           }
         ]
       }
     },
-
     "ask_status": {
-      "meta": { "text": "Do you rent or own your current home?" },
+      "meta": {
+        "text": "Do you rent or own your current home?"
+      },
       "on": {
         "RENT": {
           "target": "ask_timing",
           "actions": [
-            { "type": "updateContext", "params": { "status": "rent" } },
+            {
+              "type": "updateContext",
+              "params": {
+                "status": "rent"
+              }
+            },
             "record"
           ]
         },
         "OWN": {
           "target": "ask_order",
           "actions": [
-            { "type": "updateContext", "params": { "status": "own" } },
+            {
+              "type": "updateContext",
+              "params": {
+                "status": "own"
+              }
+            },
             "record"
           ]
         }
       }
     },
-
     "ask_order": {
-      "meta": { "text": "Would you like to buy first or sell first?" },
+      "meta": {
+        "text": "Would you like to buy first or sell first?"
+      },
       "on": {
         "BUY_FIRST": {
           "target": "ask_timing",
           "actions": [
-            { "type": "updateContext", "params": { "order": "buy_first" } },
+            {
+              "type": "updateContext",
+              "params": {
+                "order": "buy_first"
+              }
+            },
             "record"
           ]
         },
         "SELL_FIRST": {
           "target": "ask_timing",
           "actions": [
-            { "type": "updateContext", "params": { "order": "sell_first" } },
+            {
+              "type": "updateContext",
+              "params": {
+                "order": "sell_first"
+              }
+            },
             "record"
           ]
         }
       }
     },
-
     "ask_timing": {
-      "meta": { "text": "When are you planning to move?" },
+      "meta": {
+        "text": "When are you planning to move?"
+      },
       "on": {
         "SOON": {
           "target": "ask_phone",
           "actions": [
-            { "type": "updateContext", "params": { "timing": "soon" } },
+            {
+              "type": "updateContext",
+              "params": {
+                "timing": "soon"
+              }
+            },
             "record"
           ]
         },
         "LATER": {
           "target": "ask_phone",
           "actions": [
-            { "type": "updateContext", "params": { "timing": "later" } },
+            {
+              "type": "updateContext",
+              "params": {
+                "timing": "later"
+              }
+            },
             "record"
           ]
         }
       }
     },
-
     "ask_phone": {
       "meta": {
         "text": "What is your phone number?",
@@ -117,7 +153,10 @@
             "actions": [
               {
                 "type": "updateContext",
-                "params": { "inputError": null, "mapValueTo": "phone" }
+                "params": {
+                  "inputError": null,
+                  "mapValueTo": "phone"
+                }
               },
               "record"
             ]
@@ -126,34 +165,97 @@
             "actions": [
               {
                 "type": "updateContext",
-                "params": { "inputError": "Please enter a valid phone number (7–20 digits)." }
+                "params": {
+                  "inputError": "Please enter a valid phone number (7–20 digits)."
+                }
               }
             ]
           }
         ]
       }
     },
-
     "route_by_timing": {
       "always": [
-        { "guard": "isSoon",  "target": "closing_soon" },
-        { "guard": "isLater", "target": "closing_later" }
+        {
+          "guard": "isSoon",
+          "target": "closing_soon"
+        },
+        {
+          "guard": "isLater",
+          "target": "closing_later"
+        }
       ]
     },
-
     "closing_soon": {
-      "type": "final",
       "meta": {
-        "text": "Great news — let's get you booked in! We'll reach out to {{user_email}} at {{phone}} to schedule your appointment. Talk soon! 🏡"
+        "text": "Great news — let's get you booked in! We'll reach out to {{user_email}} at {{phone}} to schedule your appointment. Talk soon! 🏡\n\nWould you like a transcript of this conversation emailed to {{user_email}}?"
+      },
+      "on": {
+        "YES": {
+          "target": "send_transcript",
+          "actions": [
+            "record"
+          ]
+        },
+        "NO": {
+          "target": "upload_context",
+          "actions": [
+            "record"
+          ]
+        }
       }
     },
-
     "closing_later": {
+      "meta": {
+        "text": "No rush! We'll check in with you at {{user_email}} when the timing is right. Thanks for chatting! 👋\n\nWould you like a transcript of this conversation emailed to {{user_email}}?"
+      },
+      "on": {
+        "YES": {
+          "target": "send_transcript",
+          "actions": [
+            "record"
+          ]
+        },
+        "NO": {
+          "target": "upload_context",
+          "actions": [
+            "record"
+          ]
+        }
+      }
+    },
+    "send_transcript": {
+      "meta": {
+        "text": "Got it! A transcript will be emailed to {{user_email}} shortly."
+      },
+      "invoke": {
+        "id": "emailTranscript",
+        "src": "emailTranscript",
+        "onDone": {
+          "target": "upload_context"
+        },
+        "onError": {
+          "target": "upload_context"
+        }
+      }
+    },
+    "upload_context": {
+      "invoke": {
+        "id": "uploadContext",
+        "src": "uploadContext",
+        "onDone": {
+          "target": "finish_screen"
+        },
+        "onError": {
+          "target": "finish_screen"
+        }
+      }
+    },
+    "finish_screen": {
       "type": "final",
       "meta": {
-        "text": "No rush! We'll check in with you at {{user_email}} when the timing is right. Thanks for chatting! 👋"
+        "text": "All done — thanks for chatting! We'll be in touch soon. 😊"
       }
     }
-
   }
 }
