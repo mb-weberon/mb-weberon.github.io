@@ -1,9 +1,14 @@
 {
   "major": 0,
   "minor": 3,
-  "patch": 6,
+  "patch": 7,
   "label": "",
   "history": [
+    {
+      "version": "0.3.7",
+      "date": "2026-03-22",
+      "note": "Fix: right pane width 450px→380px, profile viewer padding tightened — layout fits at 100% zoom without browser scaling; Send button added alongside text input fields"
+    },
     {
       "version": "0.3.6",
       "date": "2026-03-22",
@@ -27,7 +32,7 @@
     {
       "version": "0.3.2",
       "date": "2026-03-22",
-      "note": "Fix: user bubble ordering \u2014 appears before bot response in all paths"
+      "note": "Fix: user bubble ordering — appears before bot response in all paths"
     },
     {
       "version": "0.3.1",

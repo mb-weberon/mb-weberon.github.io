@@ -115,38 +115,46 @@ async function boot() {
                 const input       = document.createElement('input');
                 input.type        = 'text';
                 input.placeholder = stateConfig.meta.placeholder || 'Type and press Enter...';
-                input.onkeydown   = (e) => {
-                    if (e.key === 'Enter') {
-                        const val      = input.value.trim();
-                        const beforeId = (() => {
-                            const s = window.currentEngine.actor.getSnapshot();
-                            return typeof s.value === 'string' ? s.value : Object.keys(s.value)[0];
-                        })();
 
-                        // Add user bubble BEFORE submit() so it always appears
-                        // above the bot response. onUpdate fires synchronously
-                        // inside submit(), so without this the order is reversed.
-                        uiHooks.addBubble(val, 'user');
-                        window.currentEngine.submit(val);
+                const sendBtn       = document.createElement('button');
+                sendBtn.innerText   = 'Send';
+                sendBtn.style.cssText = 'flex-shrink:0;';
 
-                        const afterSnap = window.currentEngine.actor.getSnapshot();
-                        const afterId   = typeof afterSnap.value === 'string'
-                            ? afterSnap.value : Object.keys(afterSnap.value)[0];
+                const go = () => {
+                    const val      = input.value.trim();
+                    const beforeId = (() => {
+                        const s = window.currentEngine.actor.getSnapshot();
+                        return typeof s.value === 'string' ? s.value : Object.keys(s.value)[0];
+                    })();
 
-                        if (afterId !== beforeId) {
-                            // State advanced — clear the input
-                            input.value = '';
-                        } else {
-                            // Guard failed — remove the speculative bubble.
-                            // showError has already been called by onUpdate.
-                            const msgs = document.getElementById('messages');
-                            if (msgs?.lastChild?.classList.contains('user')) {
-                                msgs.removeChild(msgs.lastChild);
-                            }
+                    // Add user bubble BEFORE submit() so it always appears
+                    // above the bot response. onUpdate fires synchronously
+                    // inside submit(), so without this the order is reversed.
+                    uiHooks.addBubble(val, 'user');
+                    window.currentEngine.submit(val);
+
+                    const afterSnap = window.currentEngine.actor.getSnapshot();
+                    const afterId   = typeof afterSnap.value === 'string'
+                        ? afterSnap.value : Object.keys(afterSnap.value)[0];
+
+                    if (afterId !== beforeId) {
+                        // State advanced — clear the input
+                        input.value = '';
+                    } else {
+                        // Guard failed — remove the speculative bubble.
+                        // showError has already been called by onUpdate.
+                        const msgs = document.getElementById('messages');
+                        if (msgs?.lastChild?.classList.contains('user')) {
+                            msgs.removeChild(msgs.lastChild);
                         }
                     }
                 };
+
+                input.onkeydown = (e) => { if (e.key === 'Enter') go(); };
+                sendBtn.onclick = go;
+
                 area.appendChild(input);
+                area.appendChild(sendBtn);
                 setTimeout(() => input.focus(), 100);
             }
 
