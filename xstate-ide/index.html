@@ -15,8 +15,15 @@
         :root { --bg: #f4f7f6; --panel: #ffffff; --accent: #0084ff; --dark: #1c1e21; }
         body { display: flex; height: 100vh; margin: 0; font-family: 'Segoe UI', sans-serif; background: var(--bg); overflow: hidden; }
 
-        #diagram-pane { flex: 1; display: flex; flex-direction: column; background: var(--panel); border-right: 1px solid #ddd; padding: 20px; }
-        #mermaid-container { flex: 1; width: 100%; height: 100%; min-height: 400px; display: flex; align-items: center; justify-content: center; }
+        #diagram-pane { flex: 1; display: flex; flex-direction: column; background: var(--panel); border-right: 1px solid #ddd; padding: 20px; min-width: 0; overflow: hidden; }
+        #diagram-pane h2 { flex-shrink: 0; }
+        #diagram-viewport { flex: 1; overflow: hidden; position: relative; cursor: grab; user-select: none; }
+        #diagram-viewport:active { cursor: grabbing; }
+        #diagram-canvas { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; transform-origin: center center; }
+        #diagram-canvas svg { display: block; max-width: 100%; max-height: 100%; }
+        #mermaid-container { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; }
+        #zoom-controls { position: absolute; bottom: 12px; right: 12px; display: flex; flex-direction: column; gap: 4px; z-index: 10; }
+        #zoom-controls button { width: 32px; height: 32px; padding: 0; font-size: 16px; border-radius: 6px; background: rgba(40,44,52,0.85); border: 1px solid #444; color: #fff; line-height: 1; display: flex; align-items: center; justify-content: center; }
 
         #right-pane { width: 380px; min-width: 320px; display: flex; flex-direction: column; background: var(--panel); box-shadow: -2px 0 10px rgba(0,0,0,0.05); }
 
@@ -45,7 +52,16 @@
 
     <div id="diagram-pane">
         <h2 style="margin: 0 0 10px 0; font-size: 18px; color: #555;">Live State Machine</h2>
-        <div id="mermaid-container"></div>
+        <div id="diagram-viewport">
+            <div id="diagram-canvas">
+                <div id="mermaid-container"></div>
+            </div>
+            <div id="zoom-controls">
+                <button onclick="window.diagramZoom(0.2)" title="Zoom in">+</button>
+                <button onclick="window.diagramZoom(-0.2)" title="Zoom out">−</button>
+                <button onclick="window.diagramReset()" title="Reset zoom" style="font-size:11px;">⊙</button>
+            </div>
+        </div>
     </div>
 
     <div id="right-pane">
@@ -85,51 +101,105 @@
         mermaid.initialize({ startOnLoad: false, theme: 'neutral' });
         console.log('✅ Mermaid initialised');
 
-        window.renderDiagram = async (config, current) => {
+        // ── Zoom / pan state ──────────────────────────────────────────────────
+        let _scale = 1;
+        let _tx = 0, _ty = 0;
+        let _dragging = false, _dragStart = null;
+
+        const canvas = () => document.getElementById('diagram-canvas');
+
+        const applyTransform = () => {
+            const c = canvas();
+            if (c) c.style.transform = `translate(${_tx}px, ${_ty}px) scale(${_scale})`;
+        };
+
+        window.diagramZoom = (delta) => {
+            _scale = Math.min(3, Math.max(0.25, _scale + delta));
+            applyTransform();
+        };
+
+        window.diagramReset = () => {
+            _scale = 1; _tx = 0; _ty = 0;
+            const c = canvas();
+            if (c) c.style.transform = '';
+        };
+
+        // Mousewheel zoom
+        document.addEventListener('wheel', (e) => {
+            const vp = document.getElementById('diagram-viewport');
+            if (!vp?.contains(e.target)) return;
+            e.preventDefault();
+            window.diagramZoom(e.deltaY < 0 ? 0.1 : -0.1);
+        }, { passive: false });
+
+        // Drag to pan
+        const vp = () => document.getElementById('diagram-viewport');
+        document.addEventListener('mousedown', (e) => {
+            if (!vp()?.contains(e.target) || e.target.closest('button')) return;
+            _dragging = true;
+            _dragStart = { x: e.clientX - _tx, y: e.clientY - _ty };
+        });
+        document.addEventListener('mousemove', (e) => {
+            if (!_dragging) return;
+            _tx = e.clientX - _dragStart.x;
+            _ty = e.clientY - _dragStart.y;
+            applyTransform();
+        });
+        document.addEventListener('mouseup', () => { _dragging = false; });
+
+        // ── Diagram render ────────────────────────────────────────────────────
+        // visitedEdges: Set of "fromState|toState" strings
+        window.renderDiagram = async (config, current, visitedEdges = new Set()) => {
             let graph = `graph TD\n`;
 
             Object.keys(config.states).forEach(id => {
                 const style = id === current ? `:::activeNode` : '';
                 graph += `  ${id}["${id}"]${style}\n`;
 
-                // ── Regular event transitions ─────────────────────────────────
-                // transition value can be:
-                //   "targetId"              — plain string
-                //   { target: "targetId" }  — single object
-                //   [ {...}, {...} ]         — array (e.g. guarded SUBMIT)
                 if (config.states[id].on) {
                     Object.entries(config.states[id].on).forEach(([ev, transition]) => {
-                        // Normalise to array so we handle all three shapes uniformly
                         const entries = Array.isArray(transition) ? transition : [transition];
-                        const targets = new Set(); // deduplicate self-loops and duplicates
-
+                        const targets = new Set();
                         entries.forEach(t => {
                             const tId = typeof t === 'string' ? t : t?.target;
-                            if (tId && tId !== id) targets.add(tId); // skip self-transitions
+                            if (tId && tId !== id) targets.add(tId);
                         });
-
                         targets.forEach(tId => {
-                            graph += `  ${id} -- "${ev}" --> ${tId}\n`;
+                            const visited = visitedEdges.has(`${id}|${ev}`);
+                            const label   = visited ? `✓ ${ev}` : ev;
+                            graph += `  ${id} -- "${label}" --> ${tId}\n`;
                         });
                     });
                 }
 
-                // ── Always (automatic) transitions ────────────────────────────
                 if (config.states[id].always) {
                     const targets = Array.isArray(config.states[id].always)
                         ? config.states[id].always : [config.states[id].always];
-                    targets.forEach(t => graph += `  ${id} ==> ${t.target || t}\n`);
+                    targets.forEach(t => {
+                        const tId     = t.target || t;
+                        const visited = visitedEdges.has(`${id}|auto`);
+                        const label   = visited ? `✓ auto` : `auto`;
+                        graph += `  ${id} -- "${label}" --> ${tId}\n`;
+                    });
                 }
 
-                // ── Invoke (async) transitions ────────────────────────────────
                 if (config.states[id].invoke) {
                     const inv = config.states[id].invoke;
-                    if (inv.onDone?.target)  graph += `  ${id} -. "done" .-> ${inv.onDone.target}\n`;
-                    if (inv.onError?.target) graph += `  ${id} -. "error" .-> ${inv.onError.target}\n`;
+                    if (inv.onDone?.target) {
+                        const tId     = inv.onDone.target;
+                        const visited = visitedEdges.has(`${id}|done`);
+                        graph += `  ${id} -. "${visited ? '✓ ' : ''}done" .-> ${tId}\n`;
+                    }
+                    if (inv.onError?.target) {
+                        const tId     = inv.onError.target;
+                        const visited = visitedEdges.has(`${id}|error`);
+                        graph += `  ${id} -. "${visited ? '✓ ' : ''}error" .-> ${tId}\n`;
+                    }
                 }
             });
 
             graph += `\nclassDef activeNode fill:#0084ff,stroke:#0051ff,stroke-width:4px,color:#fff;`;
+
             console.log('🗺️  Mermaid source:\n' + graph);
 
             try {

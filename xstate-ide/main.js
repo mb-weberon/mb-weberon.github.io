@@ -40,7 +40,9 @@ async function boot() {
         if (res.ok) window._loadedServicesSource = await res.text();
     } catch (_) { /* non-fatal */ }
 
-    // ── UI Hooks ──────────────────────────────────────────────────────────────
+    // ── Visited edge tracking ─────────────────────────────────────────────────
+    const visitedEdges = new Set();
+    let   _lastStateId = null;
     const uiHooks = {
 
         addBubble: (text, side) => {
@@ -56,6 +58,8 @@ async function boot() {
         clearMessages: () => {
             const m = document.getElementById('messages');
             if (m) m.innerHTML = '';
+            visitedEdges.clear();
+            _lastStateId = null;
         },
 
         removeLastUserBubble: () => {
@@ -91,8 +95,17 @@ async function boot() {
             const stateDisplay = document.getElementById('state-id');
             if (profile)      profile.innerText      = JSON.stringify(context, null, 2);
             if (stateDisplay) stateDisplay.innerText = `State: ${stateId}`;
+
+            // Record the specific edge traversed: fromState|eventType
+            // The last trace entry is the event/value that caused this transition.
+            if (_lastStateId && _lastStateId !== stateId && context.trace?.length) {
+                const lastEvent = context.trace[context.trace.length - 1];
+                visitedEdges.add(`${_lastStateId}|${lastEvent}`);
+            }
+            _lastStateId = stateId;
+
             if (window.renderDiagram) {
-                window.renderDiagram(config, stateId).catch(e =>
+                window.renderDiagram(config, stateId, visitedEdges).catch(e =>
                     console.error('❌ Diagram render failed:', e.message)
                 );
             } else {
