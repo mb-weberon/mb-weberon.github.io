@@ -1,7 +1,25 @@
+import { validators } from './validators.js';
+
+/**
+ * realtor-services.js
+ *
+ * Everything flow-specific that lives outside the machine JSON:
+ *   - Async service calls  (registered as XState actors via fromPromise)
+ *   - Guards               (registered as XState guards in .provide())
+ *
+ * Error message copy lives in realtor-machine.json next to each guard
+ * reference — not here. Guards are pure booleans.
+ */
+
 export const realtorServices = {
-    getMarketRate: async (data) => {
-        // Mock a 1.5s delay to represent a real API call
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        return (6.5 + Math.random()).toFixed(2) + "%";
-    }
+
+    // ── Guards ────────────────────────────────────────────────────────────────
+
+    guards: {
+        isValidEmail: ({ event })    => validators.email(event.value),
+        isValidPhone: ({ event })    => validators.phone(event.value),
+        isSoon:       ({ context })  => context.timing === 'soon',
+        isLater:      ({ context })  => context.timing === 'later',
+        isValidText:  ({ event })    => validators.text(event.value),
+    },
 };

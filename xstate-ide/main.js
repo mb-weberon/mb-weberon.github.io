@@ -2,8 +2,6 @@ import { ChatEngine } from './ChatEngine.js';
 import { realtorServices } from './realtor-services.js';
 import { loadVersion } from './version.js';
 
-// Derive base URL from this file's own location so all fetches work regardless
-// of what directory the HTTP server is rooted at (e.g. /xstate-ide/).
 const BASE = new URL('.', import.meta.url).href;
 const fetchLocal = (file) => fetch(BASE + file);
 
@@ -11,23 +9,24 @@ console.log('📁 Base URL:', BASE);
 
 async function boot() {
     console.log('🎬 Boot started');
+    console.log('📦 App:', document.title, '| Built:', new Date().toISOString().slice(0,10));
 
-    // ── Load version ──────────────────────────────────────────────────────────
-    const version = await loadVersion(BASE);
-    const el = document.getElementById('version-label');
-    if (version && el) {
-        el.textContent = version;
-        console.log('🏷️  Version:', version);
+    // ── Version ───────────────────────────────────────────────────────────────
+    const version   = await loadVersion(BASE);
+    const versionEl = document.getElementById('version-label');
+    if (version && versionEl) {
+        versionEl.textContent = version;
+        console.log('🏷️  Version:', version, '| URL:', window.location.href);
     }
 
-    // ── Load machine config ───────────────────────────────────────────────────
+    // ── Config ────────────────────────────────────────────────────────────────
     let config;
     try {
         console.log('📄 Fetching realtor-machine.json from:', BASE + 'realtor-machine.json');
         const res = await fetchLocal('realtor-machine.json');
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         config = await res.json();
-        console.log('✅ Config loaded:', config.id, '| initial state:', config.initial);
+        console.log('✅ Config loaded:', config.id, '| initial:', config.initial);
         console.log('📊 States:', Object.keys(config.states).join(', '));
     } catch (e) {
         console.error('❌ Failed to load machine config:', e.message);
@@ -36,6 +35,7 @@ async function boot() {
 
     // ── UI Hooks ──────────────────────────────────────────────────────────────
     const uiHooks = {
+
         addBubble: (text, side) => {
             const m = document.getElementById('messages');
             if (!m) { console.error('❌ #messages not found'); return; }
@@ -51,15 +51,22 @@ async function boot() {
             if (m) m.innerHTML = '';
         },
 
-        // Shows a validation error message below the input and highlights it red.
-        // Clears automatically when the user starts typing again.
+        removeLastUserBubble: () => {
+            const msgs = document.getElementById('messages');
+            if (msgs?.lastChild?.classList.contains('user')) {
+                msgs.removeChild(msgs.lastChild);
+            }
+        },
+
+        // Called by ChatEngine.onUpdate whenever context.inputError is non-null.
+        // Fires on self-transitions (failed guard) without rebuilding the input.
         showError: (message) => {
             const area  = document.getElementById('input-area');
             const input = area?.querySelector('input');
             area?.querySelector('.validation-error')?.remove();
-            const err = document.createElement('div');
-            err.className = 'validation-error';
-            err.textContent = message;
+            const err         = document.createElement('div');
+            err.className     = 'validation-error';
+            err.textContent   = message;
             err.style.cssText = 'width:100%; color:#e53e3e; font-size:12px; margin-top:4px; padding:0 2px;';
             area?.appendChild(err);
             if (input) {
@@ -73,9 +80,9 @@ async function boot() {
         },
 
         updateProfile: (context, stateId) => {
-            const profile = document.getElementById('profile-view');
+            const profile      = document.getElementById('profile-view');
             const stateDisplay = document.getElementById('state-id');
-            if (profile) profile.innerText = JSON.stringify(context, null, 2);
+            if (profile)      profile.innerText      = JSON.stringify(context, null, 2);
             if (stateDisplay) stateDisplay.innerText = `State: ${stateId}`;
             if (window.renderDiagram) {
                 window.renderDiagram(config, stateId).catch(e =>
@@ -86,28 +93,56 @@ async function boot() {
             }
         },
 
-        renderButtons: (choices) => {
+        // stateChanged=false on self-transitions (failed guard) — preserve the
+        // existing input field rather than rebuilding it.
+        renderButtons: (choices, stateChanged = true) => {
             const area = document.getElementById('input-area');
             if (!area) { console.error('❌ #input-area not found'); return; }
+
+            if (!stateChanged) {
+                // showError has already updated the UI — nothing else to do.
+                return;
+            }
+
             area.innerHTML = '';
 
-            const snapshot = window.currentEngine.actor.getSnapshot();
-            const stateId = typeof snapshot.value === 'string'
+            const snapshot    = window.currentEngine.actor.getSnapshot();
+            const stateId     = typeof snapshot.value === 'string'
                 ? snapshot.value : Object.keys(snapshot.value)[0];
             const stateConfig = config.states[stateId];
 
             if (stateConfig?.meta?.input === 'text') {
-                const input = document.createElement('input');
-                input.type = 'text';
+                const input       = document.createElement('input');
+                input.type        = 'text';
                 input.placeholder = stateConfig.meta.placeholder || 'Type and press Enter...';
-                input.onkeydown = (e) => {
+                input.onkeydown   = (e) => {
                     if (e.key === 'Enter') {
-                        const val = input.value.trim();
-                        // engine.submit() validates; only add bubble + clear if valid
-                        const ok = window.currentEngine.submit(val);
-                        if (ok) {
-                            uiHooks.addBubble(val, 'user');
+                        const val      = input.value.trim();
+                        const beforeId = (() => {
+                            const s = window.currentEngine.actor.getSnapshot();
+                            return typeof s.value === 'string' ? s.value : Object.keys(s.value)[0];
+                        })();
+
+                        // Add user bubble BEFORE submit() so it always appears
+                        // above the bot response. onUpdate fires synchronously
+                        // inside submit(), so without this the order is reversed.
+                        uiHooks.addBubble(val, 'user');
+                        window.currentEngine.submit(val);
+
+                        const afterSnap = window.currentEngine.actor.getSnapshot();
+                        const afterId   = typeof afterSnap.value === 'string'
+                            ? afterSnap.value : Object.keys(afterSnap.value)[0];
+
+                        if (afterId !== beforeId) {
+                            // State advanced — clear the input
                             input.value = '';
+                        } else {
+                            // Guard failed — remove the speculative bubble.
+                            // showError has already been called by onUpdate.
+                            const msgs = document.getElementById('messages');
+                            if (msgs?.lastChild?.classList.contains('user')) {
+                                msgs.removeChild(msgs.lastChild);
+                            }
                         }
                     }
                 };
@@ -116,9 +151,9 @@ async function boot() {
             }
 
             choices.forEach((c, i) => {
-                const b = document.createElement('button');
+                const b     = document.createElement('button');
                 b.innerText = `(${i + 1}) ${c}`;
-                b.onclick = () => {
+                b.onclick   = () => {
                     uiHooks.addBubble(c, 'user');
                     window.currentEngine.send(c);
                 };
@@ -136,14 +171,14 @@ async function boot() {
     // ── Global helpers ────────────────────────────────────────────────────────
     window.downloadConfig = () => {
         const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href     = URL.createObjectURL(blob);
         a.download = 'machine.json';
         a.click();
     };
 
     window.loadNewConfig = (file) => {
-        const reader = new FileReader();
+        const reader  = new FileReader();
         reader.onload = (e) => {
             try {
                 const newConfig = JSON.parse(e.target.result);
@@ -158,12 +193,12 @@ async function boot() {
     };
 
     window.copyTrace = () => {
-        const ctx = window.currentEngine.actor.getSnapshot().context;
+        const ctx  = window.currentEngine.actor.getSnapshot().context;
         const text = JSON.stringify(ctx.trace);
         navigator.clipboard.writeText(text).then(() => {
             const btn = document.getElementById('copy-btn');
             if (!btn) return;
-            const orig = btn.innerText;
+            const orig    = btn.innerText;
             btn.innerText = '✅ Copied!';
             setTimeout(() => btn.innerText = orig, 2000);
         });

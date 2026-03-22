@@ -1,10 +1,53 @@
 {
   "major": 0,
-  "minor": 2,
-  "patch": 0,
+  "minor": 3,
+  "patch": 6,
   "label": "",
   "history": [
-    { "version": "0.2.0", "date": "2026-03-22", "note": "Input validation + state-change logging" },
-    { "version": "0.1.0", "date": "2026-03-22", "note": "Initial release" }
+    {
+      "version": "0.3.6",
+      "date": "2026-03-22",
+      "note": "Fix: deep copy config before mutation in start() so restart/replay regenerate actions correctly"
+    },
+    {
+      "version": "0.3.5",
+      "date": "2026-03-22",
+      "note": "Fix: pre-generate assign closures to work around XState 5 params limitation in .provide()"
+    },
+    {
+      "version": "0.3.4",
+      "date": "2026-03-22",
+      "note": "Diagnostics: raw action log in updateContext, version+URL at boot"
+    },
+    {
+      "version": "0.3.3",
+      "date": "2026-03-22",
+      "note": "Fix: combine updateContext actions on email SUBMIT; add diagnostics for rate/email context"
+    },
+    {
+      "version": "0.3.2",
+      "date": "2026-03-22",
+      "note": "Fix: user bubble ordering \u2014 appears before bot response in all paths"
+    },
+    {
+      "version": "0.3.1",
+      "date": "2026-03-22",
+      "note": "Fix: diagram array transitions, validation bubble, replay guard check"
+    },
+    {
+      "version": "0.3.0",
+      "date": "2026-03-22",
+      "note": "Phase 1: validation moved to XState-native guards in flow layer"
+    },
+    {
+      "version": "0.2.0",
+      "date": "2026-03-22",
+      "note": "Input validation + state-change logging"
+    },
+    {
+      "version": "0.1.0",
+      "date": "2026-03-22",
+      "note": "Initial release"
+    }
   ]
 }
