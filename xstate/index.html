@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>XState Logic Engine</title>
+    <script type="importmap">
+        { "imports": { 
+            "xstate": "https://unpkg.com/xstate@5/dist/xstate.esm.js",
+            "mermaid": "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs"
+        }}
+    </script>
+    <style>
+        body { display: flex; height: 100vh; margin: 0; font-family: sans-serif; background: #f0f2f5; overflow: hidden; }
+        #diagram-pane { flex: 1; padding: 20px; display: flex; flex-direction: column; background: white; border-right: 1px solid #ddd; }
+        #mermaid-container { flex: 1; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+        #right-pane { width: 420px; display: flex; flex-direction: column; background: #fff; border-left: 1px solid #ddd; }
+        #profile-viewer { height: 180px; padding: 15px; background: #1c1e21; color: #61dafb; font-family: monospace; overflow-y: auto; }
+        #toolbar { padding: 10px; background: #282c34; display: flex; gap: 8px; }
+        #replay-bar { padding: 10px; background: #eee; display: flex; gap: 5px; border-bottom: 1px solid #ddd; }
+        #messages { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; background: #f9f9f9; }
+        #controls-container { padding: 20px; border-top: 1px solid #eee; }
+        .msg { padding: 10px 14px; border-radius: 12px; font-size: 14px; line-height: 1.4; }
+        .bot { background: #e4e6eb; align-self: flex-start; }
+        .user { background: #0084ff; color: white; align-self: flex-end; }
+        #input-area { display: flex; gap: 8px; flex-wrap: wrap; }
+        button { padding: 8px 12px; background: #0084ff; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 12px; font-weight: bold; }
+        .restart-btn { background: #dc3545 !important; }
+        input { flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <div id="diagram-pane">
+        <h3 style="margin:0; color:#888">Logic Flow</h3>
+        <div id="mermaid-container"></div>
+    </div>
+    <div id="right-pane">
+        <div id="toolbar">
+            <button onclick="window.downloadConfig()">💾 Save JSON</button>
+            <button onclick="document.getElementById('upload').click()">📂 Load JSON</button>
+            <input type="file" id="upload" style="display:none" onchange="window.loadNewConfig(this.files[0])">
+        </div>
+        <div id="profile-viewer">Context loading...</div>
+        <div id="replay-bar">
+            <button onclick="window.restartEngine()" class="restart-btn">🔄 Restart</button>
+            <input type="text" id="replay-input" placeholder="Paste Trace...">
+            <button onclick="runReplay(document.getElementById('replay-input').value)">▶ Replay</button>
+        </div>
+        <div id="messages"></div>
+        <div id="controls-container">
+            <div id="input-area"></div>
+        </div>
+    </div>
+    <script type="module">
+        import { initEngine } from './engine-xs.js';
+        initEngine('./machine.json');
+    </script>
+</body>
+</html>

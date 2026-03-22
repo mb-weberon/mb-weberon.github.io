@@ -1,0 +1,44 @@
+{
+  "id": "realtor",
+  "initial": "ask_email",
+  "context": { "user_email": "", "status": "", "timing": "", "phone": "", "trace": [] },
+  "states": {
+    "ask_email": {
+      "meta": { "text": "Welcome! Please enter your email.", "input": "text", "pattern": "email" },
+      "on": { "SUBMIT": { "target": "ask_status", "actions": ["storeEmail", "record"] } }
+    },
+    "ask_status": {
+      "meta": { "text": "Do you rent or own?" },
+      "on": {
+        "RENT": { "target": "ask_timing", "actions": ["setRent", "record"] },
+        "OWN": { "target": "ask_timing", "actions": ["setOwn", "record"] }
+      }
+    },
+    "ask_timing": {
+      "meta": { "text": "When are you moving?" },
+      "on": {
+        "SOON": { "target": "ask_phone", "actions": ["setSoon", "record"] },
+        "LATER": { "target": "ask_phone", "actions": ["setLater", "record"] }
+      }
+    },
+    "ask_phone": {
+      "meta": { "text": "What is your phone number?", "input": "text", "pattern": "phone" },
+      "on": { "SUBMIT": { "target": "ask_transcript", "actions": ["storePhone", "record"] } }
+    },
+    "ask_transcript": {
+      "meta": { "text": "Would you like a transcript emailed to {{user_email}}?" },
+      "on": {
+        "YES": { "target": "upload_data", "actions": ["emailCallback", "record"] },
+        "NO": { "target": "upload_data", "actions": ["record"] }
+      }
+    },
+    "upload_data": {
+      "entry": "serverUploadCallback",
+      "always": "finish_screen"
+    },
+    "finish_screen": { 
+      "type": "final", 
+      "meta": { "text": "Done! We've processed the info for {{user_email}}. Have a great day!" } 
+    }
+  }
+}
