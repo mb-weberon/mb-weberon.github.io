@@ -84,9 +84,9 @@
         </div>
 
         <div id="replay-bar">
-            <button onclick="window.currentEngine.restart()" class="restart-btn">🔄 Restart</button>
+            <button onclick="window._restartRuntime()" class="restart-btn">🔄 Restart</button>
             <input type="text" id="replay-input" placeholder="Paste Replay String...">
-            <button onclick="window.currentEngine.replay(document.getElementById('replay-input').value)">▶ Replay</button>
+            <button onclick="window.currentRuntime.replay(document.getElementById('replay-input').value)">▶ Replay</button>
         </div>
 
         <div id="messages"></div>

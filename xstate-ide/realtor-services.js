@@ -14,7 +14,7 @@ import { validators } from './validators.js';
 export const realtorServices = {
 
     // ── Async services ────────────────────────────────────────────────────────
-    // Registered as XState actors via fromPromise() in ChatEngine.js.
+    // Registered as XState actors via fromPromise() in Runtime.js.
     // Each function receives { input } where input is the current context
     // (passed automatically by XState from the invoke definition).
 

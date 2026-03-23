@@ -4,7 +4,7 @@
  * Lightweight logger abstraction.
  *
  * Consumers:
- *   - ChatEngine accepts a logger as its third constructor argument.
+ *   - Runtime accepts a logger as its third constructor argument.
  *   - IDE (main.js) always passes consoleLogger — always logs.
  *   - Production boot passes resolveLogger() — silent unless debug flag set.
  *
