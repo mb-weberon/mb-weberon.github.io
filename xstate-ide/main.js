@@ -30,6 +30,10 @@ async function boot() {
         config = await res.json();
         console.log('✅ Config loaded:', config.id, '| initial:', config.initial);
         console.log('📊 States:', Object.keys(config.states).join(', '));
+	import('./generate-traces.js').then(m => {
+	    window._config = config;
+	    window.generateTraces = () => m.generateTraces(config);
+	});
     } catch (e) {
         console.error('❌ Failed to load machine config:', e.message);
         return;
