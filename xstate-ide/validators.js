@@ -13,11 +13,13 @@ export const validators = {
 
     email: (val) =>
         !!val &&
-        /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val.trim()),
+        /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(val.trim()),
 
+    // Accepts common US formats: 4155550123, 415-555-0123, (415) 555-0123,
+    // +1 415 555 0123, 1-415-555-0123
     phone: (val) =>
         !!val &&
-        /^\+?[\d\s\-().]{7,20}$/.test(val.trim()),
+        /^\+?1?[\s\-.]?\(?\d{3}\)?[\s\-.]?\d{3}[\s\-.]?\d{4}$/.test(val.trim()),
 
     // Any non-empty string
     text: (val) =>
