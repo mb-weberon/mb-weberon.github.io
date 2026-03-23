@@ -2,113 +2,434 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chatbot Logic IDE</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>SM-IDE</title>
     <script type="importmap">
         { "imports": {
-            "xstate": "https://unpkg.com/xstate@5/dist/xstate.esm.js",
+            "xstate":  "https://unpkg.com/xstate@5/dist/xstate.esm.js",
             "mermaid": "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs",
-            "fflate": "https://cdn.jsdelivr.net/npm/fflate@0.8.2/esm/browser.js"
+            "fflate":  "https://cdn.jsdelivr.net/npm/fflate@0.8.2/esm/browser.js"
         }}
     </script>
     <style>
-        :root { --bg: #f4f7f6; --panel: #ffffff; --accent: #0084ff; --dark: #1c1e21; }
-        body { display: flex; height: 100vh; margin: 0; font-family: 'Segoe UI', sans-serif; background: var(--bg); overflow: hidden; }
+        /* ── Tokens ─────────────────────────────────────────────────────────── */
+        :root {
+            --bg:     #f4f7f6;
+            --panel:  #ffffff;
+            --accent: #0084ff;
+            --dark:   #1c1e21;
+            --safe-bottom: env(safe-area-inset-bottom, 0px);
+        }
 
-        #diagram-pane { flex: 1; display: flex; flex-direction: column; background: var(--panel); border-right: 1px solid #ddd; padding: 20px; min-width: 0; overflow: hidden; }
-        #diagram-pane h2 { flex-shrink: 0; }
-        #diagram-viewport { flex: 1; overflow: hidden; position: relative; cursor: grab; user-select: none; }
+        /* ── Reset ──────────────────────────────────────────────────────────── */
+        *, *::before, *::after { box-sizing: border-box; }
+
+        body {
+            display: flex;
+            /* dvh accounts for mobile browser chrome (URL bar) */
+            height: 100dvh;
+            margin: 0;
+            font-family: 'Segoe UI', sans-serif;
+            background: var(--bg);
+            overflow: hidden;
+        }
+
+        /* ── Diagram pane (left / behind on mobile) ─────────────────────────── */
+        #diagram-pane {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: var(--panel);
+            border-right: 1px solid #ddd;
+            padding: 16px;
+            min-width: 0;
+            overflow: hidden;
+        }
+
+        #diagram-pane h2 {
+            flex-shrink: 0;
+            margin: 0 0 8px 0;
+            font-size: 15px;
+            color: #888;
+            font-weight: 500;
+        }
+
+        #diagram-viewport {
+            flex: 1;
+            overflow: hidden;
+            position: relative;
+            cursor: grab;
+            user-select: none;
+            touch-action: none; /* lets JS handle touch pan */
+        }
+
         #diagram-viewport:active { cursor: grabbing; }
-        #diagram-canvas { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; transform-origin: center center; }
+
+        #diagram-canvas {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transform-origin: center center;
+        }
+
         #diagram-canvas svg { display: block; max-width: 100%; max-height: 100%; }
-        #mermaid-container { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; }
-        #zoom-controls { position: absolute; bottom: 12px; right: 12px; display: flex; flex-direction: column; gap: 4px; z-index: 10; }
-        #zoom-controls button { width: 32px; height: 32px; padding: 0; font-size: 16px; border-radius: 6px; background: rgba(40,44,52,0.85); border: 1px solid #444; color: #fff; line-height: 1; display: flex; align-items: center; justify-content: center; }
+        #mermaid-container  { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; }
 
-        #right-pane { width: 380px; min-width: 320px; display: flex; flex-direction: column; background: var(--panel); box-shadow: -2px 0 10px rgba(0,0,0,0.05); }
+        #zoom-controls {
+            position: absolute;
+            bottom: 12px; right: 12px;
+            display: flex; flex-direction: column; gap: 4px;
+            z-index: 10;
+        }
 
-        #toolbar { padding: 10px 12px; background: var(--dark); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-        #toolbar .toolbar-left { display: flex; gap: 8px; }
-        #version-badge { font-family: 'Courier New', monospace; font-size: 11px; color: #61dafb; background: #2a2d35; border: 1px solid #444; border-radius: 4px; padding: 3px 8px; white-space: nowrap; }
+        #zoom-controls button {
+            width: 36px; height: 36px;
+            padding: 0; font-size: 18px;
+            border-radius: 6px;
+            background: rgba(40,44,52,0.85);
+            border: 1px solid #444; color: #fff;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer;
+        }
 
-        #profile-viewer { height: 175px; padding: 10px 14px; background: #282c34; color: #61dafb; font-family: 'Courier New', monospace; font-size: 11px; overflow-y: auto; border-bottom: 2px solid #444; }
-        #replay-bar { padding: 10px; background: #eee; display: flex; gap: 5px; border-bottom: 1px solid #ddd; }
-        #messages { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; background: #fafafa; }
-        #controls-container { padding: 12px 16px; border-top: 1px solid #eee; background: white; }
-        #input-area { display: flex; gap: 10px; flex-wrap: wrap; }
+        /* ── Right pane ─────────────────────────────────────────────────────── */
+        #right-pane {
+            width: 390px;
+            min-width: 320px;
+            display: flex;
+            flex-direction: column;
+            background: var(--panel);
+            box-shadow: -2px 0 10px rgba(0,0,0,0.08);
+            /* slide transition for mobile swipe */
+            transition: transform 0.3s ease;
+            z-index: 10;
+        }
 
-        .msg { max-width: 80%; padding: 10px 15px; border-radius: 18px; font-size: 14px; line-height: 1.5; }
-        .bot  { background: #e4e6eb; align-self: flex-start; color: #050505; border-bottom-left-radius: 4px; }
-        .user { background: var(--accent); align-self: flex-end; color: white; border-bottom-right-radius: 4px; }
+        /* ── App title bar ──────────────────────────────────────────────────── */
+        #app-titlebar {
+            padding: 8px 12px 6px;
+            background: var(--dark);
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            flex-shrink: 0;
+        }
 
-        button { padding: 8px 16px; background: var(--accent); color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 13px; transition: opacity 0.2s; }
-        button:hover { opacity: 0.8; }
+        #app-title {
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            font-weight: bold;
+            color: #61dafb;
+            letter-spacing: 0.05em;
+        }
+
+        #version-badge {
+            font-family: 'Courier New', monospace;
+            font-size: 10px;
+            color: #888;
+            background: #2a2d35;
+            border: 1px solid #3a3d45;
+            border-radius: 3px;
+            padding: 1px 6px;
+            white-space: nowrap;
+        }
+
+        /* ── Toolbar ────────────────────────────────────────────────────────── */
+        #toolbar {
+            padding: 6px 10px;
+            background: #23272e;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+            flex-shrink: 0;
+            border-bottom: 1px solid #333;
+        }
+
+        #toolbar button {
+            padding: 5px 10px;
+            font-size: 11px;
+            border-radius: 5px;
+            white-space: nowrap;
+        }
+
+        /* ── Context / profile viewer ───────────────────────────────────────── */
+        #profile-viewer {
+            background: #282c34;
+            color: #61dafb;
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            overflow: hidden;
+            border-bottom: 2px solid #444;
+            flex-shrink: 0;
+            /* collapsed by default — toggled by JS */
+            max-height: 0;
+            transition: max-height 0.25s ease;
+        }
+
+        #profile-viewer.open {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        #profile-viewer-inner { padding: 10px 14px; }
+
+        #profile-toggle {
+            padding: 4px 10px;
+            background: #23272e;
+            border-bottom: 1px solid #333;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+            flex-shrink: 0;
+            user-select: none;
+        }
+
+        #profile-toggle span {
+            font-family: 'Courier New', monospace;
+            font-size: 10px;
+            color: #888;
+        }
+
+        #profile-toggle-arrow {
+            font-size: 10px;
+            color: #555;
+            transition: transform 0.2s;
+        }
+
+        #profile-viewer.open ~ * #profile-toggle-arrow,
+        #profile-toggle.open #profile-toggle-arrow {
+            transform: rotate(180deg);
+        }
+
+        /* ── Replay bar ─────────────────────────────────────────────────────── */
+        #replay-bar {
+            padding: 8px 10px;
+            background: #eee;
+            display: flex;
+            gap: 5px;
+            border-bottom: 1px solid #ddd;
+            flex-shrink: 0;
+        }
+
+        #replay-bar input[type="text"] {
+            flex: 1;
+            min-width: 0;
+            padding: 6px 8px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            font-size: 12px;
+            outline: none;
+        }
+
+        /* ── Messages ───────────────────────────────────────────────────────── */
+        #messages {
+            flex: 1;
+            padding: 16px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            background: #fafafa;
+            /* ensure messages don't get hidden under mobile URL bar */
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .msg {
+            max-width: 82%;
+            padding: 10px 14px;
+            border-radius: 18px;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .msg.bot  { background: #e4e6eb; align-self: flex-start; color: #050505; border-bottom-left-radius: 4px; }
+        .msg.user { background: var(--accent); align-self: flex-end; color: white; border-bottom-right-radius: 4px; }
+
+        /* ── Controls / input area ──────────────────────────────────────────── */
+        #controls-container {
+            padding: 10px 14px;
+            /* add safe-area padding so buttons sit above mobile home indicator */
+            padding-bottom: calc(10px + var(--safe-bottom));
+            border-top: 1px solid #eee;
+            background: white;
+            flex-shrink: 0;
+        }
+
+        #input-area { display: flex; gap: 8px; flex-wrap: wrap; }
+
+        /* ── Global button defaults ─────────────────────────────────────────── */
+        button {
+            padding: 8px 14px;
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: opacity 0.2s;
+            touch-action: manipulation; /* removes 300ms tap delay on mobile */
+        }
+
+        button:hover  { opacity: 0.85; }
+        button:active { opacity: 0.7; }
+
         .restart-btn { background: #ff4757; }
-        input[type="text"] { flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 8px; outline: none; }
+
+        input[type="text"] {
+            padding: 9px 11px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            outline: none;
+            font-size: 14px;
+        }
+
         input[type="text"]:focus { border-color: var(--accent); }
+
+        /* ── Mobile: right pane full-width, swipeable ───────────────────────── */
+        @media (max-width: 700px) {
+            #diagram-pane {
+                position: absolute;
+                inset: 0;
+                z-index: 1;
+                border-right: none;
+            }
+
+            #right-pane {
+                position: absolute;
+                inset: 0;
+                width: 100%;
+                min-width: unset;
+                z-index: 5;
+                border-left: none;
+            }
+
+            #right-pane.swiped-away {
+                transform: translateX(100%);
+            }
+
+            /* Swipe handle — visible on mobile only */
+            #swipe-handle {
+                display: flex;
+            }
+        }
+
+        /* ── Swipe handle (hidden on desktop) ───────────────────────────────── */
+        #swipe-handle {
+            display: none;
+            position: absolute;
+            left: -22px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 22px;
+            height: 56px;
+            background: var(--dark);
+            border-radius: 8px 0 0 8px;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 20;
+            color: #61dafb;
+            font-size: 14px;
+            user-select: none;
+        }
     </style>
 </head>
 <body>
 
+    <!-- ── Diagram pane ──────────────────────────────────────────────────── -->
     <div id="diagram-pane">
-        <h2 style="margin: 0 0 10px 0; font-size: 18px; color: #555;">Live State Machine</h2>
+        <h2>Live State Machine</h2>
         <div id="diagram-viewport">
             <div id="diagram-canvas">
                 <div id="mermaid-container"></div>
             </div>
             <div id="zoom-controls">
-                <button onclick="window.diagramZoom(0.2)" title="Zoom in">+</button>
+                <button onclick="window.diagramZoom(0.2)"  title="Zoom in">+</button>
                 <button onclick="window.diagramZoom(-0.2)" title="Zoom out">−</button>
-                <button onclick="window.diagramReset()" title="Reset zoom" style="font-size:11px;">⊙</button>
+                <button onclick="window.diagramReset()"    title="Reset" style="font-size:11px;">⊙</button>
             </div>
         </div>
     </div>
 
+    <!-- ── Right pane ────────────────────────────────────────────────────── -->
     <div id="right-pane">
+
+        <!-- Swipe handle (mobile only) -->
+        <div id="swipe-handle" title="Slide to reveal diagram">‹</div>
+
+        <!-- App title + version -->
+        <div id="app-titlebar">
+            <span id="app-title">SM-IDE</span>
+            <span id="version-badge"><span id="version-label">—</span></span>
+        </div>
+
+        <!-- Toolbar -->
         <div id="toolbar">
-            <div class="toolbar-left">
-		<button onclick="window.generateTraces()">🗺️ Paths</button>
-                <button onclick="window.runAllTraces()">🧪 Test</button>
-                <button onclick="document.getElementById('load-results').click()">📋 Load Results</button>
-                <input type="file" id="load-results" style="display:none" accept=".json"
-                     onchange="window.loadTestResults(this.files[0]); this.value='';">
-		<button onclick="window.downloadPair()">💾 Save Flow</button>
-                <button onclick="document.getElementById('upload').click()">📂 Load Flow</button>
-                <input type="file" id="upload" style="display:none" accept=".zip,.json,.js" multiple onchange="window.loadPair(this.files); this.value='';">
-            </div>
-            <div id="version-badge"><span id="version-label">—</span></div>
+            <button onclick="window.downloadPair()">💾 Save</button>
+            <button onclick="document.getElementById('upload').click()">📂 Load</button>
+            <button onclick="window.runAllTraces && window.runAllTraces()">🧪 Test</button>
+            <button onclick="document.getElementById('load-results').click()">📋 Results</button>
+            <input type="file" id="upload"       style="display:none" accept=".zip,.json,.js" multiple
+                   onchange="window.loadPair(this.files); this.value='';">
+            <input type="file" id="load-results" style="display:none" accept=".json"
+                   onchange="window.loadTestResults && window.loadTestResults(this.files[0]); this.value='';">
         </div>
 
+        <!-- Context viewer (collapsed by default, toggled) -->
+        <div id="profile-toggle" onclick="window.toggleProfile()">
+            <span>CONTEXT &amp; STATE</span>
+            <span id="profile-toggle-arrow">▼</span>
+        </div>
         <div id="profile-viewer">
-            <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
-                <strong>CONTEXT (REAL-TIME)</strong>
-                <button id="copy-btn" onclick="window.copyTrace()" style="font-size:10px; padding:2px 6px;">📋 Copy Trace</button>
+            <div id="profile-viewer-inner">
+                <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                    <strong>CONTEXT (REAL-TIME)</strong>
+                    <button id="copy-btn" onclick="window.copyTrace()"
+                            style="font-size:10px; padding:2px 6px; background:#444;">📋 Copy Trace</button>
+                </div>
+                <pre id="profile-view">{}</pre>
+                <div id="state-id" style="font-size:10px; color:#888; margin-top:4px;">State: loading…</div>
             </div>
-            <pre id="profile-view">{}</pre>
-            <div id="state-id" style="font-size:10px; color:#888; margin-top:5px;">State: loading...</div>
         </div>
 
+        <!-- Replay bar -->
         <div id="replay-bar">
-            <button onclick="window._restartRuntime()" class="restart-btn">🔄 Restart</button>
-            <input type="text" id="replay-input" placeholder="Paste Replay String...">
-	    <button onclick="window._replayTrace(document.getElementById('replay-input').value)">▶ Replay</button>
+            <button onclick="window._restartRuntime()" class="restart-btn">🔄</button>
+            <input type="text" id="replay-input" placeholder="Paste trace to replay…">
+            <button onclick="window._replayTrace(document.getElementById('replay-input').value)">▶</button>
         </div>
 
+        <!-- Chat -->
         <div id="messages"></div>
 
+        <!-- Input controls -->
         <div id="controls-container">
             <div id="input-area"></div>
         </div>
-    </div>
+
+    </div><!-- end #right-pane -->
 
     <script type="module">
         import mermaid from 'mermaid';
         mermaid.initialize({ startOnLoad: false, theme: 'neutral' });
         console.log('✅ Mermaid initialised');
 
+        // ── Profile viewer toggle ─────────────────────────────────────────────
+        window.toggleProfile = () => {
+            const viewer = document.getElementById('profile-viewer');
+            const arrow  = document.getElementById('profile-toggle-arrow');
+            const toggle = document.getElementById('profile-toggle');
+            const isOpen = viewer.classList.toggle('open');
+            arrow.style.transform = isOpen ? 'rotate(180deg)' : '';
+            toggle.classList.toggle('open', isOpen);
+        };
+
         // ── Zoom / pan state ──────────────────────────────────────────────────
-        let _scale = 1;
-        let _tx = 0, _ty = 0;
+        let _scale = 1, _tx = 0, _ty = 0;
         let _dragging = false, _dragStart = null;
 
         const canvas = () => document.getElementById('diagram-canvas');
@@ -131,17 +452,17 @@
 
         // Mousewheel zoom
         document.addEventListener('wheel', (e) => {
-            const vp = document.getElementById('diagram-viewport');
-            if (!vp?.contains(e.target)) return;
+            if (!document.getElementById('diagram-viewport')?.contains(e.target)) return;
             e.preventDefault();
             window.diagramZoom(e.deltaY < 0 ? 0.1 : -0.1);
         }, { passive: false });
 
-        // Drag to pan
+        // ── Mouse pan ─────────────────────────────────────────────────────────
         const vp = () => document.getElementById('diagram-viewport');
+
         document.addEventListener('mousedown', (e) => {
             if (!vp()?.contains(e.target) || e.target.closest('button')) return;
-            _dragging = true;
+            _dragging  = true;
             _dragStart = { x: e.clientX - _tx, y: e.clientY - _ty };
         });
         document.addEventListener('mousemove', (e) => {
@@ -152,8 +473,55 @@
         });
         document.addEventListener('mouseup', () => { _dragging = false; });
 
+        // ── Touch pan (hold & drag on diagram) ────────────────────────────────
+        let _touchStart = null;
+
+        document.getElementById('diagram-viewport').addEventListener('touchstart', (e) => {
+            if (e.touches.length !== 1) return;
+            _touchStart = { x: e.touches[0].clientX - _tx, y: e.touches[0].clientY - _ty };
+        }, { passive: true });
+
+        document.getElementById('diagram-viewport').addEventListener('touchmove', (e) => {
+            if (!_touchStart || e.touches.length !== 1) return;
+            e.preventDefault();
+            _tx = e.touches[0].clientX - _touchStart.x;
+            _ty = e.touches[0].clientY - _touchStart.y;
+            applyTransform();
+        }, { passive: false });
+
+        document.getElementById('diagram-viewport').addEventListener('touchend', () => {
+            _touchStart = null;
+        }, { passive: true });
+
+        // ── Mobile swipe handle ───────────────────────────────────────────────
+        const rightPane    = document.getElementById('right-pane');
+        const swipeHandle  = document.getElementById('swipe-handle');
+        let   _paneSwiped  = false;
+
+        const togglePane = () => {
+            _paneSwiped = !_paneSwiped;
+            rightPane.classList.toggle('swiped-away', _paneSwiped);
+            swipeHandle.textContent = _paneSwiped ? '›' : '‹';
+        };
+
+        swipeHandle.addEventListener('click', togglePane);
+
+        // Swipe right on right-pane to reveal diagram; swipe left to bring back
+        let _swipeTouchStart = null;
+        rightPane.addEventListener('touchstart', (e) => {
+            _swipeTouchStart = e.touches[0].clientX;
+        }, { passive: true });
+
+        rightPane.addEventListener('touchend', (e) => {
+            if (_swipeTouchStart === null) return;
+            const dx = e.changedTouches[0].clientX - _swipeTouchStart;
+            _swipeTouchStart = null;
+            // Swipe right > 60px → hide pane; swipe left > 60px → show pane
+            if (dx > 60 && !_paneSwiped)  togglePane();
+            if (dx < -60 && _paneSwiped)  togglePane();
+        }, { passive: true });
+
         // ── Diagram render ────────────────────────────────────────────────────
-        // visitedEdges: Set of "fromState|toState" strings
         window.renderDiagram = async (config, current, visitedEdges = new Set()) => {
             let graph = `graph TD\n`;
 
@@ -171,8 +539,7 @@
                         });
                         targets.forEach(tId => {
                             const visited = visitedEdges.has(`${id}|${ev}`);
-                            const label   = visited ? `✓ ${ev}` : ev;
-                            graph += `  ${id} -- "${label}" --> ${tId}\n`;
+                            graph += `  ${id} -- "${visited ? '✓ ' : ''}${ev}" --> ${tId}\n`;
                         });
                     });
                 }
@@ -181,24 +548,20 @@
                     const targets = Array.isArray(config.states[id].always)
                         ? config.states[id].always : [config.states[id].always];
                     targets.forEach(t => {
-                        const tId     = t.target || t;
-                        const visited = visitedEdges.has(`${id}|auto`);
-                        const label   = visited ? `✓ auto` : `auto`;
-                        graph += `  ${id} -- "${label}" --> ${tId}\n`;
+                        const tId = t.target || t;
+                        graph += `  ${id} -- "${visitedEdges.has(`${id}|auto`) ? '✓ ' : ''}auto" --> ${tId}\n`;
                     });
                 }
 
                 if (config.states[id].invoke) {
                     const inv = config.states[id].invoke;
                     if (inv.onDone?.target) {
-                        const tId     = inv.onDone.target;
                         const visited = visitedEdges.has(`${id}|done`);
-                        graph += `  ${id} -. "${visited ? '✓ ' : ''}done" .-> ${tId}\n`;
+                        graph += `  ${id} -. "${visited ? '✓ ' : ''}done" .-> ${inv.onDone.target}\n`;
                     }
                     if (inv.onError?.target) {
-                        const tId     = inv.onError.target;
                         const visited = visitedEdges.has(`${id}|error`);
-                        graph += `  ${id} -. "${visited ? '✓ ' : ''}error" .-> ${tId}\n`;
+                        graph += `  ${id} -. "${visited ? '✓ ' : ''}error" .-> ${inv.onError.target}\n`;
                     }
                 }
             });

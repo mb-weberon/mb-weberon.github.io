@@ -12,14 +12,33 @@
  *   generateTraces()          — log all trace arrays
  *   runAllTraces()            — replay every path, self-test, show results drawer
  *   runAllTraces(2000)        — same with 2s pause between paths (default 1500ms)
- *   loadTestResults(file)     — load a saved results JSON file into the drawer
  *   downloadTestResults()     — save last results as JSON
+ *   loadTestResults(file)     — load a saved results JSON into the drawer
+ *
+ * For text-input states (meta.input === 'text') add a sample value in
+ * SAMPLE_INPUTS keyed by state id.
  */
 
 const SAMPLE_INPUTS = {
+    // realtor_bot
     ask_email: 'test@example.com',
     ask_phone: '4155550123',
+    // ucbs_bot (ask_phone and ask_email reuse the same keys above)
 };
+
+// Per-invoke-state extra delay in ms. Keyed by state id.
+// Set to match the simulated network delay in realtor-services.js (or equivalent).
+// If a state is not listed here, INVOKE_FALLBACK_MS is used for any invoke state.
+const INVOKE_DELAYS = {
+    emailTranscript:  800,
+    uploadContext:    600,
+    send_transcript:  800,
+    upload_context:   600,
+};
+const INVOKE_FALLBACK_MS = 800;
+const STEP_MS            = 600;   // Runtime.replay() delay per step
+const STARTUP_MS         = 50;    // _replayTrace startup delay
+const BUFFER_MS          = 600;   // extra buffer after last step
 
 // ── Path enumeration ──────────────────────────────────────────────────────────
 
@@ -89,6 +108,60 @@ export function generateTraces(config) {
     return traces;
 }
 
+// ── Duration estimator ────────────────────────────────────────────────────────
+
+/**
+ * Estimate how long a replay will take by walking the path the trace takes
+ * through the machine and summing up step delays + any invoke state delays.
+ */
+function estimateDuration(trace, config) {
+    let ms       = STARTUP_MS;
+    let stateId  = config.initial;
+
+    for (const item of trace) {
+        ms += STEP_MS;
+
+        const state = config.states[stateId];
+        if (!state) break;
+
+        // Check for invoke on the current state (fires automatically before user can act)
+        if (state.invoke) {
+            const invId = state.invoke.id ?? stateId;
+            ms += INVOKE_DELAYS[invId] ?? INVOKE_DELAYS[stateId] ?? INVOKE_FALLBACK_MS;
+        }
+
+        // Advance to next state by following the trace item
+        let nextStateId = null;
+
+        if (state.on) {
+            for (const [eventType, transition] of Object.entries(state.on)) {
+                const isMatch = eventType === 'SUBMIT'
+                    ? (SAMPLE_INPUTS[stateId] === item || typeof item === 'string' && eventType === 'SUBMIT')
+                    : eventType === item;
+
+                if (isMatch) {
+                    const branches = Array.isArray(transition) ? transition : [transition];
+                    const branch   = branches.find(b => b?.target);
+                    nextStateId    = branch?.target ?? null;
+                    break;
+                }
+            }
+        }
+
+        if (!nextStateId) break;
+        stateId = nextStateId;
+
+        // Check if the destination state is an invoke-only state (auto-transition)
+        const nextState = config.states[stateId];
+        if (nextState?.invoke && !nextState?.on) {
+            const invId = nextState.invoke.id ?? stateId;
+            ms += INVOKE_DELAYS[invId] ?? INVOKE_DELAYS[stateId] ?? INVOKE_FALLBACK_MS;
+        }
+    }
+
+    return ms + BUFFER_MS;
+}
+
 // ── Trace comparison ──────────────────────────────────────────────────────────
 
 function compareTraces(expected, actual) {
@@ -132,7 +205,6 @@ export async function runAllTraces(config, replayFn, getTrace, getStateId, pause
     const cases  = [];
 
     showStatusBadge(`Running 0 / ${total}…`, true);
-
     console.group(`▶▶ Running all ${total} paths`);
 
     for (let i = 0; i < total; i++) {
@@ -142,10 +214,10 @@ export async function runAllTraces(config, replayFn, getTrace, getStateId, pause
         }
 
         const expected       = traces[i];
-        const replayDuration = 50 + (expected.length * 600) + 400;
+        const replayDuration = estimateDuration(expected, config);
 
         showStatusBadge(`Running ${i + 1} / ${total}…`, true);
-        console.log(`\n▶ Path ${i + 1} / ${total}: ${JSON.stringify(expected)}`);
+        console.log(`\n▶ Path ${i + 1} / ${total} (est. ${replayDuration}ms): ${JSON.stringify(expected)}`);
 
         replayFn(JSON.stringify(expected));
         await new Promise(r => setTimeout(r, replayDuration));
@@ -233,7 +305,7 @@ export function showResultsDrawer(results, replayFn) {
         border-radius: 6px 6px 0 0;
     `;
 
-    // ── Header (drag handle) ──────────────────────────────────────────────────
+    // ── Header ────────────────────────────────────────────────────────────────
     const header = document.createElement('div');
     header.style.cssText = `
         padding: 7px 10px;
@@ -248,8 +320,8 @@ export function showResultsDrawer(results, replayFn) {
         user-select: none;
     `;
 
-    const passColor = failed === 0 ? '#98c379' : '#e06c75';
-    const titleSpan = document.createElement('span');
+    const passColor  = failed === 0 ? '#98c379' : '#e06c75';
+    const titleSpan  = document.createElement('span');
     titleSpan.style.cssText = `color:#61dafb; font-weight:bold; flex:1; font-size:11px;`;
     titleSpan.innerText = `🧪 ${flowId}`;
 
@@ -273,7 +345,7 @@ export function showResultsDrawer(results, replayFn) {
     header.appendChild(collapseBtn);
     header.appendChild(closeBtn);
 
-    // ── Sub-header: run time + download ──────────────────────────────────────
+    // ── Sub-header ────────────────────────────────────────────────────────────
     const subHeader = document.createElement('div');
     subHeader.style.cssText = `
         padding: 3px 10px;
@@ -311,8 +383,8 @@ export function showResultsDrawer(results, replayFn) {
         </thead>
     `;
 
-    const tbody = document.createElement('tbody');
-    let selectedRow = null;
+    const tbody      = document.createElement('tbody');
+    let selectedRow  = null;
 
     cases.forEach((c) => {
         const tr = document.createElement('tr');
@@ -344,9 +416,36 @@ export function showResultsDrawer(results, replayFn) {
             if (selectedRow) { selectedRow.style.background = ''; selectedRow.style.outline = ''; }
             selectedRow = tr;
             tr.style.background = '#2d3a4a';
-            tr.style.outline = '1px solid #0084ff';
+            tr.style.outline    = '1px solid #0084ff';
             if (diffRow) diffRow.style.display = diffRow.style.display === 'none' ? '' : 'none';
-            replayFn(JSON.stringify(c.expected));
+
+            // Populate the replay input so the user can re-run manually if desired
+            const replayInput = document.getElementById('replay-input');
+            if (replayInput) replayInput.value = JSON.stringify(c.expected);
+
+            // Restore the captured chat bubbles instantly — no re-run
+            const messages = document.getElementById('messages');
+            if (messages && c.bubbles?.length) {
+                messages.innerHTML = '';
+                c.bubbles.forEach(b => {
+                    const d     = document.createElement('div');
+                    d.className = `msg ${b.side}`;
+                    d.innerText = b.text;
+                    messages.appendChild(d);
+                });
+                messages.scrollTop = messages.scrollHeight;
+            }
+
+            // Restore the context viewer
+            const profile      = document.getElementById('profile-view');
+            const stateDisplay = document.getElementById('state-id');
+            if (profile)      profile.innerText      = JSON.stringify(c.finalContext, null, 2);
+            if (stateDisplay) stateDisplay.innerText = `State: ${c.finalStateId}`;
+
+            // Re-render the diagram at the final state (no visited edges — display only)
+            if (window.renderDiagram && c.finalContext) {
+                window.renderDiagram(window._config, c.finalStateId, new Set()).catch(() => {});
+            }
         };
 
         tbody.appendChild(tr);
@@ -364,10 +463,10 @@ export function showResultsDrawer(results, replayFn) {
     // ── Collapse / expand ─────────────────────────────────────────────────────
     collapseBtn.onclick = () => {
         collapsed = !collapsed;
-        subHeader.style.display  = collapsed ? 'none' : '';
-        tableWrap.style.display  = collapsed ? 'none' : '';
-        collapseBtn.innerText    = collapsed ? '▲' : '▼';
-        collapseBtn.title        = collapsed ? 'Expand' : 'Collapse';
+        subHeader.style.display = collapsed ? 'none' : '';
+        tableWrap.style.display = collapsed ? 'none' : '';
+        collapseBtn.innerText   = collapsed ? '▲' : '▼';
+        collapseBtn.title       = collapsed ? 'Expand' : 'Collapse';
     };
 
     // ── Drag to move ──────────────────────────────────────────────────────────
@@ -377,18 +476,16 @@ export function showResultsDrawer(results, replayFn) {
         if (e.target === closeBtn || e.target === collapseBtn) return;
         dragging = true;
         const rect = drawer.getBoundingClientRect();
-        dragOffX = e.clientX - rect.left;
-        dragOffY = e.clientY - rect.top;
+        dragOffX   = e.clientX - rect.left;
+        dragOffY   = e.clientY - rect.top;
         header.style.cursor = 'grabbing';
         e.preventDefault();
     });
 
     document.addEventListener('mousemove', (e) => {
         if (!dragging) return;
-        const x = e.clientX - dragOffX;
-        const y = e.clientY - dragOffY;
-        drawer.style.left   = `${x}px`;
-        drawer.style.top    = `${y}px`;
+        drawer.style.left   = `${e.clientX - dragOffX}px`;
+        drawer.style.top    = `${e.clientY - dragOffY}px`;
         drawer.style.right  = 'auto';
         drawer.style.bottom = 'auto';
     });
@@ -398,24 +495,6 @@ export function showResultsDrawer(results, replayFn) {
         dragging = false;
         header.style.cursor = 'grab';
     });
-}
-
-// ── Load results from file ────────────────────────────────────────────────────
-
-export function loadTestResults(file) {
-    if (!file) { console.warn('Pass a File object. Usage: loadTestResults(file)'); return; }
-    const reader = new FileReader();
-    reader.onload = (e) => {
-        try {
-            const results = JSON.parse(e.target.result);
-            window._testResults = results;
-            showResultsDrawer(results, window._replayTrace);
-            console.log(`✅ Loaded ${results.cases?.length} test cases from file`);
-        } catch (err) {
-            console.error('❌ Failed to parse results JSON:', err.message);
-        }
-    };
-    reader.readAsText(file);
 }
 
 // ── Status badge ──────────────────────────────────────────────────────────────
@@ -435,7 +514,6 @@ function showStatusBadge(text, showStop = false) {
         `;
         document.body.appendChild(badge);
     }
-
     badge.innerHTML = '';
     const label = document.createElement('span');
     label.innerText = text;
@@ -452,6 +530,24 @@ function showStatusBadge(text, showStop = false) {
 
 function hideStatusBadge() {
     document.getElementById('test-status-badge')?.remove();
+}
+
+// ── Load results from file ────────────────────────────────────────────────────
+
+export function loadTestResults(file) {
+    if (!file) { console.warn('Pass a File object via the Load Results button.'); return; }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        try {
+            const results = JSON.parse(e.target.result);
+            window._testResults = results;
+            showResultsDrawer(results, window._replayTrace);
+            console.log(`✅ Loaded ${results.cases?.length} test cases from file`);
+        } catch (err) {
+            console.error('❌ Failed to parse results JSON:', err.message);
+        }
+    };
+    reader.readAsText(file);
 }
 
 // ── Download helper ───────────────────────────────────────────────────────────
