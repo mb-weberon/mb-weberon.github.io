@@ -1,0 +1,123 @@
+{
+  "major": 0,
+  "minor": 6,
+  "patch": 5,
+  "label": "",
+  "history": [
+    {
+      "version": "0.6.5",
+      "date": "2026-03-23",
+      "note": "Mobile UI: pinch-to-zoom on diagram (zoom buttons hidden on touch devices); desktop pane resize drag handle between diagram and right pane; mobile collapse tab on left edge of right pane slides pane away to reveal diagram (replaces full swipe-away); test results drawer touch-draggable via MutationObserver; swipe gestures preserved on non-interactive areas"
+    },
+    {
+      "version": "0.6.4",
+      "date": "2026-03-23",
+      "note": "Fix: test results viewer captures and restores visitedEdges per case; _visitedEdges exposed on window; _replayTrace/_restartRuntime accept overrideConfig"
+    },
+    {
+      "version": "0.6.3",
+      "date": "2026-03-23",
+      "note": "UI: SM-IDE title bar with version badge; toolbar buttons no longer overflow; context viewer collapsed by default with slide toggle; 100dvh + safe-area-inset fixes mobile URL bar overlap; touch pan on diagram; mobile swipe handle to reveal diagram behind right pane; test results row click restores captured state instantly without re-running; replay input populated on row click for manual re-run; invoke-aware duration estimator in generate-traces.js"
+    },
+    {
+      "version": "0.6.2",
+      "date": "2026-03-23",
+      "note": "Feature: generate-traces.js — runAllTraces() with self-test comparison, draggable/collapsible results drawer, stop button, load results from saved JSON, downloadTestResults()"
+    },
+    {
+      "version": "0.6.1",
+      "date": "2026-03-22",
+      "note": "Fix: user bubbles driven by trace length delta; replay restart ownership moved to _replayTrace; onReplayStep increments _lastTraceLength to prevent doubles"
+    },
+    {
+      "version": "0.6.0",
+      "date": "2026-03-22",
+      "note": "Phase 3: Runtime isolation — ChatEngine renamed Runtime; zero UI knowledge; single onSnapshot callback; main.js split into renderChat + renderIDE"
+    },
+    {
+      "version": "0.5.0",
+      "date": "2026-03-22",
+      "note": "Phase 2: Logger abstraction — nullLogger/consoleLogger/resolveLogger; ChatEngine accepts injected logger; production silent by default, debug via ?debug=true or localStorage"
+    },
+    {
+      "version": "0.4.3",
+      "date": "2026-03-22",
+      "note": "Fix: visited edge key changed from fromState|toState to fromState|eventType"
+    },
+    {
+      "version": "0.4.2",
+      "date": "2026-03-22",
+      "note": "Fix: diagram-canvas position:absolute so SVG renders visibly; zoom/pan/reset working"
+    },
+    {
+      "version": "0.4.1",
+      "date": "2026-03-22",
+      "note": "Fix: drop linkStyle and ==> arrows; visited edges marked with checkmark label prefix"
+    },
+    {
+      "version": "0.4.0",
+      "date": "2026-03-22",
+      "note": "Feature: diagram fits viewport; zoom/pan controls; visited edge tracking"
+    },
+    {
+      "version": "0.3.9",
+      "date": "2026-03-22",
+      "note": "Fix: Load Flow accepts ZIP, bare .json, bare .js, or pair"
+    },
+    {
+      "version": "0.3.8",
+      "date": "2026-03-22",
+      "note": "Feature: Save/Load Flow as paired ZIP"
+    },
+    {
+      "version": "0.3.7",
+      "date": "2026-03-22",
+      "note": "Fix: layout fits 100% zoom; Send button added"
+    },
+    {
+      "version": "0.3.6",
+      "date": "2026-03-22",
+      "note": "Fix: deep copy config before mutation in start()"
+    },
+    {
+      "version": "0.3.5",
+      "date": "2026-03-22",
+      "note": "Fix: pre-generate assign closures for XState 5"
+    },
+    {
+      "version": "0.3.4",
+      "date": "2026-03-22",
+      "note": "Diagnostics: raw action log, version+URL at boot"
+    },
+    {
+      "version": "0.3.3",
+      "date": "2026-03-22",
+      "note": "Fix: combine updateContext actions on email SUBMIT"
+    },
+    {
+      "version": "0.3.2",
+      "date": "2026-03-22",
+      "note": "Fix: user bubble ordering"
+    },
+    {
+      "version": "0.3.1",
+      "date": "2026-03-22",
+      "note": "Fix: diagram array transitions, validation bubble, replay guard check"
+    },
+    {
+      "version": "0.3.0",
+      "date": "2026-03-22",
+      "note": "Phase 1: validation moved to XState-native guards"
+    },
+    {
+      "version": "0.2.0",
+      "date": "2026-03-22",
+      "note": "Input validation + state-change logging"
+    },
+    {
+      "version": "0.1.0",
+      "date": "2026-03-22",
+      "note": "Initial release"
+    }
+  ]
+}
