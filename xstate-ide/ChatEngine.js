@@ -1,10 +1,12 @@
 import { createMachine, createActor, assign, fromPromise } from 'xstate';
+import { nullLogger } from './logger.js';
 
 export class ChatEngine {
-    constructor(config, services = {}, uiHooks = {}) {
+    constructor(config, services = {}, uiHooks = {}, logger = nullLogger) {
         this.config   = config;
         this.services = services;
         this.ui       = uiHooks;
+        this.logger   = logger;
         this.actor    = null;
         this.choices  = [];
         this.lastId   = null;
@@ -17,8 +19,6 @@ export class ChatEngine {
         if (this.actor) this.actor.stop();
         this.lastId = null;
 
-        // Deep copy so repeated start() calls (restart/replay) each get a
-        // fresh config to mutate — the original is never modified.
         const config = JSON.parse(JSON.stringify(this.config));
 
         // ── Async services → XState actors ────────────────────────────────────
@@ -36,30 +36,23 @@ export class ChatEngine {
         Object.entries(rawGuards).forEach(([name, fn]) => {
             guardsMap[name] = (args) => {
                 const result = fn(args);
-                console.log(`🛡️  Guard "${name}" → ${result} (value: "${args.event?.value}")`);
+                this.logger.log(`🛡️  Guard "${name}" → ${result} (value: "${args.event?.value}")`);
                 return result;
             };
         });
-        console.log('🛡️  Registering guards:', Object.keys(guardsMap));
+        this.logger.log('🛡️  Registering guards:', Object.keys(guardsMap));
 
         // ── Pre-generate updateContext actions ────────────────────────────────
-        // XState 5 does NOT pass `action` (with its params) to assign()
-        // callbacks when using .provide() with a JSON-loaded machine.
-        // The workaround: walk the config, find every { type: "updateContext" }
-        // action object, extract its params, and replace it with a uniquely
-        // named action whose assign closure already has the params baked in.
-        // The config is mutated in-place so the machine JSON schema is unchanged.
         const generatedActions = {};
 
         const processActions = (actions) => {
             if (!actions) return;
             const list = Array.isArray(actions) ? actions : [actions];
-            list.forEach((action, i) => {
+            list.forEach((action) => {
                 if (typeof action === 'object' && action.type === 'updateContext') {
                     const params = action.params ?? {};
-                    // Unique name so each call gets its own closure
                     const uid = `updateContext_${Math.random().toString(36).slice(2)}`;
-                    action.type = uid;   // mutate the config action reference
+                    action.type = uid;
 
                     generatedActions[uid] = assign(({ event }) => {
                         const updates = {};
@@ -72,7 +65,7 @@ export class ChatEngine {
                             const source = params.fromEvent === 'output'
                                 ? event.output
                                 : event.value;
-                            console.log(`📥 "${params.mapValueTo}" ← ${JSON.stringify(source)} (fromEvent: ${params.fromEvent ?? 'value'})`);
+                            this.logger.log(`📥 "${params.mapValueTo}" ← ${JSON.stringify(source)} (fromEvent: ${params.fromEvent ?? 'value'})`);
                             updates[params.mapValueTo] = source;
                         }
                         return updates;
@@ -81,25 +74,21 @@ export class ChatEngine {
             });
         };
 
-        // Walk every state's transitions and entry actions
         Object.values(config.states).forEach(state => {
-            // on: { EVENT: transition | transition[] }
             if (state.on) {
                 Object.values(state.on).forEach(transition => {
                     const list = Array.isArray(transition) ? transition : [transition];
                     list.forEach(t => processActions(t?.actions));
                 });
             }
-            // invoke onDone / onError
             if (state.invoke) {
                 processActions(state.invoke.onDone?.actions);
                 processActions(state.invoke.onError?.actions);
             }
-            // entry actions
             processActions(state.entry);
         });
 
-        console.log('⚙️  Generated actions:', Object.keys(generatedActions));
+        this.logger.log('⚙️  Generated actions:', Object.keys(generatedActions));
 
         const machine = createMachine(config).provide({
             actors:  actorsMap,
@@ -128,7 +117,7 @@ export class ChatEngine {
     // ── Submit ────────────────────────────────────────────────────────────────
 
     submit(value) {
-        console.log(`📤 submit() called with: "${value}"`);
+        this.logger.log(`📤 submit() called with: "${value}"`);
         this.actor.send({ type: 'SUBMIT', value });
     }
 
@@ -140,11 +129,11 @@ export class ChatEngine {
         try {
             trace = JSON.parse(traceString);
         } catch {
-            console.error('❌ Replay: invalid JSON trace string');
+            this.logger.error('❌ Replay: invalid JSON trace string');
             return;
         }
 
-        console.log('▶ Replay starting, steps:', trace.length);
+        this.logger.log('▶ Replay starting, steps:', trace.length);
         this.restart();
 
         for (const item of trace) {
@@ -155,7 +144,7 @@ export class ChatEngine {
             const meta    = this.config.states[stateId]?.meta ?? {};
 
             if (meta.input === 'text') {
-                console.log(`▶ Replay submit [${stateId}]: "${item}"`);
+                this.logger.log(`▶ Replay submit [${stateId}]: "${item}"`);
                 this.ui.addBubble?.(item, 'user');
                 this.submit(item);
 
@@ -165,18 +154,18 @@ export class ChatEngine {
 
                 if (afterId === stateId) {
                     const err = after.context.inputError || 'validation failed';
-                    console.error(`❌ Replay aborted at "${stateId}": ${err}`);
+                    this.logger.error(`❌ Replay aborted at "${stateId}": ${err}`);
                     this.ui.removeLastUserBubble?.();
                     return;
                 }
             } else {
-                console.log(`▶ Replay event [${stateId}]: "${item}"`);
+                this.logger.log(`▶ Replay event [${stateId}]: "${item}"`);
                 this.ui.addBubble?.(item, 'user');
                 this.actor.send({ type: item });
             }
         }
 
-        console.log('▶ Replay complete');
+        this.logger.log('▶ Replay complete');
     }
 
     // ── State update ──────────────────────────────────────────────────────────
@@ -192,8 +181,8 @@ export class ChatEngine {
         if (stateChanged) {
             const inputMeta = state.meta?.input ? ` [input: ${state.meta.input}]` : '';
             const isFinal   = state.type === 'final' ? ' 🏁' : '';
-            console.log(`🔀 State: ${this.lastId ?? '(start)'} → ${stateId}${inputMeta}${isFinal}`);
-            console.log(`   Context:`, { ...snapshot.context });
+            this.logger.log(`🔀 State: ${this.lastId ?? '(start)'} → ${stateId}${inputMeta}${isFinal}`);
+            this.logger.log(`   Context:`, { ...snapshot.context });
 
             if (state.meta?.text) {
                 const msg = state.meta.text.replace(
@@ -207,7 +196,7 @@ export class ChatEngine {
         this.lastId = stateId;
 
         if (snapshot.context.inputError) {
-            console.warn(`⚠️  Input error [${stateId}]: ${snapshot.context.inputError}`);
+            this.logger.warn(`⚠️  Input error [${stateId}]: ${snapshot.context.inputError}`);
             this.ui.showError?.(snapshot.context.inputError);
         }
 

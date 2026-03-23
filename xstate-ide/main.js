@@ -2,6 +2,7 @@ import { ChatEngine } from './ChatEngine.js';
 import { realtorServices } from './realtor-services.js';
 import { loadVersion } from './version.js';
 import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
+import { consoleLogger } from './logger.js';
 
 const BASE = new URL('.', import.meta.url).href;
 const fetchLocal = (file) => fetch(BASE + file);
@@ -192,7 +193,7 @@ async function boot() {
 
     // ── Start engine ──────────────────────────────────────────────────────────
     console.log('🚀 Starting ChatEngine...');
-    window.currentEngine = new ChatEngine(config, realtorServices, uiHooks);
+    window.currentEngine = new ChatEngine(config, realtorServices, uiHooks, consoleLogger);
     window.currentEngine.start();
     console.log('✅ ChatEngine started');
 
