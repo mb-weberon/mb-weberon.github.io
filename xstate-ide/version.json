@@ -11,8 +11,8 @@
     },
     {
       "version": "0.6.3",
-      "date": "2026-03-24",
-      "note": "Feature: UI improvements"
+      "date": "2026-03-23",
+      "note": "UI: SM-IDE title bar with version badge; toolbar buttons no longer overflow; context viewer collapsed by default with slide toggle; 100dvh + safe-area-inset fixes mobile URL bar overlap; touch pan on diagram; mobile swipe handle to reveal diagram behind right pane; test results row click restores captured state instantly without re-running; replay input populated on row click for manual re-run; invoke-aware duration estimator in generate-traces.js"
     },
     {
       "version": "0.6.2",
