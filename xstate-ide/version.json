@@ -1,13 +1,18 @@
 {
   "major": 0,
   "minor": 6,
-  "patch": 4,
+  "patch": 5,
   "label": "",
   "history": [
     {
+      "version": "0.6.5",
+      "date": "2026-03-23",
+      "note": "Mobile UI: pinch-to-zoom on diagram (zoom buttons hidden on touch devices); desktop pane resize drag handle between diagram and right pane; mobile collapse tab on left edge of right pane slides pane away to reveal diagram (replaces full swipe-away); test results drawer touch-draggable via MutationObserver; swipe gestures preserved on non-interactive areas"
+    },
+    {
       "version": "0.6.4",
       "date": "2026-03-23",
-      "note": "Fix: test results viewer captures and restores visitedEdges per case so diagram shows checkmarked paths on row click; _visitedEdges exposed on window; _replayTrace/_restartRuntime accept overrideConfig for consistency; toolbar button tooltips with touch support; loadTestResults restores window._config from saved run"
+      "note": "Fix: test results viewer captures and restores visitedEdges per case; _visitedEdges exposed on window; _replayTrace/_restartRuntime accept overrideConfig"
     },
     {
       "version": "0.6.3",
