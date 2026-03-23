@@ -139,7 +139,8 @@ export class Runtime {
         }
 
         this.logger.log('▶ Replay starting, steps:', trace.length);
-        this.restart();
+        // No this.restart() here — the caller (_replayTrace in main.js) is
+        // responsible for restarting and clearing the DOM before calling replay().
 
         for (const item of trace) {
             await new Promise(r => setTimeout(r, 600));

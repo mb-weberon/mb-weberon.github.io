@@ -41,12 +41,21 @@ async function boot() {
     } catch (_) { /* non-fatal */ }
 
     // ── Visited edge tracking (IDE only) ──────────────────────────────────────
-    const visitedEdges = new Set();
-    let   _lastStateId = null;
+    const visitedEdges   = new Set();
+    let _lastStateId     = null;
+    let _lastTraceLength = 0;
 
     // ── Chat rendering ────────────────────────────────────────────────────────
     function renderChat(snap) {
         const { stateId, message, input, placeholder, choices, error } = snap;
+
+        // Add user bubble for the event that caused this transition.
+        // Guard on trace length so we never double-up with onReplayStep bubbles.
+        if (message && snap.context.trace?.length > _lastTraceLength) {
+            const lastTrace = snap.context.trace[snap.context.trace.length - 1];
+            addBubble(lastTrace, 'user');
+            _lastTraceLength = snap.context.trace.length;
+        }
 
         if (message) {
             addBubble(message, 'bot');
@@ -62,7 +71,7 @@ async function boot() {
         area.innerHTML = '';
 
         if (input === 'text') {
-            const inputEl   = document.createElement('input');
+            const inputEl       = document.createElement('input');
             inputEl.type        = 'text';
             inputEl.placeholder = placeholder || 'Type and press Enter...';
 
@@ -71,22 +80,10 @@ async function boot() {
             sendBtn.style.cssText = 'flex-shrink:0;';
 
             const go = () => {
-                const val      = inputEl.value.trim();
-                const beforeId = getStateId();
-
-                addBubble(val, 'user');
+                const val = inputEl.value.trim();
+                if (!val) return;
+                inputEl.value = '';
                 window.currentRuntime.submit(val);
-
-                const afterId = getStateId();
-                if (afterId !== beforeId) {
-                    inputEl.value = '';
-                } else {
-                    // Guard failed — remove speculative bubble (error shown by next snap)
-                    const msgs = document.getElementById('messages');
-                    if (msgs?.lastChild?.classList.contains('user')) {
-                        msgs.removeChild(msgs.lastChild);
-                    }
-                }
             };
 
             inputEl.onkeydown = (e) => { if (e.key === 'Enter') go(); };
@@ -100,11 +97,7 @@ async function boot() {
         choices.forEach((c, i) => {
             const b     = document.createElement('button');
             b.innerText = `(${i + 1}) ${c}`;
-            b.onclick   = () => {
-                console.log('🖱️ Button clicked:', c);
-                addBubble(c, 'user');
-                window.currentRuntime.send(c);
-            };
+            b.onclick   = () => window.currentRuntime.send(c);
             area.appendChild(b);
         });
     }
@@ -135,13 +128,7 @@ async function boot() {
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
-    function getStateId() {
-        const s = window.currentRuntime.actor.getSnapshot();
-        return typeof s.value === 'string' ? s.value : Object.keys(s.value)[0];
-    }
-
     function addBubble(text, side) {
-	console.log('💬 addBubble:', side, text);   // ADD THIS
         const m = document.getElementById('messages');
         if (!m) return;
         const d = document.createElement('div');
@@ -179,21 +166,31 @@ async function boot() {
         renderIDE(snap);
     };
 
+    // onReplayStep fires BEFORE the snapshot for that step, so we add the user
+    // bubble here and advance _lastTraceLength to prevent renderChat doubling it.
     window.currentRuntime.onReplayStep = (item) => {
-	addBubble(item, 'user');
+        addBubble(item, 'user');
+        _lastTraceLength++;
     };
 
     window.currentRuntime.start();
     console.log('✅ Runtime started');
 
-    // ── Restart / Replay (wired to toolbar buttons) ───────────────────────────
-    // These need to be on window so the inline onclick handlers in index.html work.
-    // We replace the old currentEngine references with currentRuntime.
+    // ── Restart ───────────────────────────────────────────────────────────────
     window._restartRuntime = () => {
         document.getElementById('messages').innerHTML = '';
         visitedEdges.clear();
-        _lastStateId = null;
+        _lastStateId     = null;
+        _lastTraceLength = 0;
         window.currentRuntime.restart();
+    };
+
+    // Replay must go through _restartRuntime so the DOM clears and
+    // _lastTraceLength resets before the replay steps start firing.
+    window._replayTrace = (traceString) => {
+        window._restartRuntime();
+        // Small delay to let the initial state snapshot render before steps begin
+        setTimeout(() => window.currentRuntime.replay(traceString), 50);
     };
 
     // ── Save / Load Flow ──────────────────────────────────────────────────────
