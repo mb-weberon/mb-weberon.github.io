@@ -231,6 +231,7 @@ export async function runAllTraces(config, replayFn, getTrace, getStateId, pause
         const finalStateId      = getStateId();
         const finalContext      = { ...window.currentRuntime.actor.getSnapshot().context };
         const bubbles           = captureBubbles();
+        const visitedEdges      = window._visitedEdges ? [...window._visitedEdges] : [];
         const { passed, diffs } = compareTraces(expected, actual);
 
         if (passed) {
@@ -240,7 +241,7 @@ export async function runAllTraces(config, replayFn, getTrace, getStateId, pause
             diffs.forEach(d => console.warn(`     ${d}`));
         }
 
-        cases.push({ path: i + 1, passed, expected, actual, diffs, finalStateId, finalContext, bubbles });
+        cases.push({ path: i + 1, passed, expected, actual, diffs, finalStateId, finalContext, bubbles, visitedEdges });
 
         await new Promise(r => setTimeout(r, pauseMs));
     }
@@ -280,7 +281,7 @@ export async function runAllTraces(config, replayFn, getTrace, getStateId, pause
 export function showResultsDrawer(results, replayFn) {
     document.getElementById('test-results-drawer')?.remove();
 
-    const { cases, passed, failed, total, runAt, flowId } = results;
+    const { cases, passed, failed, total, runAt, flowId, config } = results;
     replayFn = replayFn ?? window._replayTrace;
 
     let collapsed = false;
@@ -419,9 +420,16 @@ export function showResultsDrawer(results, replayFn) {
             tr.style.outline    = '1px solid #0084ff';
             if (diffRow) diffRow.style.display = diffRow.style.display === 'none' ? '' : 'none';
 
-            // Populate the replay input so the user can re-run manually if desired
+            // Populate the replay input and wire ▶ to use the saved config
             const replayInput = document.getElementById('replay-input');
-            if (replayInput) replayInput.value = JSON.stringify(c.expected);
+            if (replayInput) {
+                replayInput.value = JSON.stringify(c.expected);
+                const replayBtn = replayInput.nextElementSibling;
+                if (replayBtn) {
+                    replayBtn.onclick = () =>
+                        window._replayTrace(replayInput.value, config);
+                }
+            }
 
             // Restore the captured chat bubbles instantly — no re-run
             const messages = document.getElementById('messages');
@@ -442,9 +450,13 @@ export function showResultsDrawer(results, replayFn) {
             if (profile)      profile.innerText      = JSON.stringify(c.finalContext, null, 2);
             if (stateDisplay) stateDisplay.innerText = `State: ${c.finalStateId}`;
 
-            // Re-render the diagram at the final state (no visited edges — display only)
-            if (window.renderDiagram && c.finalContext) {
-                window.renderDiagram(window._config, c.finalStateId, new Set()).catch(() => {});
+            // Re-render the diagram with the captured visited edges and saved config
+            if (window.renderDiagram) {
+                window.renderDiagram(
+                    config ?? window._config,
+                    c.finalStateId,
+                    new Set(c.visitedEdges ?? [])
+                ).catch(() => {});
             }
         };
 
@@ -541,6 +553,10 @@ export function loadTestResults(file) {
         try {
             const results = JSON.parse(e.target.result);
             window._testResults = results;
+            if (results.config) {
+                window._config = results.config;
+                console.log(`📦 Restored config "${results.config.id}" from test results`);
+            }
             showResultsDrawer(results, window._replayTrace);
             console.log(`✅ Loaded ${results.cases?.length} test cases from file`);
         } catch (err) {

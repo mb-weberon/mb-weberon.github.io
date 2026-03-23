@@ -1,9 +1,14 @@
 {
   "major": 0,
   "minor": 6,
-  "patch": 3,
+  "patch": 4,
   "label": "",
   "history": [
+    {
+      "version": "0.6.4",
+      "date": "2026-03-23",
+      "note": "Fix: test results viewer captures and restores visitedEdges per case so diagram shows checkmarked paths on row click; _visitedEdges exposed on window; _replayTrace/_restartRuntime accept overrideConfig for consistency; toolbar button tooltips with touch support; loadTestResults restores window._config from saved run"
+    },
     {
       "version": "0.6.3",
       "date": "2026-03-24",

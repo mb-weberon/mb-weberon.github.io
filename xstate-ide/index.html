@@ -153,7 +153,29 @@
             font-size: 11px;
             border-radius: 5px;
             white-space: nowrap;
+            position: relative;
         }
+
+        /* ── Touch-friendly tooltip ─────────────────────────────────────────── */
+        #touch-tooltip {
+            position: fixed;
+            background: rgba(30, 33, 40, 0.95);
+            color: #abb2bf;
+            font-family: 'Segoe UI', sans-serif;
+            font-size: 12px;
+            line-height: 1.4;
+            padding: 7px 11px;
+            border-radius: 7px;
+            border: 1px solid #444;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.45);
+            max-width: 220px;
+            pointer-events: none;
+            z-index: 9999;
+            opacity: 0;
+            transition: opacity 0.15s ease;
+        }
+
+        #touch-tooltip.visible { opacity: 1; }
 
         /* ── Context / profile viewer ───────────────────────────────────────── */
         #profile-viewer {
@@ -369,10 +391,10 @@
 
         <!-- Toolbar -->
         <div id="toolbar">
-            <button onclick="window.downloadPair()">💾 Save</button>
-            <button onclick="document.getElementById('upload').click()">📂 Load</button>
-            <button onclick="window.runAllTraces && window.runAllTraces()">🧪 Test</button>
-            <button onclick="document.getElementById('load-results').click()">📋 Results</button>
+            <button onclick="window.downloadPair()" title="Save state machine config and services as a ZIP file">💾 Save</button>
+            <button onclick="document.getElementById('upload').click()" title="Load state machine config (.json), services (.js), or both as a ZIP">📂 Load</button>
+            <button onclick="window.runAllTraces && window.runAllTraces()" title="Auto-generate all possible paths and run them as tests">🧪 Test</button>
+            <button onclick="document.getElementById('load-results').click()" title="Load and view a previously saved test results JSON file">📋 Results</button>
             <input type="file" id="upload"       style="display:none" accept=".zip,.json,.js" multiple
                    onchange="window.loadPair(this.files); this.value='';">
             <input type="file" id="load-results" style="display:none" accept=".json"
@@ -580,6 +602,55 @@
                     `<pre style="color:red;font-size:11px;">Diagram error:\n${e.message}</pre>`;
             }
         };
+    </script>
+
+    <!-- ── Touch tooltip ─────────────────────────────────────────────────── -->
+    <div id="touch-tooltip"></div>
+
+    <script>
+        // Works for both mouse (as a fallback) and touch.
+        // Reads the standard `title` attribute — no extra markup needed on buttons.
+        (() => {
+            const tip      = document.getElementById('touch-tooltip');
+            let   hideTimer = null;
+
+            function show(text, x, y) {
+                clearTimeout(hideTimer);
+                tip.textContent = text;
+                tip.classList.add('visible');
+                position(x, y);
+            }
+
+            function hide(delay = 0) {
+                clearTimeout(hideTimer);
+                hideTimer = delay
+                    ? setTimeout(() => tip.classList.remove('visible'), delay)
+                    : (() => { tip.classList.remove('visible'); return null; })();
+            }
+
+            function position(x, y) {
+                const pad = 10;
+                const tw  = tip.offsetWidth  || 220;
+                const th  = tip.offsetHeight || 40;
+                let   lx  = x + pad;
+                let   ly  = y - th - pad;
+                if (lx + tw > window.innerWidth)  lx = x - tw - pad;
+                if (ly < 0)                        ly = y + pad;
+                tip.style.left = lx + 'px';
+                tip.style.top  = ly + 'px';
+            }
+
+            // ── Touch: show on touchstart, hide on touchend/move ──────────────
+            document.addEventListener('touchstart', (e) => {
+                const btn = e.target.closest('[title]');
+                if (!btn) { hide(); return; }
+                const t   = e.touches[0];
+                show(btn.getAttribute('title'), t.clientX, t.clientY);
+            }, { passive: true });
+
+            document.addEventListener('touchend',   () => hide(1200), { passive: true });
+            document.addEventListener('touchmove',  () => hide(0),    { passive: true });
+        })();
     </script>
 
     <script type="module" src="./main.js"></script>

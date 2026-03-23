@@ -59,6 +59,7 @@ async function boot() {
 
     // ── Visited edge tracking (IDE only) ──────────────────────────────────────
     const visitedEdges   = new Set();
+    window._visitedEdges = visitedEdges;   // exposed for test runner capture
     let _lastStateId     = null;
     let _lastTraceLength = 0;
 
@@ -194,7 +195,21 @@ async function boot() {
     console.log('✅ Runtime started');
 
     // ── Restart ───────────────────────────────────────────────────────────────
-    window._restartRuntime = () => {
+    window._restartRuntime = (overrideConfig) => {
+        if (overrideConfig && overrideConfig !== config) {
+            // Swap the live config and rebuild the Runtime with the override
+            Object.assign(config, overrideConfig);
+            window._config = config;
+            window.currentRuntime = new Runtime(config, realtorServices, consoleLogger);
+            window.currentRuntime.onSnapshot = (snap) => {
+                renderChat(snap);
+                renderIDE(snap);
+            };
+            window.currentRuntime.onReplayStep = (item) => {
+                addBubble(item, 'user');
+                _lastTraceLength++;
+            };
+        }
         document.getElementById('messages').innerHTML = '';
         visitedEdges.clear();
         _lastStateId     = null;
@@ -204,8 +219,8 @@ async function boot() {
 
     // Replay must go through _restartRuntime so the DOM clears and
     // _lastTraceLength resets before the replay steps start firing.
-    window._replayTrace = (traceString) => {
-        window._restartRuntime();
+    window._replayTrace = (traceString, overrideConfig) => {
+        window._restartRuntime(overrideConfig);
         // Small delay to let the initial state snapshot render before steps begin
         setTimeout(() => window.currentRuntime.replay(traceString), 50);
     };
