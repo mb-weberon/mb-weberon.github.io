@@ -1,14 +1,19 @@
 {
   "major": 0,
   "minor": 6,
-  "patch": 0,
+  "patch": 1,
   "label": "",
   "history": [
+    {
+      "version": "0.6.1",
+      "date": "2026-03-22",
+      "note": "Fix: user bubbles now driven by trace length delta in renderChat — eliminates XState 5 synchronous snapshot race; replay restart ownership moved to _replayTrace wrapper; onReplayStep increments _lastTraceLength to prevent doubles; generate-traces.js added with generateTraces() and runAllTraces() browser console utilities"
+    },
     {
       "version": "0.6.0",
       "date": "2026-03-22",
       "note": "Phase 3: Runtime isolation — ChatEngine renamed Runtime; zero UI knowledge; single onSnapshot callback; main.js split into renderChat + renderIDE"
-	},
+    },
     {
       "version": "0.5.0",
       "date": "2026-03-22",
@@ -17,7 +22,7 @@
     {
       "version": "0.4.3",
       "date": "2026-03-22",
-      "note": "Fix: visited edge key changed from fromState|toState to fromState|eventType — only the exact event taken gets a checkmark, not all edges sharing the same target"
+      "note": "Fix: visited edge key changed from fromState|toState to fromState|eventType"
     },
     {
       "version": "0.4.2",
