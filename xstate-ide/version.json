@@ -1,13 +1,18 @@
 {
   "major": 0,
   "minor": 6,
-  "patch": 1,
+  "patch": 2,
   "label": "",
   "history": [
     {
+      "version": "0.6.2",
+      "date": "2026-03-23",
+      "note": "Feature: generate-traces.js — runAllTraces() with self-test comparison, draggable/collapsible results drawer, stop button, load results from saved JSON, downloadTestResults()"
+    },
+    {
       "version": "0.6.1",
       "date": "2026-03-22",
-      "note": "Fix: user bubbles now driven by trace length delta in renderChat — eliminates XState 5 synchronous snapshot race; replay restart ownership moved to _replayTrace wrapper; onReplayStep increments _lastTraceLength to prevent doubles; generate-traces.js added with generateTraces() and runAllTraces() browser console utilities"
+      "note": "Fix: user bubbles driven by trace length delta; replay restart ownership moved to _replayTrace; onReplayStep increments _lastTraceLength to prevent doubles"
     },
     {
       "version": "0.6.0",

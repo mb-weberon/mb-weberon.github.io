@@ -30,10 +30,22 @@ async function boot() {
         config = await res.json();
         console.log('✅ Config loaded:', config.id, '| initial:', config.initial);
         console.log('📊 States:', Object.keys(config.states).join(', '));
-	import('./generate-traces.js').then(m => {
-	    window._config = config;
-	    window.generateTraces = () => m.generateTraces(config);
-	    window.runAllTraces   = (pauseMs) => m.runAllTraces(config, window._replayTrace, pauseMs);
+        import('./generate-traces.js').then(m => {
+	    window._config             = config;
+	    window.generateTraces      = () => m.generateTraces(config);
+	    window.downloadTestResults = m.downloadTestResults;
+	    window.stopAllTraces       = m.stopAllTraces;
+	    window.loadTestResults     = m.loadTestResults;
+	    window.runAllTraces        = (pauseMs) => m.runAllTraces(
+		config,
+		window._replayTrace,
+		() => window.currentRuntime.getTrace(),
+		() => {
+		    const s = window.currentRuntime.actor.getSnapshot();
+		    return typeof s.value === 'string' ? s.value : Object.keys(s.value)[0];
+		},
+		pauseMs
+	    );
 	});
     } catch (e) {
         console.error('❌ Failed to load machine config:', e.message);
