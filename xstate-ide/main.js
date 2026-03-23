@@ -33,6 +33,7 @@ async function boot() {
 	import('./generate-traces.js').then(m => {
 	    window._config = config;
 	    window.generateTraces = () => m.generateTraces(config);
+	    window.runAllTraces   = (pauseMs) => m.runAllTraces(config, window._replayTrace, pauseMs);
 	});
     } catch (e) {
         console.error('❌ Failed to load machine config:', e.message);

@@ -1,23 +1,18 @@
 /**
  * generate-traces.js
  *
- * Enumerates every possible path through a machine config and logs
- * the resulting trace arrays to the console, ready to copy-paste
- * into the replay input.
+ * Enumerates every possible path through a machine config and either
+ * logs them to the console or runs them one after another in the IDE.
  *
  * Usage (browser console):
- *   import('./generate-traces.js').then(m => m.generateTraces(config))
+ *   generateTraces()        — log all trace arrays, copy-paste individually
+ *   runAllTraces()          — replay every path automatically, one after another
+ *   runAllTraces(2000)      — same but 2 seconds between paths (default: 1500ms)
  *
- * Or wire it to a button in the IDE toolbar:
- *   window.generateTraces(config)
+ * Both functions are exposed on window by main.js.
  *
- * The config passed in should be the same object main.js loaded from
- * realtor-machine.json — already available as window._config if you
- * expose it there, or just pass it directly.
- *
- * For text-input states (meta.input === 'text') the path walker needs
- * a sample value to continue. These are defined in SAMPLE_INPUTS below.
- * Add an entry for each state id that has a text input.
+ * For text-input states (meta.input === 'text') the walker needs a sample
+ * value to continue. Add an entry in SAMPLE_INPUTS for each such state id.
  */
 
 const SAMPLE_INPUTS = {
@@ -29,27 +24,21 @@ const SAMPLE_INPUTS = {
  * Walk every path from the initial state to a final state (or dead end).
  * Returns an array of trace arrays — one per complete path.
  *
- * @param {object} config  — raw machine JSON (realtor-machine.json)
+ * @param {object} config  — raw machine JSON
  * @returns {string[][]}
  */
 export function getAllTraces(config) {
     const paths = [];
 
-    // Recursively walk the graph.
-    // stateId   — current state
-    // trace     — events accumulated so far on this path
-    // visited   — set of stateIds on the current path (cycle guard)
     function walk(stateId, trace, visited) {
         const state = config.states[stateId];
         if (!state) return;
 
-        // Final state — record the path
         if (state.type === 'final') {
             paths.push([...trace]);
             return;
         }
 
-        // Cycle guard
         if (visited.has(stateId)) {
             console.warn(`⚠️  Cycle detected at "${stateId}", stopping this branch.`);
             paths.push([...trace, `[CYCLE:${stateId}]`]);
@@ -58,8 +47,7 @@ export function getAllTraces(config) {
 
         const nextVisited = new Set(visited).add(stateId);
 
-        // ── always transitions (guard-based routing states) ──────────────────
-        // These have no user events — just follow all possible targets.
+        // always transitions (guard-based routing states)
         if (state.always) {
             const branches = Array.isArray(state.always) ? state.always : [state.always];
             branches.forEach(branch => {
@@ -69,30 +57,24 @@ export function getAllTraces(config) {
             return;
         }
 
-        // ── invoke states ─────────────────────────────────────────────────────
-        // Service call — follow onDone (happy path)
+        // invoke states — follow onDone (happy path only)
         if (state.invoke && !state.on) {
             const target = state.invoke.onDone?.target;
             if (target) walk(target, trace, nextVisited);
             return;
         }
 
-        // ── on transitions ────────────────────────────────────────────────────
+        // on transitions
         if (state.on) {
-            const events = Object.entries(state.on);
-
-            events.forEach(([eventType, transition]) => {
-                // Array transitions (guarded) — take the first branch that has a target
+            Object.entries(state.on).forEach(([eventType, transition]) => {
                 const branches = Array.isArray(transition) ? transition : [transition];
                 const branch   = branches.find(b => b?.target);
                 if (!branch?.target) return;
 
                 if (eventType === 'SUBMIT') {
-                    // Text input state — use the sample value as the trace entry
                     const sample = SAMPLE_INPUTS[stateId] ?? 'sample-input';
                     walk(branch.target, [...trace, sample], nextVisited);
                 } else {
-                    // Choice event — use the event type as the trace entry
                     walk(branch.target, [...trace, eventType], nextVisited);
                 }
             });
@@ -105,7 +87,6 @@ export function getAllTraces(config) {
 
 /**
  * Generate all traces and log them to the console.
- * Call this from the browser console or wire to a button.
  *
  * @param {object} config  — raw machine JSON
  */
@@ -120,4 +101,36 @@ export function generateTraces(config) {
     console.groupEnd();
 
     return traces;
+}
+
+/**
+ * Replay every path automatically, one after another.
+ * Waits for each replay to finish before starting the next,
+ * then pauses `pauseMs` so you can inspect the result.
+ *
+ * @param {object} config       — raw machine JSON
+ * @param {function} replayFn   — window._replayTrace
+ * @param {number}  replaySteps — number of steps in longest trace × 600ms + buffer
+ * @param {number}  pauseMs     — gap between paths (default 1500ms)
+ */
+export async function runAllTraces(config, replayFn, pauseMs = 1500) {
+    const traces = getAllTraces(config);
+    const total  = traces.length;
+
+    console.group(`▶▶ Running all ${total} paths`);
+
+    for (let i = 0; i < total; i++) {
+        const trace = traces[i];
+        // Estimate how long this replay will take: each step is 600ms,
+        // plus 50ms startup delay, plus a small buffer.
+        const replayDuration = 50 + (trace.length * 600) + 400;
+
+        console.log(`\n▶ Path ${i + 1} / ${total}: ${JSON.stringify(trace)}`);
+
+        replayFn(JSON.stringify(trace));
+        await new Promise(r => setTimeout(r, replayDuration + pauseMs));
+    }
+
+    console.log(`\n✅ All ${total} paths complete`);
+    console.groupEnd();
 }

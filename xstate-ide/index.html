@@ -68,6 +68,7 @@
         <div id="toolbar">
             <div class="toolbar-left">
 		<button onclick="window.generateTraces()">🗺️ Paths</button>
+                <button onclick="window.runAllTraces()">▶▶ All Paths</button>
                 <button onclick="window.downloadPair()">💾 Save Flow</button>
                 <button onclick="document.getElementById('upload').click()">📂 Load Flow</button>
                 <input type="file" id="upload" style="display:none" accept=".zip,.json,.js" multiple onchange="window.loadPair(this.files); this.value='';">
