@@ -1,9 +1,14 @@
 {
   "major": 0,
-  "minor": 8,
-  "patch": 2,
+  "minor": 9,
+  "patch": 0,
   "label": "",
   "history": [
+    {
+      "version": "0.9.0",
+      "date": "2026-03-24",
+      "note": "Phase 4: Chat UI + theming separation — ChatUI.js owns all chat DOM (bubbles, input, errors, choices); chat-theme.css owns chat styles via CSS custom properties; ide-theme.css owns all IDE shell styles; index.html has no inline <style>, links both CSS files; main.js is IDE shell only (renderIDE, Save/Load Flow, visited edges); _restartRuntime and _replayTrace delegate DOM clear to chatUI.clear()"
+    },
     {
       "version": "0.8.2",
       "date": "2026-03-23",

@@ -1,7 +1,8 @@
-import { Runtime } from './Runtime.js';
-import { realtorServices } from './realtor-services.js';
-import { loadVersion } from './version.js';
-import { consoleLogger } from './logger.js';
+import { Runtime }          from './Runtime.js';
+import { ChatUI }            from './ChatUI.js';
+import { realtorServices }   from './realtor-services.js';
+import { loadVersion }       from './version.js';
+import { consoleLogger }     from './logger.js';
 import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
 
 const BASE = new URL('.', import.meta.url).href;
@@ -32,23 +33,23 @@ async function boot() {
         console.log('✅ Config loaded:', config.id, '| initial:', config.initial);
         console.log('📊 States:', Object.keys(config.states).join(', '));
         import('./generate-traces.js').then(m => {
-	    window._config             = config;
-	    window._showResultsDrawer = m.showResultsDrawer;
-	    window.generateTraces      = () => m.generateTraces(config);
-	    window.downloadTestResults = m.downloadTestResults;
-	    window.stopAllTraces       = m.stopAllTraces;
-	    window.loadTestResults     = m.loadTestResults;
-	    window.runAllTraces        = (pauseMs) => m.runAllTraces(
-		config,
-		window._replayTrace,
-		() => window.currentRuntime.getTrace(),
-		() => {
-		    const s = window.currentRuntime.actor.getSnapshot();
-		    return typeof s.value === 'string' ? s.value : Object.keys(s.value)[0];
-		},
-		pauseMs
-	    );
-	});
+            window._config             = config;
+            window._showResultsDrawer  = m.showResultsDrawer;
+            window.generateTraces      = () => m.generateTraces(config);
+            window.downloadTestResults = m.downloadTestResults;
+            window.stopAllTraces       = m.stopAllTraces;
+            window.loadTestResults     = m.loadTestResults;
+            window.runAllTraces        = (pauseMs) => m.runAllTraces(
+                config,
+                window._replayTrace,
+                () => window.currentRuntime.getTrace(),
+                () => {
+                    const s = window.currentRuntime.actor.getSnapshot();
+                    return typeof s.value === 'string' ? s.value : Object.keys(s.value)[0];
+                },
+                pauseMs
+            );
+        });
     } catch (e) {
         console.error('❌ Failed to load machine config:', e.message);
         return;
@@ -61,66 +62,8 @@ async function boot() {
 
     // ── Visited edge tracking (IDE only) ──────────────────────────────────────
     const visitedEdges   = new Set();
-    window._visitedEdges = visitedEdges;   // exposed for test runner capture
+    window._visitedEdges = visitedEdges;
     let _lastStateId     = null;
-    let _lastTraceLength = 0;
-
-    // ── Chat rendering ────────────────────────────────────────────────────────
-    function renderChat(snap) {
-        const { stateId, message, input, placeholder, choices, error } = snap;
-
-        // Add user bubble for the event that caused this transition.
-        // Guard on trace length so we never double-up with onReplayStep bubbles.
-        if (message && snap.context.trace?.length > _lastTraceLength) {
-            const lastTrace = snap.context.trace[snap.context.trace.length - 1];
-            addBubble(lastTrace, 'user');
-            _lastTraceLength = snap.context.trace.length;
-        }
-
-        if (message) {
-            addBubble(message, 'bot');
-        }
-
-        if (error) {
-            showError(error);
-            return;   // self-transition: don't rebuild input controls
-        }
-
-        const area = document.getElementById('input-area');
-        if (!area) return;
-        area.innerHTML = '';
-
-        if (input === 'text') {
-            const inputEl       = document.createElement('input');
-            inputEl.type        = 'text';
-            inputEl.placeholder = placeholder || 'Type and press Enter...';
-
-            const sendBtn         = document.createElement('button');
-            sendBtn.innerText     = 'Send';
-            sendBtn.style.cssText = 'flex-shrink:0;';
-
-            const go = () => {
-                const val = inputEl.value.trim();
-                if (!val) return;
-                inputEl.value = '';
-                window.currentRuntime.submit(val);
-            };
-
-            inputEl.onkeydown = (e) => { if (e.key === 'Enter') go(); };
-            sendBtn.onclick   = go;
-
-            area.appendChild(inputEl);
-            area.appendChild(sendBtn);
-            setTimeout(() => inputEl.focus(), 100);
-        }
-
-        choices.forEach((c, i) => {
-            const b     = document.createElement('button');
-            b.innerText = `(${i + 1}) ${c}`;
-            b.onclick   = () => window.currentRuntime.send(c);
-            area.appendChild(b);
-        });
-    }
 
     // ── IDE rendering ─────────────────────────────────────────────────────────
     function renderIDE(snap) {
@@ -147,50 +90,20 @@ async function boot() {
         }
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
-    function addBubble(text, side) {
-        const m = document.getElementById('messages');
-        if (!m) return;
-        const d = document.createElement('div');
-        d.className = `msg ${side}`;
-        d.innerText = text;
-        m.appendChild(d);
-        m.scrollTop = m.scrollHeight;
-    }
-
-    function showError(message) {
-        const area  = document.getElementById('input-area');
-        const input = area?.querySelector('input');
-        area?.querySelector('.validation-error')?.remove();
-        const err         = document.createElement('div');
-        err.className     = 'validation-error';
-        err.textContent   = message;
-        err.style.cssText = 'width:100%; color:#e53e3e; font-size:12px; margin-top:4px; padding:0 2px;';
-        area?.appendChild(err);
-        if (input) {
-            input.style.borderColor = '#e53e3e';
-            input.focus();
-            input.addEventListener('input', () => {
-                input.style.borderColor = '';
-                err.remove();
-            }, { once: true });
-        }
-    }
-
-    // ── Start runtime ─────────────────────────────────────────────────────────
-    console.log('🚀 Starting Runtime...');
+    // ── Start runtime + ChatUI ─────────────────────────────────────────────────
+    console.log('🚀 Starting Runtime…');
     window.currentRuntime = new Runtime(config, realtorServices, consoleLogger);
 
-    window.currentRuntime.onSnapshot = (snap) => {
-        renderChat(snap);
-        renderIDE(snap);
-    };
+    const chatMount = document.getElementById('chat-mount');
+    const chatUI    = new ChatUI(window.currentRuntime, chatMount);
+    chatUI.mount();
 
-    // onReplayStep fires BEFORE the snapshot for that step, so we add the user
-    // bubble here and advance _lastTraceLength to prevent renderChat doubling it.
-    window.currentRuntime.onReplayStep = (item) => {
-        addBubble(item, 'user');
-        _lastTraceLength++;
+    // IDE subscribes after ChatUI so it piggybacks without replacing the callbacks.
+    // We wrap onSnapshot to fan out to both ChatUI and renderIDE.
+    const chatSnapshot = window.currentRuntime.onSnapshot;
+    window.currentRuntime.onSnapshot = (snap) => {
+        chatSnapshot(snap);
+        renderIDE(snap);
     };
 
     window.currentRuntime.start();
@@ -199,31 +112,30 @@ async function boot() {
     // ── Restart ───────────────────────────────────────────────────────────────
     window._restartRuntime = (overrideConfig) => {
         if (overrideConfig && overrideConfig !== config) {
-            // Swap the live config and rebuild the Runtime with the override
             Object.assign(config, overrideConfig);
             window._config = config;
             window.currentRuntime = new Runtime(config, realtorServices, consoleLogger);
+
+            // Re-mount ChatUI on the new runtime instance
+            chatUI.runtime = window.currentRuntime;
+            chatUI.mount();
+
+            const newChatSnapshot = window.currentRuntime.onSnapshot;
             window.currentRuntime.onSnapshot = (snap) => {
-                renderChat(snap);
+                newChatSnapshot(snap);
                 renderIDE(snap);
             };
-            window.currentRuntime.onReplayStep = (item) => {
-                addBubble(item, 'user');
-                _lastTraceLength++;
-            };
         }
-        document.getElementById('messages').innerHTML = '';
+
         visitedEdges.clear();
-        _lastStateId     = null;
-        _lastTraceLength = 0;
+        _lastStateId = null;
+        chatUI.clear();
         window.currentRuntime.restart();
     };
 
-    // Replay must go through _restartRuntime so the DOM clears and
-    // _lastTraceLength resets before the replay steps start firing.
+    // Replay: clear the DOM first, then let the runtime replay into it.
     window._replayTrace = (traceString, overrideConfig) => {
         window._restartRuntime(overrideConfig);
-        // Small delay to let the initial state snapshot render before steps begin
         setTimeout(() => window.currentRuntime.replay(traceString), 50);
     };
 
@@ -325,3 +237,104 @@ window.addEventListener('load', () => {
     );
     console.groupEnd();
 });
+
+window.downloadProductionBundle = async () => {
+    console.log('📦 Packaging flow for production deployment…');
+    const base = new URL('./', import.meta.url).href;
+
+    const fetchText = (f) => fetch(base + f).then(r => {
+        if (!r.ok) throw new Error(`Failed to fetch ${f}: HTTP ${r.status}`);
+        return r.text();
+    });
+
+    console.log('📦 Fetching production files…');
+    const [runtime, chatui, chatcss, services, validators_, logger_, versionjs] =
+        await Promise.all([
+            fetchText('Runtime.js'),
+            fetchText('ChatUI.js'),
+            fetchText('chat-theme.css'),
+            fetchText('realtor-services.js'),
+            fetchText('validators.js'),
+            fetchText('logger.js'),
+            fetchText('version.js'),
+        ]);
+
+    const config   = window._config;
+    const version  = window._appVersion ?? 'unknown';
+    const flowId   = config?.id ?? 'chatbot';
+    const packedAt = new Date().toISOString();
+
+    const minimalHtml = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>${flowId}</title>
+  <link rel="stylesheet" href="./chat-theme.css">
+  <script type="importmap">
+      { "imports": {
+	  "xstate":  "https://unpkg.com/xstate@5/dist/xstate.esm.js",
+	  "mermaid": "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs",
+	  "fflate":  "https://cdn.jsdelivr.net/npm/fflate@0.8.2/esm/browser.js"
+      }}
+  </script>
+</head>
+<body>
+  <div id="chat-mount" style="display:flex;flex-direction:column;height:100vh"></div>
+  <script type="module">
+    import { Runtime }          from './Runtime.js';
+    import { ChatUI }           from './ChatUI.js';
+    import { realtorServices }  from './realtor-services.js';
+    import { nullLogger }       from './logger.js';
+
+    const res    = await fetch('./realtor-machine.json');
+    const config = await res.json();
+    const rt     = new Runtime(config, realtorServices, nullLogger);
+    const ui     = new ChatUI(rt, document.getElementById('chat-mount'));
+    ui.mount();
+    rt.start();
+  <\/script>
+</body>
+</html>`;
+
+    const manifest = [
+        `flow:      ${flowId}`,
+        `version:   ${version}`,
+        `packedAt:  ${packedAt}`,
+        ``,
+        `files:`,
+        `  index.html             (generated)`,
+        `  Runtime.js`,
+        `  ChatUI.js`,
+        `  chat-theme.css`,
+        `  realtor-machine.json   (in-memory config at pack time)`,
+        `  realtor-services.js`,
+        `  validators.js`,
+        `  logger.js`,
+        `  version.js`,
+        `  MANIFEST.txt           (this file)`,
+    ].join('\n');
+
+    const { zipSync, strToU8 } = await import('fflate');
+    const zipped = zipSync({
+        'index.html':              strToU8(minimalHtml),
+        'Runtime.js':              strToU8(runtime),
+        'ChatUI.js':               strToU8(chatui),
+        'chat-theme.css':          strToU8(chatcss),
+        'realtor-machine.json':    strToU8(JSON.stringify(config, null, 2)),
+        'realtor-services.js':     strToU8(services),
+        'validators.js':           strToU8(validators_),
+        'logger.js':               strToU8(logger_),
+        'version.js':              strToU8(versionjs),
+        'MANIFEST.txt':            strToU8(manifest),
+    });
+
+    const blob = new Blob([zipped], { type: 'application/zip' });
+    const a    = document.createElement('a');
+    a.href     = URL.createObjectURL(blob);
+    a.download = `${flowId}-prod-${packedAt.slice(0,10)}.zip`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+
+    console.log(`✅ Production bundle downloaded: ${a.download}`);
+    console.log(`   Files: 9 | Flow: ${flowId} | Version: ${version}`);
+};
