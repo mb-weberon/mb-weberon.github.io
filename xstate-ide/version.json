@@ -1,9 +1,14 @@
 {
   "major": 0,
-  "minor": 6,
-  "patch": 9,
+  "minor": 7,
+  "patch": 0,
   "label": "",
   "history": [
+    {
+      "version": "0.7.0",
+      "date": "2026-03-23",
+      "note": "Fix: diagram edge labels now show ✅ instead of ✓ on visited paths; visitedEdges captured per test case so row-click correctly shows traversed paths; old results drawer dismissed when Test button is clicked"
+    },
     {
       "version": "0.6.9",
       "date": "2026-03-23",

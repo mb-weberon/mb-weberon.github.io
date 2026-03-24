@@ -200,6 +200,10 @@ export function stopAllTraces() {
 
 export async function runAllTraces(config, replayFn, getTrace, getStateId, pauseMs = 1500) {
     _interrupted = false;
+    // Remove any existing results drawer so the UI is clean while tests run
+    document.getElementById('test-results-drawer')?.remove();
+    const diagPane = document.getElementById('diagram-pane');
+    if (diagPane) diagPane.style.paddingBottom = '';
     const traces = getAllTraces(config);
     const total  = traces.length;
     const cases  = [];
@@ -231,6 +235,7 @@ export async function runAllTraces(config, replayFn, getTrace, getStateId, pause
         const finalStateId      = getStateId();
         const finalContext      = { ...window.currentRuntime.actor.getSnapshot().context };
         const bubbles           = captureBubbles();
+        const visitedEdges      = window._visitedEdges ? [...window._visitedEdges] : [];
         const { passed, diffs } = compareTraces(expected, actual);
 
         if (passed) {
@@ -240,7 +245,7 @@ export async function runAllTraces(config, replayFn, getTrace, getStateId, pause
             diffs.forEach(d => console.warn(`     ${d}`));
         }
 
-        cases.push({ path: i + 1, passed, expected, actual, diffs, finalStateId, finalContext, bubbles });
+        cases.push({ path: i + 1, passed, expected, actual, diffs, finalStateId, finalContext, bubbles, visitedEdges });
 
         await new Promise(r => setTimeout(r, pauseMs));
     }
