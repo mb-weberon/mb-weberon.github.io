@@ -1,0 +1,188 @@
+{
+  "major": 0,
+  "minor": 10,
+  "patch": 3,
+  "label": "",
+  "history": [
+    {
+      "version": "0.10.3",
+      "date": "2026-03-24",
+      "note": "Fix: generate-traces.js — compareTraces() and runAllTraces() now normalise the enriched _trace envelope returned by getTrace() into a flat value array before comparison; validation-failure and service steps are filtered out; legacy flat-array format passes through unchanged"
+    },
+    {
+      "version": "0.10.2",
+      "date": "2026-03-24",
+      "note": "UI: prod bundle index.html \u2014 polished page chrome: fixed viewport layout, centered card (max 560px), dark header bar with flow id + version badge, Segoe UI font, soft-keyboard-safe layout; mermaid removed from prod importmap"
+    },
+    {
+      "version": "0.10.1",
+      "date": "2026-03-24",
+      "note": "Fix: Runtime.js \u2014 inject invoke.input = ({ context }) => context for all invoke states lacking an explicit input field; XState 5 does not auto-forward context to invoked actors; fn(input) \u2192 fn({ input }) so services receive { input: context } as expected"
+    },
+    {
+      "version": "0.10.0",
+      "date": "2026-03-24",
+      "note": "Phase 5: Enriched trace \u2014 _trace envelope with flowId, flowVersion, sessionId, startedAt, steps[]; each step records { stateId, value, at, ms }; validation failures recorded with valid:false; service results recorded with { service, ok, result, at, ms }; getTrace() returns full envelope; replay() handles both old flat-array and new envelope formats; IDE context viewer renders enriched trace rows"
+    },
+    {
+      "version": "0.9.0",
+      "date": "2026-03-24",
+      "note": "Phase 4: Chat UI + theming separation \u2014 ChatUI.js owns all chat DOM (bubbles, input, errors, choices); chat-theme.css owns chat styles via CSS custom properties; ide-theme.css owns all IDE shell styles; index.html has no inline <style>, links both CSS files; main.js is IDE shell only (renderIDE, Save/Load Flow, visited edges); _restartRuntime and _replayTrace delegate DOM clear to chatUI.clear()"
+    },
+    {
+      "version": "0.8.2",
+      "date": "2026-03-23",
+      "note": "Runtime.js: event-driven replay \u2014 replaced fixed 600ms per-step delay with _waitForStableState() / _waitForStateChange() polling; onReplayDone callback fires on completion; generate-traces.js: runAllTraces() awaits onReplayDone instead of estimateDuration timer; estimateDuration and timing constants (STEP_MS, INVOKE_FALLBACK_MS, STARTUP_MS, BUFFER_MS, INVOKE_DELAYS) removed"
+    },
+    {
+      "version": "0.8.1",
+      "date": "2026-03-24",
+      "note": "ui-contracts.js: appVersion stamped in baseline at capture time; version mismatch surfaces as warning with checkout hint; profile_viewer_open_height removed from snapshot (content-dependent, not a CSS regression signal); DYNAMIC_HEIGHT_METRICS exclusion set skips content-driven metrics in comparison; main.js: window._appVersion exposed after version badge is set"
+    },
+    {
+      "version": "0.8.0",
+      "date": "2026-03-23",
+      "note": "ui-contracts.js: viewport-stamped baseline files (ui-baseline-WxH.json) replace fixed ui-baseline.json \u2014 no TARGET_W/H constants to maintain, each machine auto-discovers and checks its own baseline; enforceViewport removed; baselineUrl() computed from window.innerWidth/innerHeight at call time; index.html: force-mobile-layout split into standalone ruleset separate from @media block"
+    },
+    {
+      "version": "0.7.0",
+      "date": "2026-03-23",
+      "note": "Fix: diagram edge labels now show \u2705 instead of \u2713 on visited paths; visitedEdges captured per test case so row-click correctly shows traversed paths; old results drawer dismissed when Test button is clicked"
+    },
+    {
+      "version": "0.6.9",
+      "date": "2026-03-23",
+      "note": "Mobile results drawer: larger touch-friendly header (52px, 14px font); slide-down collapse via translateY transition instead of display:none; starts collapsed on mobile; diagram-pane reserves bottom space for drawer title bar; auto-selects first row on open; toolbar buttons emoji above label with <br>; Restart and Replay buttons same treatment"
+    },
+    {
+      "version": "0.6.8",
+      "date": "2026-03-23",
+      "note": "UI: toolbar buttons restored to large touch-friendly style (flex:1, 12px 10px padding, 14px font, line-height 1.3, min-width 70px); Paths button re-added; button order matches Chatbot Logic IDE reference"
+    },
+    {
+      "version": "0.6.7",
+      "date": "2026-03-23",
+      "note": "UI: permanent #slide-handle on left edge of right pane \u2014 always visible including when fully collapsed; desktop drag resizes both panes; mobile tap toggles collapse, drag sets width freely with snap-to-collapse below 120px; right pane starts at 88% on mobile leaving diagram visible; toolbar restored to old large touch-friendly button style (8px 16px padding, 13px font, full labels: Save Flow, Load Flow, Test, Load Results); mobile-restore-btn removed; keyboard-shift fix retained (position:fixed #app)"
+    },
+    {
+      "version": "0.6.6",
+      "date": "2026-03-23",
+      "note": "Fix: keyboard resize \u2014 layout root changed to position:fixed/inset:0; floating mobile-restore-btn outside right pane; swipe-to-restore removed"
+    },
+    {
+      "version": "0.6.5",
+      "date": "2026-03-23",
+      "note": "Mobile UI: pinch-to-zoom on diagram (zoom buttons hidden on touch devices); desktop pane resize drag handle between diagram and right pane; mobile collapse tab on left edge of right pane slides pane away to reveal diagram (replaces full swipe-away); test results drawer touch-draggable via MutationObserver; swipe gestures preserved on non-interactive areas"
+    },
+    {
+      "version": "0.6.4",
+      "date": "2026-03-23",
+      "note": "Fix: test results viewer captures and restores visitedEdges per case; _visitedEdges exposed on window; _replayTrace/_restartRuntime accept overrideConfig"
+    },
+    {
+      "version": "0.6.3",
+      "date": "2026-03-23",
+      "note": "UI: SM-IDE title bar with version badge; toolbar buttons no longer overflow; context viewer collapsed by default with slide toggle; 100dvh + safe-area-inset fixes mobile URL bar overlap; touch pan on diagram; mobile swipe handle to reveal diagram behind right pane; test results row click restores captured state instantly without re-running; replay input populated on row click for manual re-run; invoke-aware duration estimator in generate-traces.js"
+    },
+    {
+      "version": "0.6.2",
+      "date": "2026-03-23",
+      "note": "Feature: generate-traces.js \u2014 runAllTraces() with self-test comparison, draggable/collapsible results drawer, stop button, load results from saved JSON, downloadTestResults()"
+    },
+    {
+      "version": "0.6.1",
+      "date": "2026-03-22",
+      "note": "Fix: user bubbles driven by trace length delta; replay restart ownership moved to _replayTrace; onReplayStep increments _lastTraceLength to prevent doubles"
+    },
+    {
+      "version": "0.6.0",
+      "date": "2026-03-22",
+      "note": "Phase 3: Runtime isolation \u2014 ChatEngine renamed Runtime; zero UI knowledge; single onSnapshot callback; main.js split into renderChat + renderIDE"
+    },
+    {
+      "version": "0.5.0",
+      "date": "2026-03-22",
+      "note": "Phase 2: Logger abstraction \u2014 nullLogger/consoleLogger/resolveLogger; ChatEngine accepts injected logger; production silent by default, debug via ?debug=true or localStorage"
+    },
+    {
+      "version": "0.4.3",
+      "date": "2026-03-22",
+      "note": "Fix: visited edge key changed from fromState|toState to fromState|eventType"
+    },
+    {
+      "version": "0.4.2",
+      "date": "2026-03-22",
+      "note": "Fix: diagram-canvas position:absolute so SVG renders visibly; zoom/pan/reset working"
+    },
+    {
+      "version": "0.4.1",
+      "date": "2026-03-22",
+      "note": "Fix: drop linkStyle and ==> arrows; visited edges marked with checkmark label prefix"
+    },
+    {
+      "version": "0.4.0",
+      "date": "2026-03-22",
+      "note": "Feature: diagram fits viewport; zoom/pan controls; visited edge tracking"
+    },
+    {
+      "version": "0.3.9",
+      "date": "2026-03-22",
+      "note": "Fix: Load Flow accepts ZIP, bare .json, bare .js, or pair"
+    },
+    {
+      "version": "0.3.8",
+      "date": "2026-03-22",
+      "note": "Feature: Save/Load Flow as paired ZIP"
+    },
+    {
+      "version": "0.3.7",
+      "date": "2026-03-22",
+      "note": "Fix: layout fits 100% zoom; Send button added"
+    },
+    {
+      "version": "0.3.6",
+      "date": "2026-03-22",
+      "note": "Fix: deep copy config before mutation in start()"
+    },
+    {
+      "version": "0.3.5",
+      "date": "2026-03-22",
+      "note": "Fix: pre-generate assign closures for XState 5"
+    },
+    {
+      "version": "0.3.4",
+      "date": "2026-03-22",
+      "note": "Diagnostics: raw action log, version+URL at boot"
+    },
+    {
+      "version": "0.3.3",
+      "date": "2026-03-22",
+      "note": "Fix: combine updateContext actions on email SUBMIT"
+    },
+    {
+      "version": "0.3.2",
+      "date": "2026-03-22",
+      "note": "Fix: user bubble ordering"
+    },
+    {
+      "version": "0.3.1",
+      "date": "2026-03-22",
+      "note": "Fix: diagram array transitions, validation bubble, replay guard check"
+    },
+    {
+      "version": "0.3.0",
+      "date": "2026-03-22",
+      "note": "Phase 1: validation moved to XState-native guards"
+    },
+    {
+      "version": "0.2.0",
+      "date": "2026-03-22",
+      "note": "Input validation + state-change logging"
+    },
+    {
+      "version": "0.1.0",
+      "date": "2026-03-22",
+      "note": "Initial release"
+    }
+  ]
+}
