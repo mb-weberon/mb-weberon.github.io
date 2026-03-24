@@ -1,0 +1,325 @@
+{
+  "timestamp": "2026-03-24T06:23:12.628Z",
+  "appVersion": "v0.8.0",
+  "viewport": {
+    "width": 1024,
+    "height": 768
+  },
+  "sections": {
+    "default": [
+      {
+        "name": "app_width",
+        "value": 1024,
+        "unit": "px"
+      },
+      {
+        "name": "app_height",
+        "value": 768,
+        "unit": "px"
+      },
+      {
+        "name": "diagram_pane_width",
+        "value": 604,
+        "unit": "px"
+      },
+      {
+        "name": "diagram_pane_height",
+        "value": 768,
+        "unit": "px"
+      },
+      {
+        "name": "right_pane_width",
+        "value": 420,
+        "unit": "px"
+      },
+      {
+        "name": "right_pane_height",
+        "value": 768,
+        "unit": "px"
+      },
+      {
+        "name": "slide_handle_width",
+        "value": 18,
+        "unit": "px"
+      },
+      {
+        "name": "slide_handle_height",
+        "value": 768,
+        "unit": "px"
+      },
+      {
+        "name": "messages_height",
+        "value": 495.6,
+        "unit": "px"
+      },
+      {
+        "name": "controls_height",
+        "value": 56.18,
+        "unit": "px"
+      },
+      {
+        "name": "controls_bottom",
+        "value": 768,
+        "unit": "px"
+      },
+      {
+        "name": "toolbar_height",
+        "value": 98.58,
+        "unit": "px"
+      },
+      {
+        "name": "pane_content_left",
+        "value": 622,
+        "unit": "px"
+      },
+      {
+        "name": "toolbar_btn_1[🧪_Test]_height",
+        "value": 78.58,
+        "unit": "px"
+      },
+      {
+        "name": "toolbar_btn_1[🧪_Test]_width",
+        "value": 80.13,
+        "unit": "px"
+      },
+      {
+        "name": "toolbar_btn_1[🧪_Test]_fontSize",
+        "value": 14,
+        "unit": "px"
+      },
+      {
+        "name": "toolbar_btn_1[🧪_Test]_right_edge",
+        "value": 714.13,
+        "unit": "px"
+      },
+      {
+        "name": "toolbar_btn_2[📋_Load_Results]_height",
+        "value": 78.58,
+        "unit": "px"
+      },
+      {
+        "name": "toolbar_btn_2[📋_Load_Results]_width",
+        "value": 102.97,
+        "unit": "px"
+      },
+      {
+        "name": "toolbar_btn_2[📋_Load_Results]_fontSize",
+        "value": 14,
+        "unit": "px"
+      },
+      {
+        "name": "toolbar_btn_2[📋_Load_Results]_right_edge",
+        "value": 825.09,
+        "unit": "px"
+      },
+      {
+        "name": "toolbar_btn_3[💾_Save_Flow]_height",
+        "value": 78.58,
+        "unit": "px"
+      },
+      {
+        "name": "toolbar_btn_3[💾_Save_Flow]_width",
+        "value": 85.08,
+        "unit": "px"
+      },
+      {
+        "name": "toolbar_btn_3[💾_Save_Flow]_fontSize",
+        "value": 14,
+        "unit": "px"
+      },
+      {
+        "name": "toolbar_btn_3[💾_Save_Flow]_right_edge",
+        "value": 918.17,
+        "unit": "px"
+      },
+      {
+        "name": "toolbar_btn_4[📂_Load_Flow]_height",
+        "value": 78.58,
+        "unit": "px"
+      },
+      {
+        "name": "toolbar_btn_4[📂_Load_Flow]_width",
+        "value": 85.83,
+        "unit": "px"
+      },
+      {
+        "name": "toolbar_btn_4[📂_Load_Flow]_fontSize",
+        "value": 14,
+        "unit": "px"
+      },
+      {
+        "name": "toolbar_btn_4[📂_Load_Flow]_right_edge",
+        "value": 1012,
+        "unit": "px"
+      }
+    ],
+    "profile_viewer_open": [
+      {
+        "name": "profile_viewer_open_maxHeight",
+        "value": 200,
+        "unit": "px"
+      }
+    ],
+    "profile_viewer_closed": [
+      {
+        "name": "profile_viewer_closed_height",
+        "value": 1.45,
+        "unit": "px"
+      },
+      {
+        "name": "profile_viewer_closed_maxHeight",
+        "value": 0,
+        "unit": "px"
+      }
+    ],
+    "mobile_layout": [
+      {
+        "name": "mobile_right_pane_width",
+        "value": 901.11,
+        "unit": "px"
+      },
+      {
+        "name": "mobile_right_pane_zIndex",
+        "value": 5,
+        "unit": "px"
+      },
+      {
+        "name": "mobile_diagram_pane_zIndex",
+        "value": 1,
+        "unit": "px"
+      },
+      {
+        "name": "mobile_diagram_pane_width",
+        "value": 1024,
+        "unit": "px"
+      },
+      {
+        "name": "mobile_toolbar_btn_1[🧪_Test]_height",
+        "value": 78.58,
+        "unit": "px"
+      },
+      {
+        "name": "mobile_toolbar_btn_1[🧪_Test]_width",
+        "value": 200.41,
+        "unit": "px"
+      },
+      {
+        "name": "mobile_toolbar_btn_1[🧪_Test]_fontSize",
+        "value": 14,
+        "unit": "px"
+      },
+      {
+        "name": "mobile_toolbar_btn_1[🧪_Test]_right_edge",
+        "value": 353.3,
+        "unit": "px"
+      },
+      {
+        "name": "mobile_toolbar_btn_2[📋_Load_Results]_height",
+        "value": 78.58,
+        "unit": "px"
+      },
+      {
+        "name": "mobile_toolbar_btn_2[📋_Load_Results]_width",
+        "value": 223.24,
+        "unit": "px"
+      },
+      {
+        "name": "mobile_toolbar_btn_2[📋_Load_Results]_fontSize",
+        "value": 14,
+        "unit": "px"
+      },
+      {
+        "name": "mobile_toolbar_btn_2[📋_Load_Results]_right_edge",
+        "value": 584.53,
+        "unit": "px"
+      },
+      {
+        "name": "mobile_toolbar_btn_3[💾_Save_Flow]_height",
+        "value": 78.58,
+        "unit": "px"
+      },
+      {
+        "name": "mobile_toolbar_btn_3[💾_Save_Flow]_width",
+        "value": 205.36,
+        "unit": "px"
+      },
+      {
+        "name": "mobile_toolbar_btn_3[💾_Save_Flow]_fontSize",
+        "value": 14,
+        "unit": "px"
+      },
+      {
+        "name": "mobile_toolbar_btn_3[💾_Save_Flow]_right_edge",
+        "value": 797.9,
+        "unit": "px"
+      },
+      {
+        "name": "mobile_toolbar_btn_4[📂_Load_Flow]_height",
+        "value": 78.58,
+        "unit": "px"
+      },
+      {
+        "name": "mobile_toolbar_btn_4[📂_Load_Flow]_width",
+        "value": 206.1,
+        "unit": "px"
+      },
+      {
+        "name": "mobile_toolbar_btn_4[📂_Load_Flow]_fontSize",
+        "value": 14,
+        "unit": "px"
+      },
+      {
+        "name": "mobile_toolbar_btn_4[📂_Load_Flow]_right_edge",
+        "value": 1012,
+        "unit": "px"
+      },
+      {
+        "name": "mobile_profile_viewer_open_maxHeight",
+        "value": 200,
+        "unit": "px"
+      },
+      {
+        "name": "mobile_profile_viewer_closed_height",
+        "value": 1.45,
+        "unit": "px"
+      },
+      {
+        "name": "mobile_profile_viewer_closed_maxHeight",
+        "value": 0,
+        "unit": "px"
+      },
+      {
+        "name": "mobile_pane_collapsed_width",
+        "value": 18,
+        "unit": "px"
+      },
+      {
+        "name": "mobile_slide_handle_collapsed_width",
+        "value": 18,
+        "unit": "px"
+      }
+    ],
+    "results_drawer": [
+      {
+        "name": "drawer_width",
+        "value": 400,
+        "unit": "px"
+      },
+      {
+        "name": "drawer_right_edge",
+        "value": 604,
+        "unit": "px"
+      },
+      {
+        "name": "drawer_header_height",
+        "value": 36,
+        "unit": "px"
+      },
+      {
+        "name": "drawer_header_bottom_offset",
+        "value": 98.91,
+        "unit": "px"
+      }
+    ]
+  }
+}

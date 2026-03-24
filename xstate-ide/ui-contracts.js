@@ -48,15 +48,18 @@ const RECALC_DELAY_MS   = 350;
 
 // ── Baseline URL ──────────────────────────────────────────────────────────────
 //
-// Each baseline file is stamped with the viewport it was captured at so that
-// different machines — or the same machine at different window sizes — each
-// maintain their own baseline without any constants to update.
+// Baseline files are named ui-baseline-{label}.json.
+// By default the label is the actual inner viewport dimensions at call time.
+// Pass an explicit label to ui_contracts() to point at a specific file — e.g.
+// '1024x768' when the baseline was captured from a window.open(1024,768) session
+// whose actual inner dimensions differ slightly on your platform.
 //
-// Called as a function (not a constant) so it always reflects the current
-// window dimensions at the moment capture or check is invoked.
+//   await window.ui_contracts()                       — label: current WxH
+//   await window.ui_contracts('check',   '1024x768')  — uses ui-baseline-1024x768.json
+//   await window.ui_contracts('capture', '1024x768')  — saves ui-baseline-1024x768.json
 
-const baselineUrl = () =>
-    `./ui-baseline-${window.innerWidth}x${window.innerHeight}.json`;
+const baselineUrl  = (label) => `./ui-baseline-${label}.json`;
+const defaultLabel = ()      => `${window.innerWidth}x${window.innerHeight}`;
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
@@ -158,10 +161,12 @@ async function snapshotDefault() {
     ];
 }
 
-// FIX Bug 3: replaced 'opacity' (always 1, no CSS rule driving it) with
-// 'maxHeight', which is the actual CSS property toggled by toggleProfile().
-// Both height (rendered) and maxHeight (CSS cap) are now captured so a
-// regression in either the content size or the CSS cap is detectable.
+// profile_viewer_open_height is intentionally NOT measured here.
+// The rendered height depends on how much context data is in #profile-view
+// at the time of the check, which varies with conversation state. A short
+// conversation produces ~83px; a full one produces ~188px — both are correct.
+// What we care about is that the CSS cap (maxHeight) is correct, which is
+// content-independent and tested below.
 async function snapshotProfileViewerOpen() {
     const viewer  = document.getElementById('profile-viewer');
     if (!viewer) return [];
@@ -170,7 +175,6 @@ async function snapshotProfileViewerOpen() {
     if (!wasOpen) { window.toggleProfile?.(); await reflow(); }
 
     const measurements = [
-        measure('profile_viewer_open_height',    'profile-viewer', 'height'),
         measure('profile_viewer_open_maxHeight', 'profile-viewer', 'maxHeight'),
     ];
 
@@ -334,8 +338,9 @@ async function snapshotResultsDrawer() {
 // ── Full measurement suite ────────────────────────────────────────────────────
 
 async function measureAll() {
-    const timestamp = new Date().toISOString();
-    const viewport  = { width: window.innerWidth, height: window.innerHeight };
+    const timestamp  = new Date().toISOString();
+    const appVersion = window._appVersion ?? null;
+    const viewport   = { width: window.innerWidth, height: window.innerHeight };
 
     // FIX Bug 1: standalone pane_collapsed section removed.
     // Pane-collapsed is now measured inside mobile_layout (the only context
@@ -348,7 +353,7 @@ async function measureAll() {
         results_drawer:        await snapshotResultsDrawer(),
     };
 
-    return { timestamp, viewport, sections };
+    return { timestamp, appVersion, viewport, sections };
 }
 
 // ── Comparison ────────────────────────────────────────────────────────────────
@@ -359,6 +364,24 @@ function compareToBaseline(current, baseline) {
     const passed      = [];
     const newKeys     = [];
     const missingKeys = [];
+
+    // Version mismatch — warn only, never fail.
+    const cv = current.appVersion  ?? '(unknown)';
+    const bv = baseline.appVersion ?? '(unknown)';
+    if (cv !== bv) {
+        warnings.push(
+            `app version changed: baseline captured at ${bv}, running ${cv} — ` +
+            `check out ${bv} to reproduce the baseline state`
+        );
+    }
+
+    // Metrics whose values are driven by runtime content rather than CSS rules.
+    // Comparing them to a baseline captured at a different conversation state
+    // produces false failures. Skipped in comparison but still captured for docs.
+    const DYNAMIC_HEIGHT_METRICS = new Set([
+        'profile_viewer_open_height',
+        'mobile_profile_viewer_open_height',
+    ]);
 
     for (const [sectionName, measurements] of Object.entries(current.sections)) {
         const baseSection = baseline.sections[sectionName];
@@ -372,6 +395,12 @@ function compareToBaseline(current, baseline) {
         for (const m of measurements) {
             if (m.missing) {
                 warnings.push(`${sectionName} / ${m.name}: element not found`);
+                continue;
+            }
+
+            // Skip content-dependent metrics — see DYNAMIC_HEIGHT_METRICS above.
+            if (DYNAMIC_HEIGHT_METRICS.has(m.name)) {
+                passed.push(`${sectionName}/${m.name} (dynamic — skipped)`);
                 continue;
             }
 
@@ -446,7 +475,7 @@ function compareToBaseline(current, baseline) {
 
 // ── Reporting ─────────────────────────────────────────────────────────────────
 
-function report(comparison, currentViewport, baselineViewport) {
+function report(comparison, currentViewport, baselineViewport, currentVersion, baselineVersion) {
     const { failures, warnings, passed, newKeys, missingKeys } = comparison;
     const allPassed = failures.length === 0;
 
@@ -458,7 +487,9 @@ function report(comparison, currentViewport, baselineViewport) {
 
     console.log(
         `Viewport: ${currentViewport.width}×${currentViewport.height}  |  ` +
-        `Baseline captured at: ${baselineViewport.width}×${baselineViewport.height}`
+        `Baseline captured at: ${baselineViewport.width}×${baselineViewport.height}\n` +
+        `App version: ${currentVersion ?? '(unknown)'}  |  ` +
+        `Baseline version: ${baselineVersion ?? '(unknown)'}`
     );
 
     if (failures.length) {
@@ -499,42 +530,63 @@ function report(comparison, currentViewport, baselineViewport) {
     return allPassed;
 }
 
+// ── Hint ──────────────────────────────────────────────────────────────────────
+
+function _printHint(label) {
+    const W = window.innerWidth, H = window.innerHeight;
+    console.groupCollapsed('%c📐 UI Contracts — no baseline found', 'color:#e5c07b; font-weight:bold;');
+    console.log(
+        `Looked for: ui-baseline-${label}.json  (viewport: ${W}×${H})\n\n` +
+        `For a stable fixed-size window, run:\n` +
+        `  window.open(location.href, '_blank', 'width=1024,height=768')\n` +
+        `then undock DevTools before measuring.\n\n` +
+        `To capture a baseline:\n` +
+        `  await window.ui_contracts('capture', '1024x768')  ← saves ui-baseline-1024x768.json\n\n` +
+        `To check against a specific baseline:\n` +
+        `  await window.ui_contracts('check', '1024x768')\n\n` +
+        `To auto-detect (uses current ${W}×${H} as label):\n` +
+        `  await window.ui_contracts()`
+    );
+    console.groupEnd();
+}
+
 // ── Entry point ───────────────────────────────────────────────────────────────
 
-async function ui_contracts(mode) {
-    const url = baselineUrl();
+/**
+ * @param {string} [mode]  'capture' | 'check' — auto-detected if omitted
+ * @param {string} [label] baseline label, e.g. '1024x768' — defaults to
+ *                         current window.innerWidth×window.innerHeight
+ */
+async function ui_contracts(mode, label) {
+    label     = label ?? defaultLabel();
+    const url = baselineUrl(label);
 
-    // Auto-detect mode based on whether a baseline exists for this viewport.
+    // Auto-detect mode based on whether a baseline exists for this label.
     if (!mode) {
         try {
             const res = await fetch(url, { cache: 'no-store' });
             mode = res.ok ? 'check' : 'capture';
-            if (mode === 'capture') {
-                console.info(
-                    `ℹ️  No baseline found for ${window.innerWidth}×${window.innerHeight} — ` +
-                    `switching to capture mode automatically.`
-                );
-            }
+            if (mode === 'capture') _printHint(label);
         } catch {
             mode = 'capture';
+            _printHint(label);
         }
     }
 
-    console.group(`🧪 UI Contracts [${mode}] — ${window.innerWidth}×${window.innerHeight}`);
+    console.group(`🧪 UI Contracts [${mode}] — ${label}  (viewport: ${window.innerWidth}×${window.innerHeight})`);
 
     if (mode === 'capture') {
-        console.log(`📐 Measuring all UI states at ${window.innerWidth}×${window.innerHeight}...`);
+        console.log(`📐 Measuring all UI states...`);
         const data = await measureAll();
 
         const json     = JSON.stringify(data, null, 2);
-        const filename = `ui-baseline-${window.innerWidth}x${window.innerHeight}.json`;
+        const filename = `ui-baseline-${label}.json`;
         console.log(
             `%c✅ Baseline captured. Copy the JSON below into ${filename} and commit it.`,
             'color:#98c379; font-weight:bold;'
         );
         console.log(json);
 
-        // Attempt File System Access API save — suggests the correct filename automatically.
         if (window.showSaveFilePicker) {
             try {
                 const fh = await window.showSaveFilePicker({
@@ -549,7 +601,6 @@ async function ui_contracts(mode) {
                 if (e.name !== 'AbortError') {
                     console.warn('⚠️  File System Access API save failed:', e.message);
                 }
-                // Falls back to manual copy — JSON already logged above
             }
         }
 
@@ -557,26 +608,27 @@ async function ui_contracts(mode) {
         return data;
 
     } else {
-        // Check mode — load the baseline for the current viewport.
+        // Check mode — load the named baseline.
         let baseline;
         try {
             const res = await fetch(url, { cache: 'no-store' });
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             baseline = await res.json();
         } catch (e) {
-            console.error(
-                `❌ Could not load baseline from ${url}: ${e.message}
-` +
-                `   Run: await window.ui_contracts('capture')  to create one.`
-            );
+            console.error(`❌ Could not load baseline from ${url}: ${e.message}`);
+            console.info(`   Run: await window.ui_contracts('capture', '${label}')  to create one.`);
             console.groupEnd();
             return null;
         }
 
-        console.log(`📐 Measuring all UI states at ${window.innerWidth}×${window.innerHeight}...`);
+        console.log(`📐 Measuring all UI states...`);
         const current    = await measureAll();
         const comparison = compareToBaseline(current, baseline);
-        const allPassed  = report(comparison, current.viewport, baseline.viewport);
+        const allPassed  = report(
+            comparison,
+            current.viewport,   baseline.viewport,
+            current.appVersion, baseline.appVersion
+        );
 
         console.groupEnd();
         return { allPassed, comparison, current, baseline };

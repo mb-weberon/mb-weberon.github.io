@@ -1,9 +1,14 @@
 {
   "major": 0,
   "minor": 8,
-  "patch": 0,
+  "patch": 1,
   "label": "",
   "history": [
+    {
+      "version": "0.8.1",
+      "date": "2026-03-24",
+      "note": "ui-contracts.js: appVersion stamped in baseline at capture time; version mismatch surfaces as warning with checkout hint; profile_viewer_open_height removed from snapshot (content-dependent, not a CSS regression signal); DYNAMIC_HEIGHT_METRICS exclusion set skips content-driven metrics in comparison; main.js: window._appVersion exposed after version badge is set"
+    },
     {
       "version": "0.8.0",
       "date": "2026-03-23",

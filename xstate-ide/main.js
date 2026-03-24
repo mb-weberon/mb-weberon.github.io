@@ -18,6 +18,7 @@ async function boot() {
     const versionEl = document.getElementById('version-label');
     if (version && versionEl) {
         versionEl.textContent = version;
+        window._appVersion    = version;   // read by ui-contracts.js at capture time
         console.log('🏷️  Version:', version, '| URL:', window.location.href);
     }
 
@@ -309,5 +310,18 @@ async function boot() {
 window.addEventListener('load', () => {
     console.log('🏁 DOM ready');
     boot();
-    console.log(`📐 Inner viewport: ${window.innerWidth} × ${window.innerHeight} px`);
+    const W = window.innerWidth, H = window.innerHeight;
+    console.log(`📐 Inner viewport: ${W} × ${H} px`);
+    console.groupCollapsed('%c📐 UI Contracts — quick start', 'color:#61dafb; font-weight:bold;');
+    console.log(
+        `Current viewport: ${W}×${H}\n\n` +
+        `For a stable fixed-size window, run:\n` +
+        `  window.open(location.href, '_blank', 'width=1024,height=768')\n` +
+        `then undock DevTools before measuring.\n\n` +
+        `First time (or after intentional layout changes):\n` +
+        `  await window.ui_contracts('capture', '1024x768')  ← saves ui-baseline-1024x768.json\n\n` +
+        `Before / after every change:\n` +
+        `  await window.ui_contracts('check', '1024x768')    ← checks against that baseline`
+    );
+    console.groupEnd();
 });
