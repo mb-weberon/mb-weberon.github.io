@@ -1,23 +1,33 @@
 {
   "major": 0,
   "minor": 10,
-  "patch": 0,
+  "patch": 2,
   "label": "",
   "history": [
     {
+      "version": "0.10.2",
+      "date": "2026-03-24",
+      "note": "Feature: Pack Prod toolbar button \u2014 downloads standalone production bundle ZIP (Runtime.js, ChatUI.js, chat-theme.css, realtor-machine.json, realtor-services.js, validators.js, logger.js, version.js, generated index.html, MANIFEST.txt); packs in-memory config at pack time; no IDE files included"
+    },
+    {
+      "version": "0.10.1",
+      "date": "2026-03-24",
+      "note": "Fix: Runtime.js \u2014 inject invoke.input = ({ context }) => context for all invoke states lacking an explicit input field; XState 5 does not auto-forward context to invoked actors; fn(input) \u2192 fn({ input }) so services receive { input: context } as expected"
+    },
+    {
       "version": "0.10.0",
       "date": "2026-03-24",
-      "note": "Phase 5: Enriched trace — _trace envelope with flowId, flowVersion, sessionId, startedAt, steps[]; each step records { stateId, value, at, ms }; validation failures recorded with valid:false; service results recorded with { service, ok, result, at, ms }; getTrace() returns full envelope; replay() handles both old flat-array and new envelope formats; IDE context viewer renders enriched trace rows"
+      "note": "Phase 5: Enriched trace \u2014 _trace envelope with flowId, flowVersion, sessionId, startedAt, steps[]; each step records { stateId, value, at, ms }; validation failures recorded with valid:false; service results recorded with { service, ok, result, at, ms }; getTrace() returns full envelope; replay() handles both old flat-array and new envelope formats; IDE context viewer renders enriched trace rows"
     },
     {
       "version": "0.9.0",
       "date": "2026-03-24",
-      "note": "Phase 4: Chat UI + theming separation — ChatUI.js owns all chat DOM (bubbles, input, errors, choices); chat-theme.css owns chat styles via CSS custom properties; ide-theme.css owns all IDE shell styles; index.html has no inline <style>, links both CSS files; main.js is IDE shell only (renderIDE, Save/Load Flow, visited edges); _restartRuntime and _replayTrace delegate DOM clear to chatUI.clear()"
+      "note": "Phase 4: Chat UI + theming separation \u2014 ChatUI.js owns all chat DOM (bubbles, input, errors, choices); chat-theme.css owns chat styles via CSS custom properties; ide-theme.css owns all IDE shell styles; index.html has no inline <style>, links both CSS files; main.js is IDE shell only (renderIDE, Save/Load Flow, visited edges); _restartRuntime and _replayTrace delegate DOM clear to chatUI.clear()"
     },
     {
       "version": "0.8.2",
       "date": "2026-03-23",
-      "note": "Runtime.js: event-driven replay — replaced fixed 600ms per-step delay with _waitForStableState() / _waitForStateChange() polling; onReplayDone callback fires on completion; generate-traces.js: runAllTraces() awaits onReplayDone instead of estimateDuration timer; estimateDuration and timing constants (STEP_MS, INVOKE_FALLBACK_MS, STARTUP_MS, BUFFER_MS, INVOKE_DELAYS) removed"
+      "note": "Runtime.js: event-driven replay \u2014 replaced fixed 600ms per-step delay with _waitForStableState() / _waitForStateChange() polling; onReplayDone callback fires on completion; generate-traces.js: runAllTraces() awaits onReplayDone instead of estimateDuration timer; estimateDuration and timing constants (STEP_MS, INVOKE_FALLBACK_MS, STARTUP_MS, BUFFER_MS, INVOKE_DELAYS) removed"
     },
     {
       "version": "0.8.1",
@@ -27,12 +37,12 @@
     {
       "version": "0.8.0",
       "date": "2026-03-23",
-      "note": "ui-contracts.js: viewport-stamped baseline files (ui-baseline-WxH.json) replace fixed ui-baseline.json — no TARGET_W/H constants to maintain, each machine auto-discovers and checks its own baseline; enforceViewport removed; baselineUrl() computed from window.innerWidth/innerHeight at call time; index.html: force-mobile-layout split into standalone ruleset separate from @media block"
+      "note": "ui-contracts.js: viewport-stamped baseline files (ui-baseline-WxH.json) replace fixed ui-baseline.json \u2014 no TARGET_W/H constants to maintain, each machine auto-discovers and checks its own baseline; enforceViewport removed; baselineUrl() computed from window.innerWidth/innerHeight at call time; index.html: force-mobile-layout split into standalone ruleset separate from @media block"
     },
     {
       "version": "0.7.0",
       "date": "2026-03-23",
-      "note": "Fix: diagram edge labels now show ✅ instead of ✓ on visited paths; visitedEdges captured per test case so row-click correctly shows traversed paths; old results drawer dismissed when Test button is clicked"
+      "note": "Fix: diagram edge labels now show \u2705 instead of \u2713 on visited paths; visitedEdges captured per test case so row-click correctly shows traversed paths; old results drawer dismissed when Test button is clicked"
     },
     {
       "version": "0.6.9",
@@ -47,12 +57,12 @@
     {
       "version": "0.6.7",
       "date": "2026-03-23",
-      "note": "UI: permanent #slide-handle on left edge of right pane — always visible including when fully collapsed; desktop drag resizes both panes; mobile tap toggles collapse, drag sets width freely with snap-to-collapse below 120px; right pane starts at 88% on mobile leaving diagram visible; toolbar restored to old large touch-friendly button style (8px 16px padding, 13px font, full labels: Save Flow, Load Flow, Test, Load Results); mobile-restore-btn removed; keyboard-shift fix retained (position:fixed #app)"
+      "note": "UI: permanent #slide-handle on left edge of right pane \u2014 always visible including when fully collapsed; desktop drag resizes both panes; mobile tap toggles collapse, drag sets width freely with snap-to-collapse below 120px; right pane starts at 88% on mobile leaving diagram visible; toolbar restored to old large touch-friendly button style (8px 16px padding, 13px font, full labels: Save Flow, Load Flow, Test, Load Results); mobile-restore-btn removed; keyboard-shift fix retained (position:fixed #app)"
     },
     {
       "version": "0.6.6",
       "date": "2026-03-23",
-      "note": "Fix: keyboard resize — layout root changed to position:fixed/inset:0; floating mobile-restore-btn outside right pane; swipe-to-restore removed"
+      "note": "Fix: keyboard resize \u2014 layout root changed to position:fixed/inset:0; floating mobile-restore-btn outside right pane; swipe-to-restore removed"
     },
     {
       "version": "0.6.5",
@@ -72,7 +82,7 @@
     {
       "version": "0.6.2",
       "date": "2026-03-23",
-      "note": "Feature: generate-traces.js — runAllTraces() with self-test comparison, draggable/collapsible results drawer, stop button, load results from saved JSON, downloadTestResults()"
+      "note": "Feature: generate-traces.js \u2014 runAllTraces() with self-test comparison, draggable/collapsible results drawer, stop button, load results from saved JSON, downloadTestResults()"
     },
     {
       "version": "0.6.1",
@@ -82,12 +92,12 @@
     {
       "version": "0.6.0",
       "date": "2026-03-22",
-      "note": "Phase 3: Runtime isolation — ChatEngine renamed Runtime; zero UI knowledge; single onSnapshot callback; main.js split into renderChat + renderIDE"
+      "note": "Phase 3: Runtime isolation \u2014 ChatEngine renamed Runtime; zero UI knowledge; single onSnapshot callback; main.js split into renderChat + renderIDE"
     },
     {
       "version": "0.5.0",
       "date": "2026-03-22",
-      "note": "Phase 2: Logger abstraction — nullLogger/consoleLogger/resolveLogger; ChatEngine accepts injected logger; production silent by default, debug via ?debug=true or localStorage"
+      "note": "Phase 2: Logger abstraction \u2014 nullLogger/consoleLogger/resolveLogger; ChatEngine accepts injected logger; production silent by default, debug via ?debug=true or localStorage"
     },
     {
       "version": "0.4.3",

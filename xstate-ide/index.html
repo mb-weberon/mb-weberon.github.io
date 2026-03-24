@@ -61,6 +61,7 @@
                     <button onclick="document.getElementById('load-results').click()" title="Load a previously saved test results JSON">📋<br>Load<br>Results</button>
                     <button onclick="window.downloadPair()" title="Save state machine and services as a ZIP file">💾<br>Save<br>Flow</button>
                     <button onclick="document.getElementById('upload').click()" title="Load state machine (.json), services (.js), or both as a ZIP">📂<br>Load<br>Flow</button>
+                    <button onclick="window.downloadProductionBundle()" title="Pack and download standalone production bundle (no IDE)">📦<br>Pack<br>Prod</button>
                     <input type="file" id="upload"       style="display:none" accept=".zip,.json,.js" multiple
                            onchange="window.loadPair(this.files); this.value='';">
                     <input type="file" id="load-results" style="display:none" accept=".json"
@@ -426,7 +427,7 @@
         // fetched value if the fetch succeeds.
         (function() {
             const el = document.getElementById('version-label');
-            if (el && el.textContent === '—') el.textContent = 'v0.9.0';
+            if (el && el.textContent === '—') el.textContent = 'v0.10.2';
         })();
     </script>
     <script type="module" src="./ui-contracts.js"></script>

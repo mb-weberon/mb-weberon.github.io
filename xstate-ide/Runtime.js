@@ -43,11 +43,19 @@ export class Runtime {
 
         const config = JSON.parse(JSON.stringify(this.config));
 
+        // Ensure every invoke gets the full context as input if no input is defined.
+        // XState 5 does not auto-forward context — it must be explicit.
+        Object.values(config.states).forEach(state => {
+            if (state.invoke && state.invoke.input === undefined) {
+                state.invoke.input = ({ context }) => context;
+            }
+        });
+
         const actorsMap = {};
         Object.entries(this.services).forEach(([name, fn]) => {
             if (name === 'guards') return;
             if (typeof fn === 'function') {
-                actorsMap[name] = fromPromise(({ input }) => fn(input));
+                actorsMap[name] = fromPromise(({ input }) => fn({ input }));
             }
         });
 
