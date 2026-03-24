@@ -79,7 +79,18 @@ async function boot() {
         // Context viewer
         const profile      = document.getElementById('profile-view');
         const stateDisplay = document.getElementById('state-id');
-        if (profile)      profile.innerText      = JSON.stringify(context, null, 2);
+        if (profile) {
+            const { _trace, ...rest } = context;
+            const traceRows = (_trace?.steps ?? []).map((s, i) => {
+                if (s.service)         return `  [${i}] ⚙️  ${s.service} ok=${s.ok} (${s.ms}ms)`;
+                if (s.valid === false)  return `  [${i}] ❌ ${s.stateId} "${s.value}" (${s.ms}ms)`;
+                return                        `  [${i}] ✅ ${s.stateId} "${s.value}" (${s.ms}ms)`;
+            }).join('\n');
+            const traceHeader = _trace
+                ? `_trace: session=${_trace.sessionId?.slice(0,8)}… flow=${_trace.flowId}@${_trace.flowVersion}\n${traceRows || '  (no steps yet)'}`
+                : '_trace: null';
+            profile.innerText = traceHeader + '\n\n' + JSON.stringify(rest, null, 2);
+        }
         if (stateDisplay) stateDisplay.innerText = `State: ${stateId}`;
 
         // Diagram

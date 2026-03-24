@@ -8,7 +8,8 @@
     "timing": "",
     "phone": "",
     "inputError": null,
-    "trace": []
+    "trace": [],
+    "_trace": null
   },
   "states": {
     "ask_email": {
@@ -40,7 +41,8 @@
                 "params": {
                   "inputError": "Please provide a valid email address (e.g. name@example.com)."
                 }
-              }
+              },
+              "recordValidationFailure"
             ]
           }
         ]
@@ -166,9 +168,10 @@
               {
                 "type": "updateContext",
                 "params": {
-                  "inputError": "Please enter a valid phone number (7–20 digits)."
+                  "inputError": "Please enter a valid phone number (7\u201320 digits)."
                 }
-              }
+              },
+              "recordValidationFailure"
             ]
           }
         ]
@@ -188,7 +191,7 @@
     },
     "closing_soon": {
       "meta": {
-        "text": "Great news — let's get you booked in! We'll reach out via email to {{user_email}} at {{phone}} to schedule your appointment about . Talk {{timing}}! 🏡\n\nWould you like a transcript of this conversation emailed to {{user_email}}?"
+        "text": "Great news \u2014 let's get you booked in! We'll reach out via email to {{user_email}} at {{phone}} to schedule your appointment about . Talk {{timing}}! \ud83c\udfe1\n\nWould you like a transcript of this conversation emailed to {{user_email}}?"
       },
       "on": {
         "YES": {
@@ -207,7 +210,7 @@
     },
     "closing_later": {
       "meta": {
-        "text": "No rush! We'll check in with you {{timing}} at {{user_email}} when the timing is right. Thanks for chatting! 👋\n\nWould you like a transcript of this conversation emailed to {{user_email}}?"
+        "text": "No rush! We'll check in with you {{timing}} at {{user_email}} when the timing is right. Thanks for chatting! \ud83d\udc4b\n\nWould you like a transcript of this conversation emailed to {{user_email}}?"
       },
       "on": {
         "YES": {
@@ -232,10 +235,16 @@
         "id": "emailTranscript",
         "src": "emailTranscript",
         "onDone": {
-          "target": "upload_context"
+          "target": "upload_context",
+          "actions": [
+            "recordService"
+          ]
         },
         "onError": {
-          "target": "upload_context"
+          "target": "upload_context",
+          "actions": [
+            "recordService"
+          ]
         }
       }
     },
@@ -244,18 +253,27 @@
         "id": "uploadContext",
         "src": "uploadContext",
         "onDone": {
-          "target": "finish_screen"
+          "target": "finish_screen",
+          "actions": [
+            "recordService"
+          ]
         },
         "onError": {
-          "target": "finish_screen"
+          "target": "finish_screen",
+          "actions": [
+            "recordService"
+          ]
         }
       }
     },
     "finish_screen": {
       "type": "final",
       "meta": {
-        "text": "All done — thanks for chatting! We'll be in touch {{timing}}. 😊"
+        "text": "All done \u2014 thanks for chatting! We'll be in touch {{timing}}. \ud83d\ude0a"
       }
     }
-  }
+  },
+  "entry": [
+    "initTrace"
+  ]
 }

@@ -1,9 +1,14 @@
 {
   "major": 0,
-  "minor": 9,
+  "minor": 10,
   "patch": 0,
   "label": "",
   "history": [
+    {
+      "version": "0.10.0",
+      "date": "2026-03-24",
+      "note": "Phase 5: Enriched trace — _trace envelope with flowId, flowVersion, sessionId, startedAt, steps[]; each step records { stateId, value, at, ms }; validation failures recorded with valid:false; service results recorded with { service, ok, result, at, ms }; getTrace() returns full envelope; replay() handles both old flat-array and new envelope formats; IDE context viewer renders enriched trace rows"
+    },
     {
       "version": "0.9.0",
       "date": "2026-03-24",

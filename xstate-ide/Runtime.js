@@ -1,6 +1,26 @@
 import { createMachine, createActor, assign, fromPromise } from 'xstate';
 import { nullLogger } from './logger.js';
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function uuid() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+        const r = Math.random() * 16 | 0;
+        return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+    });
+}
+
+function msSinceLastStep(context) {
+    const steps = context?._trace?.steps;
+    if (!steps?.length) {
+        const s = context?._trace?.startedAt;
+        return s ? Date.now() - new Date(s).getTime() : 0;
+    }
+    const last = steps[steps.length - 1];
+    return last.at ? Date.now() - new Date(last.at).getTime() : 0;
+}
+
+
 export class Runtime {
     constructor(config, services = {}, logger = nullLogger) {
         this.config       = config;
@@ -93,11 +113,51 @@ export class Runtime {
             actors:  actorsMap,
             guards:  guardsMap,
             actions: {
-                record: assign({
-                    trace: ({ context, event }) => [
-                        ...(context.trace || []),
-                        event.value || event.type
-                    ]
+                initTrace: assign(({ context }) => ({
+                    _trace: {
+                        flowId:      config.id ?? 'unknown',
+                        flowVersion: window._appVersion ?? 'unknown',
+                        sessionId:   uuid(),
+                        startedAt:   new Date().toISOString(),
+                        steps:       [],
+                    }
+                })),
+                record: assign(({ context, event }) => {
+                    const value = event.value ?? event.type;
+                    const at    = new Date().toISOString();
+                    const ms    = msSinceLastStep(context);
+                    const step  = { stateId: this.lastId ?? 'unknown', value, at, ms };
+                    const prev  = context._trace ?? {};
+                    return {
+                        _trace: { ...prev, steps: [...(prev.steps ?? []), step] },
+                        trace:  [...(context.trace ?? []), value],
+                    };
+                }),
+                recordValidationFailure: assign(({ context, event }) => {
+                    const step = {
+                        stateId: this.lastId ?? 'unknown',
+                        valid:   false,
+                        value:   event.value ?? event.type,
+                        at:      new Date().toISOString(),
+                        ms:      msSinceLastStep(context),
+                    };
+                    const prev = context._trace ?? {};
+                    return { _trace: { ...prev, steps: [...(prev.steps ?? []), step] } };
+                }),
+                recordService: assign(({ context, event }) => {
+                    const typeStr = event.type ?? '';
+                    const service = typeStr.replace(/^xstate\.(done|error)\.actor\./, '');
+                    const ok      = typeStr.startsWith('xstate.done');
+                    const step    = {
+                        stateId: this.lastId ?? 'unknown',
+                        service,
+                        ok,
+                        result: event.output ?? event.error ?? null,
+                        at:     new Date().toISOString(),
+                        ms:     msSinceLastStep(context),
+                    };
+                    const prev = context._trace ?? {};
+                    return { _trace: { ...prev, steps: [...(prev.steps ?? []), step] } };
                 }),
                 ...generatedActions
             }
@@ -124,7 +184,16 @@ export class Runtime {
     }
 
     getTrace() {
-        return this.actor?.getSnapshot()?.context?.trace ?? [];
+        const ctx = this.actor?.getSnapshot()?.context ?? {};
+        if (ctx._trace) return ctx._trace;
+        // legacy fallback — old flat array format
+        return {
+            flowId:      this.config?.id ?? 'unknown',
+            flowVersion: 'legacy',
+            sessionId:   null,
+            startedAt:   null,
+            steps:       (ctx.trace ?? []).map(v => ({ value: v })),
+        };
     }
 
     // ── Replay ────────────────────────────────────────────────────────────────
@@ -139,11 +208,26 @@ export class Runtime {
             return;
         }
 
-        this.logger.log('▶ Replay starting, steps:', trace.length);
+        // Support both old flat-array and new envelope formats
+        let steps;
+        if (Array.isArray(trace)) {
+            steps = trace;   // old: ["email@x.com", "RENT", ...]
+        } else if (trace?.steps) {
+            // new envelope — skip validation failures and service records
+            steps = trace.steps
+                .filter(s => s.valid !== false && !s.service)
+                .map(s => s.value);
+        } else {
+            this.logger.error('❌ Replay: unrecognised trace format');
+            this.onReplayDone?.();
+            return;
+        }
+
+        this.logger.log('▶ Replay starting, steps:', steps.length);
         // No this.restart() here — the caller (_replayTrace in main.js) is
         // responsible for restarting and clearing the DOM before calling replay().
 
-        for (const item of trace) {
+        for (const item of steps) {
             // Wait for the machine to settle into a stable (non-transient) state
             // before sending the next event. This replaces the fixed 600ms delay
             // and eliminates timing-based flakiness entirely.
