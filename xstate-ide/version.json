@@ -1,9 +1,27 @@
 {
   "major": 0,
   "minor": 6,
-  "patch": 5,
+  "patch": 9,
   "label": "",
   "history": [
+    {
+      "version": "0.6.9",
+      "date": "2026-03-23",
+      "note": "Mobile results drawer: larger touch-friendly header (52px, 14px font); slide-down collapse via translateY transition instead of display:none; starts collapsed on mobile; diagram-pane reserves bottom space for drawer title bar; auto-selects first row on open; toolbar buttons emoji above label with <br>; Restart and Replay buttons same treatment"
+    },
+    {
+      "version": "0.6.8",
+      "date": "2026-03-23",
+      "note": "UI: toolbar buttons restored to large touch-friendly style (flex:1, 12px 10px padding, 14px font, line-height 1.3, min-width 70px); Paths button re-added; button order matches Chatbot Logic IDE reference"
+    },
+      "date": "2026-03-23",
+      "note": "UI: permanent #slide-handle on left edge of right pane — always visible including when fully collapsed; desktop drag resizes both panes; mobile tap toggles collapse, drag sets width freely with snap-to-collapse below 120px; right pane starts at 88% on mobile leaving diagram visible; toolbar restored to old large touch-friendly button style (8px 16px padding, 13px font, full labels: Save Flow, Load Flow, Test, Load Results); mobile-restore-btn removed; keyboard-shift fix retained (position:fixed #app)"
+    },
+    {
+      "version": "0.6.6",
+      "date": "2026-03-23",
+      "note": "Fix: keyboard resize — layout root changed to position:fixed/inset:0; floating mobile-restore-btn outside right pane; swipe-to-restore removed"
+    },
     {
       "version": "0.6.5",
       "date": "2026-03-23",
