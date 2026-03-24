@@ -276,26 +276,103 @@ window.downloadProductionBundle = async () => {
     const packedAt = new Date().toISOString();
 
     const minimalHtml = `<!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>${flowId}</title>
   <link rel="stylesheet" href="./chat-theme.css">
   <script type="importmap">
       { "imports": {
-	  "xstate":  "https://unpkg.com/xstate@5/dist/xstate.esm.js",
-	  "mermaid": "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs",
-	  "fflate":  "https://cdn.jsdelivr.net/npm/fflate@0.8.2/esm/browser.js"
+          "xstate": "https://unpkg.com/xstate@5/dist/xstate.esm.js",
+          "fflate": "https://cdn.jsdelivr.net/npm/fflate@0.8.2/esm/browser.js"
       }}
   </script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+
+    html, body {
+      margin: 0; padding: 0;
+      height: 100%; overflow: hidden;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #f4f7f6;
+    }
+
+    /* Pin layout to visual viewport so soft keyboard overlays instead of pushing */
+    #app {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      background: #f4f7f6;
+    }
+
+    /* Centered card — full height on mobile, max 560px wide on desktop */
+    #chat-card {
+      width: 100%;
+      max-width: 560px;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      background: #ffffff;
+      box-shadow: 0 0 24px rgba(0,0,0,0.08);
+    }
+
+    /* Header bar */
+    #chat-header {
+      flex-shrink: 0;
+      padding: 12px 16px 10px;
+      background: #1c1e21;
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+
+    #chat-title {
+      font-family: 'Courier New', monospace;
+      font-size: 14px;
+      font-weight: bold;
+      color: #61dafb;
+      letter-spacing: 0.05em;
+    }
+
+    #chat-version {
+      font-family: 'Courier New', monospace;
+      font-size: 11px;
+      font-weight: bold;
+      color: #fff;
+      background: #0051cc;
+      border: 1px solid #3a8fff;
+      border-radius: 4px;
+      padding: 1px 6px;
+    }
+
+    /* chat-theme.css owns #messages and #controls-container */
+    #chat-mount {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      min-height: 0;
+    }
+  </style>
 </head>
 <body>
-  <div id="chat-mount" style="display:flex;flex-direction:column;height:100vh"></div>
+  <div id="app">
+    <div id="chat-card">
+      <div id="chat-header">
+        <span id="chat-title">${flowId}</span>
+        <span id="chat-version">${version}</span>
+      </div>
+      <div id="chat-mount"></div>
+    </div>
+  </div>
   <script type="module">
-    import { Runtime }          from './Runtime.js';
-    import { ChatUI }           from './ChatUI.js';
-    import { realtorServices }  from './realtor-services.js';
-    import { nullLogger }       from './logger.js';
+    import { Runtime }         from './Runtime.js';
+    import { ChatUI }          from './ChatUI.js';
+    import { realtorServices } from './realtor-services.js';
+    import { nullLogger }      from './logger.js';
 
     const res    = await fetch('./realtor-machine.json');
     const config = await res.json();
@@ -347,5 +424,5 @@ window.downloadProductionBundle = async () => {
     URL.revokeObjectURL(a.href);
 
     console.log(`✅ Production bundle downloaded: ${a.download}`);
-    console.log(`   Files: 9 | Flow: ${flowId} | Version: ${version}`);
+    console.log(`   Files: 10 | Flow: ${flowId} | Version: ${version}`);
 };

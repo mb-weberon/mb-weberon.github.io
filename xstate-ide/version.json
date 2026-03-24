@@ -7,7 +7,7 @@
     {
       "version": "0.10.2",
       "date": "2026-03-24",
-      "note": "Feature: Pack Prod toolbar button \u2014 downloads standalone production bundle ZIP (Runtime.js, ChatUI.js, chat-theme.css, realtor-machine.json, realtor-services.js, validators.js, logger.js, version.js, generated index.html, MANIFEST.txt); packs in-memory config at pack time; no IDE files included"
+      "note": "UI: prod bundle index.html \u2014 polished page chrome: fixed viewport layout, centered card (max 560px), dark header bar with flow id + version badge, Segoe UI font, soft-keyboard-safe layout; mermaid removed from prod importmap"
     },
     {
       "version": "0.10.1",
