@@ -32,6 +32,7 @@ async function boot() {
         console.log('📊 States:', Object.keys(config.states).join(', '));
         import('./generate-traces.js').then(m => {
 	    window._config             = config;
+	    window._showResultsDrawer = m.showResultsDrawer;
 	    window.generateTraces      = () => m.generateTraces(config);
 	    window.downloadTestResults = m.downloadTestResults;
 	    window.stopAllTraces       = m.stopAllTraces;
@@ -308,4 +309,5 @@ async function boot() {
 window.addEventListener('load', () => {
     console.log('🏁 DOM ready');
     boot();
+    console.log(`📐 Inner viewport: ${window.innerWidth} × ${window.innerHeight} px`);
 });

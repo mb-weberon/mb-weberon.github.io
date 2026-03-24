@@ -408,6 +408,39 @@
 
             #slide-handle { cursor: ew-resize; }
         }
+
+        /* ── Force Mobile for ui-contracts ─────────────────────────────────────
+         * FIX R3: kept as a standalone body-class block, NOT combined with the
+         * @media (max-width: 700px) rule via a comma selector.
+         *
+         * Why: the media query uses !important on width so the browser wins
+         * over any JS-set inline style. Combining the two rules meant that
+         * removing .force-mobile-layout on a narrow viewport left the pane
+         * stuck at 88% because the media-query !important still applied.
+         * As separate rules each is independently reversible.
+         * ──────────────────────────────────────────────────────────────────── */
+        body.force-mobile-layout #diagram-pane {
+            position: absolute;
+            inset: 0;
+            z-index: 1;
+        }
+
+        body.force-mobile-layout #right-pane {
+            position: absolute;
+            top: 0; right: 0; bottom: 0;
+            width: 88% !important;
+            max-width: unset;
+            z-index: 5;
+            transition: width 0.3s ease;
+        }
+
+        body.force-mobile-layout #right-pane.pane-collapsed {
+            width: var(--handle-w) !important;
+        }
+
+        body.force-mobile-layout #slide-handle {
+            cursor: ew-resize;
+        }
     </style>
 </head>
 <body>
@@ -641,7 +674,8 @@
         const handleArrow  = document.getElementById('handle-arrow');
         const rightPane    = document.getElementById('right-pane');
 
-        const isMobile = () => window.innerWidth <= 700;
+        //const isMobile = () => window.innerWidth <= 700;
+	const isMobile = () => window._forceMobileLayout || window.innerWidth <= 700;
         let _collapsed = false;
 
         // Update arrow direction
@@ -833,6 +867,7 @@
             if (el && el.textContent === '—') el.textContent = 'v0.7.0';
         })();
     </script>
+    <script type="module" src="./ui-contracts.js"></script>
 
 </body>
 </html>

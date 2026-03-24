@@ -1,9 +1,14 @@
 {
   "major": 0,
-  "minor": 7,
+  "minor": 8,
   "patch": 0,
   "label": "",
   "history": [
+    {
+      "version": "0.8.0",
+      "date": "2026-03-23",
+      "note": "ui-contracts.js: viewport-stamped baseline files (ui-baseline-WxH.json) replace fixed ui-baseline.json — no TARGET_W/H constants to maintain, each machine auto-discovers and checks its own baseline; enforceViewport removed; baselineUrl() computed from window.innerWidth/innerHeight at call time; index.html: force-mobile-layout split into standalone ruleset separate from @media block"
+    },
     {
       "version": "0.7.0",
       "date": "2026-03-23",
@@ -19,6 +24,8 @@
       "date": "2026-03-23",
       "note": "UI: toolbar buttons restored to large touch-friendly style (flex:1, 12px 10px padding, 14px font, line-height 1.3, min-width 70px); Paths button re-added; button order matches Chatbot Logic IDE reference"
     },
+    {
+      "version": "0.6.7",
       "date": "2026-03-23",
       "note": "UI: permanent #slide-handle on left edge of right pane — always visible including when fully collapsed; desktop drag resizes both panes; mobile tap toggles collapse, drag sets width freely with snap-to-collapse below 120px; right pane starts at 88% on mobile leaving diagram visible; toolbar restored to old large touch-friendly button style (8px 16px padding, 13px font, full labels: Save Flow, Load Flow, Test, Load Results); mobile-restore-btn removed; keyboard-shift fix retained (position:fixed #app)"
     },
