@@ -11,6 +11,7 @@ export class Runtime {
         this.lastId       = null;
         this.onSnapshot   = null;   // (snap) => void
         this.onReplayStep = null;   // (item: string) => void
+        this.onReplayDone = null;   // () => void  — fires when replay() finishes
         this.setupKeyboard();
     }
 
@@ -143,7 +144,11 @@ export class Runtime {
         // responsible for restarting and clearing the DOM before calling replay().
 
         for (const item of trace) {
-            await new Promise(r => setTimeout(r, 600));
+            // Wait for the machine to settle into a stable (non-transient) state
+            // before sending the next event. This replaces the fixed 600ms delay
+            // and eliminates timing-based flakiness entirely.
+            await this._waitForStableState();
+
             const snap    = this.actor.getSnapshot();
             const stateId = typeof snap.value === 'string'
                 ? snap.value : Object.keys(snap.value)[0];
@@ -154,6 +159,9 @@ export class Runtime {
                 this.onReplayStep?.(item);
                 this.submit(item);
 
+                // Wait for the state to change (or detect a validation failure)
+                await this._waitForStateChange(stateId);
+
                 const after   = this.actor.getSnapshot();
                 const afterId = typeof after.value === 'string'
                     ? after.value : Object.keys(after.value)[0];
@@ -161,6 +169,7 @@ export class Runtime {
                 if (afterId === stateId) {
                     const err = after.context.inputError || 'validation failed';
                     this.logger.error(`❌ Replay aborted at "${stateId}": ${err}`);
+                    this.onReplayDone?.();
                     return;
                 }
             } else {
@@ -170,7 +179,62 @@ export class Runtime {
             }
         }
 
+        // Wait for any trailing invoke chains or always-transitions to finish
+        // (e.g. route_by_timing → closing_soon → send_transcript → upload_context → finish_screen)
+        await this._waitForStableState();
+
         this.logger.log('▶ Replay complete');
+        this.onReplayDone?.();
+    }
+
+    /**
+     * Resolves once the machine is in a stable state — i.e. not a transient
+     * state (always-only or invoke-only with no on:{} handlers).
+     * Polls at 20ms so invoke async work can complete without busy-waiting.
+     */
+    _waitForStableState() {
+        return new Promise(resolve => {
+            const check = () => {
+                const snap    = this.actor.getSnapshot();
+                // Actor has stopped (final state reached)
+                if (snap.status !== 'active') { resolve(); return; }
+
+                const stateId = typeof snap.value === 'string'
+                    ? snap.value : Object.keys(snap.value)[0];
+                const state   = this.config.states[stateId];
+                if (!state) { resolve(); return; }
+
+                const isTransient =
+                    !!state.always ||
+                    (!!state.invoke && !state.on);
+
+                if (!isTransient) { resolve(); return; }
+                setTimeout(check, 20);
+            };
+            check();
+        });
+    }
+
+    /**
+     * Resolves once the machine has left `fromStateId` (or the actor stops).
+     * Used after submitting text input to confirm the guard passed and a real
+     * transition occurred, rather than a self-transition on validation error.
+     */
+    _waitForStateChange(fromStateId) {
+        return new Promise(resolve => {
+            const check = () => {
+                const snap = this.actor.getSnapshot();
+                if (snap.status !== 'active') { resolve(); return; }
+
+                const stateId = typeof snap.value === 'string'
+                    ? snap.value : Object.keys(snap.value)[0];
+
+                if (stateId !== fromStateId) { resolve(); return; }
+                setTimeout(check, 20);
+            };
+            // Give the event one tick to be processed before polling
+            setTimeout(check, 0);
+        });
     }
 
     // ── Internal state update → emit snapshot ────────────────────────────────

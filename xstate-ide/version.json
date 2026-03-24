@@ -1,9 +1,14 @@
 {
   "major": 0,
   "minor": 8,
-  "patch": 1,
+  "patch": 2,
   "label": "",
   "history": [
+    {
+      "version": "0.8.2",
+      "date": "2026-03-23",
+      "note": "Runtime.js: event-driven replay — replaced fixed 600ms per-step delay with _waitForStableState() / _waitForStateChange() polling; onReplayDone callback fires on completion; generate-traces.js: runAllTraces() awaits onReplayDone instead of estimateDuration timer; estimateDuration and timing constants (STEP_MS, INVOKE_FALLBACK_MS, STARTUP_MS, BUFFER_MS, INVOKE_DELAYS) removed"
+    },
     {
       "version": "0.8.1",
       "date": "2026-03-24",

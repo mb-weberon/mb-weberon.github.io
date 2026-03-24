@@ -26,19 +26,6 @@ const SAMPLE_INPUTS = {
     // ucbs_bot (ask_phone and ask_email reuse the same keys above)
 };
 
-// Per-invoke-state extra delay in ms. Keyed by state id.
-// Set to match the simulated network delay in realtor-services.js (or equivalent).
-// If a state is not listed here, INVOKE_FALLBACK_MS is used for any invoke state.
-const INVOKE_DELAYS = {
-    emailTranscript:  800,
-    uploadContext:    600,
-    send_transcript:  800,
-    upload_context:   600,
-};
-const INVOKE_FALLBACK_MS = 800;
-const STEP_MS            = 600;   // Runtime.replay() delay per step
-const STARTUP_MS         = 50;    // _replayTrace startup delay
-const BUFFER_MS          = 600;   // extra buffer after last step
 
 // ── Path enumeration ──────────────────────────────────────────────────────────
 
@@ -108,60 +95,6 @@ export function generateTraces(config) {
     return traces;
 }
 
-// ── Duration estimator ────────────────────────────────────────────────────────
-
-/**
- * Estimate how long a replay will take by walking the path the trace takes
- * through the machine and summing up step delays + any invoke state delays.
- */
-function estimateDuration(trace, config) {
-    let ms       = STARTUP_MS;
-    let stateId  = config.initial;
-
-    for (const item of trace) {
-        ms += STEP_MS;
-
-        const state = config.states[stateId];
-        if (!state) break;
-
-        // Check for invoke on the current state (fires automatically before user can act)
-        if (state.invoke) {
-            const invId = state.invoke.id ?? stateId;
-            ms += INVOKE_DELAYS[invId] ?? INVOKE_DELAYS[stateId] ?? INVOKE_FALLBACK_MS;
-        }
-
-        // Advance to next state by following the trace item
-        let nextStateId = null;
-
-        if (state.on) {
-            for (const [eventType, transition] of Object.entries(state.on)) {
-                const isMatch = eventType === 'SUBMIT'
-                    ? (SAMPLE_INPUTS[stateId] === item || typeof item === 'string' && eventType === 'SUBMIT')
-                    : eventType === item;
-
-                if (isMatch) {
-                    const branches = Array.isArray(transition) ? transition : [transition];
-                    const branch   = branches.find(b => b?.target);
-                    nextStateId    = branch?.target ?? null;
-                    break;
-                }
-            }
-        }
-
-        if (!nextStateId) break;
-        stateId = nextStateId;
-
-        // Check if the destination state is an invoke-only state (auto-transition)
-        const nextState = config.states[stateId];
-        if (nextState?.invoke && !nextState?.on) {
-            const invId = nextState.invoke.id ?? stateId;
-            ms += INVOKE_DELAYS[invId] ?? INVOKE_DELAYS[stateId] ?? INVOKE_FALLBACK_MS;
-        }
-    }
-
-    return ms + BUFFER_MS;
-}
-
 // ── Trace comparison ──────────────────────────────────────────────────────────
 
 function compareTraces(expected, actual) {
@@ -217,14 +150,19 @@ export async function runAllTraces(config, replayFn, getTrace, getStateId, pause
             break;
         }
 
-        const expected       = traces[i];
-        const replayDuration = estimateDuration(expected, config);
+        const expected = traces[i];
 
         showStatusBadge(`Running ${i + 1} / ${total}…`, true);
-        console.log(`\n▶ Path ${i + 1} / ${total} (est. ${replayDuration}ms): ${JSON.stringify(expected)}`);
+        console.log(`\n▶ Path ${i + 1} / ${total}: ${JSON.stringify(expected)}`);
 
-        replayFn(JSON.stringify(expected));
-        await new Promise(r => setTimeout(r, replayDuration));
+        // Wait for replay to signal completion via onReplayDone instead of
+        // using a hardcoded timer. This eliminates all timing-based flakiness.
+        await new Promise(resolve => {
+            window.currentRuntime.onReplayDone = resolve;
+            replayFn(JSON.stringify(expected));
+        });
+        // Clear the hook so stray calls from manual replays don't fire
+        window.currentRuntime.onReplayDone = null;
 
         if (_interrupted) {
             console.warn(`⛔ Stopped after ${i + 1} of ${total} paths`);
