@@ -201,12 +201,13 @@
 
         #version-badge {
             font-family: 'Courier New', monospace;
-            font-size: 10px;
-            color: #888;
-            background: #2a2d35;
-            border: 1px solid #3a3d45;
-            border-radius: 3px;
-            padding: 1px 6px;
+            font-size: 12px;
+            font-weight: bold;
+            color: #ffffff;
+            background: #0051cc;
+            border: 1px solid #3a8fff;
+            border-radius: 4px;
+            padding: 2px 8px;
             white-space: nowrap;
         }
 
@@ -778,7 +779,7 @@
                         });
                         targets.forEach(tId => {
                             const visited = visitedEdges.has(`${id}|${ev}`);
-                            graph += `  ${id} -- "${visited ? '✓ ' : ''}${ev}" --> ${tId}\n`;
+                            graph += `  ${id} -- "${visited ? '✅ ' : ''}${ev}" --> ${tId}\n`;
                         });
                     });
                 }
@@ -788,7 +789,7 @@
                         ? config.states[id].always : [config.states[id].always];
                     targets.forEach(t => {
                         const tId = t.target || t;
-                        graph += `  ${id} -- "${visitedEdges.has(`${id}|auto`) ? '✓ ' : ''}auto" --> ${tId}\n`;
+                        graph += `  ${id} -- "${visitedEdges.has(`${id}|auto`) ? '✅ ' : ''}auto" --> ${tId}\n`;
                     });
                 }
 
@@ -796,11 +797,11 @@
                     const inv = config.states[id].invoke;
                     if (inv.onDone?.target) {
                         const visited = visitedEdges.has(`${id}|done`);
-                        graph += `  ${id} -. "${visited ? '✓ ' : ''}done" .-> ${inv.onDone.target}\n`;
+                        graph += `  ${id} -. "${visited ? '✅ ' : ''}done" .-> ${inv.onDone.target}\n`;
                     }
                     if (inv.onError?.target) {
                         const visited = visitedEdges.has(`${id}|error`);
-                        graph += `  ${id} -. "${visited ? '✓ ' : ''}error" .-> ${inv.onError.target}\n`;
+                        graph += `  ${id} -. "${visited ? '✅ ' : ''}error" .-> ${inv.onError.target}\n`;
                     }
                 }
             });
@@ -822,6 +823,16 @@
     </script>
 
     <script type="module" src="./main.js"></script>
+
+    <script>
+        // Inline version fallback — set immediately so the badge always shows
+        // even if version.json fails to load. main.js will overwrite with the
+        // fetched value if the fetch succeeds.
+        (function() {
+            const el = document.getElementById('version-label');
+            if (el && el.textContent === '—') el.textContent = 'v0.7.0';
+        })();
+    </script>
 
 </body>
 </html>
