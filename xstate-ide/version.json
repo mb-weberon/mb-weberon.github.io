@@ -1,9 +1,14 @@
 {
   "major": 0,
   "minor": 10,
-  "patch": 2,
+  "patch": 3,
   "label": "",
   "history": [
+    {
+      "version": "0.10.3",
+      "date": "2026-03-24",
+      "note": "Fix: generate-traces.js — compareTraces() and runAllTraces() now normalise the enriched _trace envelope returned by getTrace() into a flat value array before comparison; validation-failure and service steps are filtered out; legacy flat-array format passes through unchanged"
+    },
     {
       "version": "0.10.2",
       "date": "2026-03-24",

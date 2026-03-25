@@ -97,15 +97,41 @@ export function generateTraces(config) {
 
 // ── Trace comparison ──────────────────────────────────────────────────────────
 
-function compareTraces(expected, actual) {
-    const diffs = [];
-    if (expected.length !== actual.length) {
-        diffs.push(`length mismatch: expected ${expected.length} steps, got ${actual.length}`);
+/**
+ * Normalise the value returned by runtime.getTrace() into a flat array of
+ * step values so it can be compared against the expected flat array produced
+ * by getAllTraces().
+ *
+ * getTrace() now returns the enriched _trace envelope:
+ *   { flowId, flowVersion, sessionId, startedAt, steps: [...] }
+ *
+ * Each step is one of:
+ *   { stateId, value, at, ms }                — normal state-advance step  ← KEEP
+ *   { stateId, valid: false, value, at, ms }   — validation failure         ← SKIP
+ *   { stateId, service, ok, result, at, ms }   — service call result        ← SKIP
+ *
+ * For the legacy flat-array format (pre-Phase-5) we pass it through as-is.
+ */
+function normaliseActualTrace(raw) {
+    if (Array.isArray(raw)) return raw;           // legacy flat array
+    if (Array.isArray(raw?.steps)) {
+        return raw.steps
+            .filter(s => s.valid !== false && !s.service)
+            .map(s => s.value);
     }
-    const len = Math.max(expected.length, actual.length);
+    return [];   // unrecognised — fail gracefully
+}
+
+function compareTraces(expected, actual) {
+    const actualValues = normaliseActualTrace(actual);
+    const diffs = [];
+    if (expected.length !== actualValues.length) {
+        diffs.push(`length mismatch: expected ${expected.length} steps, got ${actualValues.length}`);
+    }
+    const len = Math.max(expected.length, actualValues.length);
     for (let i = 0; i < len; i++) {
-        if (expected[i] !== actual[i]) {
-            diffs.push(`step ${i + 1}: expected "${expected[i] ?? '(missing)'}", got "${actual[i] ?? '(missing)'}"`);
+        if (expected[i] !== actualValues[i]) {
+            diffs.push(`step ${i + 1}: expected "${expected[i] ?? '(missing)'}", got "${actualValues[i] ?? '(missing)'}"`);
         }
     }
     return { passed: diffs.length === 0, diffs };
@@ -169,7 +195,7 @@ export async function runAllTraces(config, replayFn, getTrace, getStateId, pause
             break;
         }
 
-        const actual            = getTrace();
+        const actual            = normaliseActualTrace(getTrace());
         const finalStateId      = getStateId();
         const finalContext      = { ...window.currentRuntime.actor.getSnapshot().context };
         const bubbles           = captureBubbles();
