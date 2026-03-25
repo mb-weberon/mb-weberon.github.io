@@ -679,19 +679,26 @@ async function boot() {
 
     // ── Drawer height cap + drag + portrait diagram resize ────────────────────
     function _setupDrawer(drawer) {
-        // Default max-height: top of drawer can't be above #profile-toggle.
-        // The drawer is position:fixed so we measure profile-toggle's screen top.
+        // Default max-height.
+        //
+        // Mobile/portrait: cap so the drawer can't rise above #profile-toggle
+        // (which sits near the bottom of the right pane in UI3).
+        //
+        // Desktop: the drawer is a free-floating position:fixed element sitting
+        // over the diagram pane — not under the right pane. Use a generous
+        // viewport-based cap (80vh) so the full result set is scrollable.
         function _applyHeightCap() {
+            if (drawer.dataset.userResized) return;
+            if (!isMobile && !isPortrait()) {
+                drawer.style.maxHeight = Math.max(80, window.innerHeight * 0.80) + 'px';
+                return;
+            }
             const toggle = document.getElementById('profile-toggle');
             if (!toggle) return;
-            const toggleTop  = toggle.getBoundingClientRect().top;
+            const toggleTop    = toggle.getBoundingClientRect().top;
             const drawerBottom = parseInt(drawer.style.bottom) || 0;
-            // max-height = distance from bottom of drawer to top of profile-toggle
             const maxH = window.innerHeight - drawerBottom - toggleTop;
-            // Only apply cap if drawer hasn't been manually dragged taller already
-            if (!drawer.dataset.userResized) {
-                drawer.style.maxHeight = Math.max(80, maxH) + 'px';
-            }
+            drawer.style.maxHeight = Math.max(80, maxH) + 'px';
         }
         _applyHeightCap();
 

@@ -194,39 +194,29 @@ input[type="text"]:focus { border-color: var(--accent); }
 }
 
 /* ── Right pane ─────────────────────────────────────────────────────────────── */
-/* ── Right pane — full-width overlay, slides left/right via translateX ──────── *
+/* ── Right pane ─────────────────────────────────────────────────────────────── *
  *                                                                               *
- * The pane is always as wide as the viewport so its internal content never     *
- * reflows. The diagram sits underneath it at z-index:1. Dragging the handle    *
- * translates the pane rightward to reveal as much of the diagram as desired.   *
+ * Desktop (> 700px): static flex sibling of #diagram-pane, fixed 460px width. *
+ * The slide-handle acts as a drag-to-resize gripper (col-resize cursor).       *
  *                                                                               *
- * _panOffset (set by JS) is clamped to [0, maxReveal] where maxReveal is       *
- * (viewport width - handle width). At offset 0 the pane covers everything;    *
- * at maxReveal only the handle strip is visible.                               *
+ * Mobile (≤ 700px): full-width absolute overlay that slides left/right via     *
+ * translateX, revealing the diagram underneath. Dragging the handle pans it.   *
  * ──────────────────────────────────────────────────────────────────────────── */
 #right-pane {
-    position: absolute;
-    top: 0; right: 0; bottom: 0;
-    /* Fixed content width — chat never reflows */
-    width: 100%;
+    width: 460px;
+    min-width: var(--handle-w);
+    max-width: calc(100% - 40px);
     display: flex;
     flex-direction: column;
     background: var(--panel);
     box-shadow: -2px 0 10px rgba(0,0,0,0.08);
     z-index: 10;
-    /* translateX is driven by JS; transition only while not dragging */
-    transform: translateX(0);
-    transition: transform 0.3s ease;
-    will-change: transform;
+    position: relative;
 }
 
-/* Content area — offset left to make room for the handle.
-   --visible-pane-w is set by JS to (viewport width - translateX offset).
-   This makes #pane-content shrink as the pane slides right, so chat reflows. */
+/* Content area — offset left to make room for the handle */
 #pane-content {
     margin-left: var(--handle-w);
-    width: calc(var(--visible-pane-w, 100vw) - var(--handle-w));
-    max-width: calc(100vw - var(--handle-w));
     display: flex;
     flex-direction: column;
     flex: 1;
@@ -488,8 +478,28 @@ input[type="text"]:focus { border-color: var(--accent); }
 
 /* ── Mobile overrides ───────────────────────────────────────────────────────── */
 @media (max-width: 700px) {
-    /* #right-pane is already position:absolute full-width — no changes needed.
-       JS uses the same translateX model on mobile as on desktop. */
+    /* Switch to the full-width overlay / translateX slide model on small screens */
+    #diagram-pane {
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+    }
+
+    #right-pane {
+        position: absolute;
+        top: 0; right: 0; bottom: 0;
+        width: 100% !important;
+        max-width: unset;
+        transform: translateX(0);
+        transition: transform 0.3s ease;
+        will-change: transform;
+    }
+
+    #pane-content {
+        width: calc(var(--visible-pane-w, 100vw) - var(--handle-w));
+        max-width: calc(100vw - var(--handle-w));
+    }
+
     #slide-handle { cursor: ew-resize; }
 }
 
@@ -498,6 +508,21 @@ body.force-mobile-layout #diagram-pane {
     position: absolute;
     inset: 0;
     z-index: 1;
+}
+
+body.force-mobile-layout #right-pane {
+    position: absolute;
+    top: 0; right: 0; bottom: 0;
+    width: 100% !important;
+    max-width: unset;
+    transform: translateX(0);
+    transition: transform 0.3s ease;
+    will-change: transform;
+}
+
+body.force-mobile-layout #pane-content {
+    width: calc(var(--visible-pane-w, 100vw) - var(--handle-w));
+    max-width: calc(100vw - var(--handle-w));
 }
 
 body.force-mobile-layout #slide-handle {

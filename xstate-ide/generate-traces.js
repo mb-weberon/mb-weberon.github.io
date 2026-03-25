@@ -345,7 +345,7 @@ export function showResultsDrawer(results, replayFn) {
 
     // ── Table ─────────────────────────────────────────────────────────────────
     const tableWrap = document.createElement('div');
-    tableWrap.style.cssText = `overflow-y:auto; flex:1; max-height:${isMobile ? '50vh' : '40vh'};`;
+    tableWrap.style.cssText = `overflow-y:auto; flex:1; max-height:${isMobile ? '50vh' : 'none'};`;
 
     const table = document.createElement('table');
     table.style.cssText = `width:100%; border-collapse:collapse; font-size:${isMobile ? '13px' : '11px'};`;
