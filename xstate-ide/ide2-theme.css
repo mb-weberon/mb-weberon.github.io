@@ -1,0 +1,789 @@
+/*
+ * ide2-theme.css
+ *
+ * IDE shell styles for index2.html — new layout with:
+ *   - Flow bar (Save / Load / Pack Prod / Preview) replacing old toolbar
+ *   - Test & Debug bottom sheet replacing profile viewer + replay bar +
+ *     floating results drawer + floating status badge
+ *   - Diagram label as position:absolute overlay (no h2 in document flow)
+ *   - Portrait mobile: flex-column stack (diagram above right pane)
+ *   - Preview mode via body.preview-mode class
+ *
+ * chat-theme.css handles everything inside #messages and #controls-container.
+ * ide-theme.css (index.html) is untouched.
+ */
+
+/* ── Tokens ─────────────────────────────────────────────────────────────────── */
+:root {
+    --bg:          #f4f7f6;
+    --panel:       #ffffff;
+    --accent:      #0084ff;
+    --dark:        #1c1e21;
+    --handle-w:    18px;
+    --flow-bar-h:  48px;
+    --tdp-collapsed-h: 44px;   /* height of test panel handle bar when collapsed */
+    --titlebar-h:  36px;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+
+/*
+ * #app is the true layout root, pinned to the visual viewport.
+ * position:fixed + inset:0 means the soft keyboard can never shift
+ * the layout — it opens over the content instead of pushing it up.
+ */
+#app {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: row;
+    font-family: 'Segoe UI', sans-serif;
+    background: var(--bg);
+    overflow: hidden;
+}
+
+/* ── Global button defaults ─────────────────────────────────────────────────── */
+button {
+    padding: 8px 16px;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: opacity 0.2s;
+    touch-action: manipulation;
+}
+
+button:hover  { opacity: 0.85; }
+button:active { opacity: 0.7;  }
+
+input[type="text"] {
+    padding: 9px 11px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    outline: none;
+    font-size: 14px;
+}
+
+input[type="text"]:focus { border-color: var(--accent); }
+
+/* ── Diagram pane ───────────────────────────────────────────────────────────── */
+#diagram-pane {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: var(--panel);
+    min-width: 0;
+    overflow: hidden;
+    position: relative;
+}
+
+#diagram-viewport {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+    cursor: grab;
+    user-select: none;
+    touch-action: none;
+}
+
+#diagram-viewport:active { cursor: grabbing; }
+
+/* Overlay label — replaces the old <h2> in document flow */
+#diagram-label {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    z-index: 5;
+    background: rgba(28, 30, 33, 0.72);
+    color: #abb2bf;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    padding: 3px 10px;
+    border-radius: 12px;
+    pointer-events: none;
+    user-select: none;
+    backdrop-filter: blur(2px);
+}
+
+#diagram-canvas {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transform-origin: center center;
+}
+
+#diagram-canvas svg { display: block; max-width: 100%; max-height: 100%; }
+
+#mermaid-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+}
+
+/* ── Zoom controls — hidden on touch-primary devices ────────────────────────── */
+#zoom-controls {
+    position: absolute;
+    bottom: 12px; right: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    z-index: 10;
+}
+
+#zoom-controls button {
+    width: 36px; height: 36px;
+    padding: 0; font-size: 18px;
+    border-radius: 6px;
+    background: rgba(40,44,52,0.85);
+    border: 1px solid #444;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+@media (hover: none) and (pointer: coarse) {
+    #zoom-controls { display: none; }
+}
+
+/* ── Permanent slide handle ─────────────────────────────────────────────────── */
+#slide-handle {
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: var(--handle-w);
+    background: #23272e;
+    border-right: 1px solid #333;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: col-resize;
+    z-index: 30;
+    flex-shrink: 0;
+    user-select: none;
+    touch-action: none;
+}
+
+#slide-handle:hover  { background: #2c313a; }
+#slide-handle:active { background: #353b48; }
+
+#slide-handle::before {
+    content: '⋮';
+    color: #555;
+    font-size: 18px;
+    line-height: 1;
+    letter-spacing: -2px;
+}
+
+#handle-arrow {
+    color: #61dafb;
+    font-size: 12px;
+    margin-top: 4px;
+    transition: transform 0.3s;
+}
+
+/* ── Right pane ─────────────────────────────────────────────────────────────── */
+#right-pane {
+    width: 460px;
+    min-width: var(--handle-w);
+    max-width: calc(100% - 40px);
+    display: flex;
+    flex-direction: column;
+    background: var(--panel);
+    box-shadow: -2px 0 10px rgba(0,0,0,0.08);
+    z-index: 10;
+    position: relative;
+    transition: width 0.3s ease;
+}
+
+/* Content area — offset left to make room for the handle */
+#pane-content {
+    margin-left: var(--handle-w);
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    overflow: hidden;
+    min-width: 0;
+}
+
+/* ── App title bar ──────────────────────────────────────────────────────────── */
+#app-titlebar {
+    height: var(--titlebar-h);
+    padding: 0 12px;
+    background: var(--dark);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+#app-title {
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    font-weight: bold;
+    color: #61dafb;
+    letter-spacing: 0.05em;
+}
+
+#version-badge {
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    font-weight: bold;
+    color: #ffffff;
+    background: #0051cc;
+    border: 1px solid #3a8fff;
+    border-radius: 4px;
+    padding: 2px 8px;
+    white-space: nowrap;
+}
+
+/* ── Flow bar ───────────────────────────────────────────────────────────────── */
+/*
+ * Replaces the old #toolbar. Four compact inline buttons:
+ * Save Flow | Load Flow | Pack Prod | 👁 Preview
+ */
+#flow-bar {
+    height: var(--flow-bar-h);
+    padding: 6px 10px;
+    background: var(--dark);
+    border-top: 1px solid #2c313a;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+#flow-bar button {
+    flex: 1;
+    padding: 6px 4px;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 8px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#preview-btn {
+    background: #2d4a2d;
+    border: 1px solid #3a6e3a;
+    color: #98c379;
+}
+
+#preview-btn:hover  { background: #3a5e3a; opacity: 1; }
+#preview-btn.active { background: #1a3a1a; color: #7aaa7a; }
+
+/* ── Test & Debug panel (bottom sheet) ──────────────────────────────────────── */
+/*
+ * Sits between the flow bar and the chat mount.
+ * Two states controlled by .expanded class:
+ *   collapsed — only the handle bar visible (var(--tdp-collapsed-h))
+ *   expanded  — handle bar + full content (up to 50vh)
+ */
+#test-debug-panel {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    background: #1c1e21;
+    border-top: 2px solid #333;
+    border-bottom: 2px solid #333;
+    overflow: hidden;
+    max-height: var(--tdp-collapsed-h);
+    transition: max-height 0.3s ease;
+    position: relative;
+    z-index: 20;
+}
+
+#test-debug-panel.expanded {
+    max-height: 50vh;
+}
+
+/* ── TDP: handle bar (always visible) ──────────────────────────────────────── */
+#tdp-header {
+    height: var(--tdp-collapsed-h);
+    min-height: var(--tdp-collapsed-h);
+    flex-shrink: 0;
+    padding: 0 10px;
+    background: #23272e;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+    border-bottom: 1px solid #333;
+}
+
+#tdp-title {
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    font-weight: bold;
+    color: #61dafb;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#tdp-summary {
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    color: #666;
+    white-space: nowrap;
+}
+
+#tdp-run-btn {
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 6px;
+    background: var(--accent);
+    flex-shrink: 0;
+}
+
+#tdp-load-btn {
+    padding: 4px 8px;
+    font-size: 11px;
+    border-radius: 6px;
+    background: #333;
+    color: #abb2bf;
+    border: 1px solid #444;
+    flex-shrink: 0;
+}
+
+#tdp-stop-btn {
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 6px;
+    background: #e06c75;
+    flex-shrink: 0;
+    display: none;   /* shown only during active test run */
+}
+
+#tdp-collapse-btn {
+    padding: 0 4px;
+    background: none;
+    border: none;
+    color: #555;
+    font-size: 14px;
+    flex-shrink: 0;
+    line-height: 1;
+}
+
+/* ── TDP: progress bar ──────────────────────────────────────────────────────── */
+#tdp-progress {
+    flex-shrink: 0;
+    height: 24px;
+    padding: 0 10px;
+    background: #1c1e21;
+    display: none;   /* shown only during active test run */
+    align-items: center;
+    gap: 8px;
+    border-bottom: 1px solid #2c313a;
+}
+
+#tdp-progress.visible {
+    display: flex;
+}
+
+#tdp-progress-label {
+    font-family: 'Courier New', monospace;
+    font-size: 10px;
+    color: #abb2bf;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+#tdp-progress-bar {
+    flex: 1;
+    height: 6px;
+    background: #333;
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+#tdp-progress-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 3px;
+    width: 0%;
+    transition: width 0.2s ease;
+}
+
+/* ── TDP: results table ─────────────────────────────────────────────────────── */
+#tdp-results-wrap {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+    border-bottom: 1px solid #2c313a;
+}
+
+#tdp-results-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    color: #abb2bf;
+}
+
+#tdp-results-table thead tr {
+    background: #2c313a;
+    color: #61dafb;
+    text-align: left;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+#tdp-results-table th,
+#tdp-results-table td {
+    padding: 4px 8px;
+}
+
+#tdp-empty-row {
+    padding: 10px;
+    text-align: center;
+    color: #444;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+}
+
+/* ── TDP: state & trace sub-section ────────────────────────────────────────── */
+#tdp-state-trace {
+    flex-shrink: 0;
+    background: #282c34;
+    border-bottom: 1px solid #2c313a;
+    overflow: hidden;
+    max-height: 0;
+    transition: max-height 0.25s ease;
+}
+
+#tdp-state-trace.open {
+    max-height: 180px;
+    overflow-y: auto;
+}
+
+#tdp-state-trace-toggle {
+    padding: 3px 10px;
+    background: #23272e;
+    border-bottom: 1px solid #333;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    flex-shrink: 0;
+    user-select: none;
+}
+
+#tdp-state-trace-toggle span {
+    font-family: 'Courier New', monospace;
+    font-size: 10px;
+    color: #888;
+}
+
+#tdp-state-trace-arrow {
+    font-size: 10px;
+    color: #555;
+    transition: transform 0.2s;
+}
+
+#tdp-state-trace-inner {
+    padding: 8px 12px;
+}
+
+#tdp-profile-view {
+    font-family: 'Courier New', monospace;
+    font-size: 10px;
+    color: #61dafb;
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+#tdp-state-id {
+    font-family: 'Courier New', monospace;
+    font-size: 10px;
+    color: #888;
+    margin-top: 4px;
+}
+
+#tdp-copy-btn {
+    font-size: 10px;
+    padding: 2px 6px;
+    background: #444;
+    margin-bottom: 6px;
+}
+
+/* ── TDP: replay footer ─────────────────────────────────────────────────────── */
+#tdp-replay-footer {
+    flex-shrink: 0;
+    padding: 6px 8px;
+    background: #23272e;
+    display: flex;
+    gap: 5px;
+    align-items: center;
+    border-top: 1px solid #333;
+}
+
+#tdp-replay-input {
+    flex: 1;
+    min-width: 0;
+    padding: 5px 8px;
+    border: 1px solid #444;
+    border-radius: 6px;
+    font-size: 11px;
+    background: #1c1e21;
+    color: #abb2bf;
+    outline: none;
+    font-family: 'Courier New', monospace;
+}
+
+#tdp-replay-input:focus { border-color: var(--accent); }
+
+#tdp-replay-footer button {
+    padding: 5px 10px;
+    font-size: 11px;
+    border-radius: 6px;
+    flex-shrink: 0;
+}
+
+.tdp-restart-btn { background: #ff4757; }
+
+/* ── Chat mount ─────────────────────────────────────────────────────────────── */
+#chat-mount {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-height: 0;
+    min-width: 0;
+}
+
+/* ── Preview mode chat header ───────────────────────────────────────────────── */
+/*
+ * Rendered inside #chat-mount when preview is active.
+ * Matches the production bundle header exactly, plus a ← IDE button.
+ */
+#preview-chat-header {
+    flex-shrink: 0;
+    padding: 0 12px;
+    height: 40px;
+    background: var(--dark);
+    display: none;
+    align-items: center;
+    gap: 8px;
+}
+
+#preview-chat-header.visible {
+    display: flex;
+}
+
+#preview-flow-title {
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    font-weight: bold;
+    color: #61dafb;
+    letter-spacing: 0.05em;
+    flex: 1;
+}
+
+#preview-version-badge {
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    font-weight: bold;
+    color: #fff;
+    background: #0051cc;
+    border: 1px solid #3a8fff;
+    border-radius: 4px;
+    padding: 1px 6px;
+    white-space: nowrap;
+}
+
+#preview-exit-btn {
+    padding: 3px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    background: #2c313a;
+    border: 1px solid #444;
+    color: #abb2bf;
+    border-radius: 6px;
+    flex-shrink: 0;
+}
+
+#preview-exit-btn:hover { background: #353b48; opacity: 1; }
+
+/* ── body.preview-mode — hide all IDE chrome ────────────────────────────────── */
+body.preview-mode #app-titlebar,
+body.preview-mode #flow-bar,
+body.preview-mode #test-debug-panel {
+    display: none;
+}
+
+body.preview-mode #preview-chat-header {
+    display: flex;
+}
+
+/* In preview, chat-mount fills the full pane content height */
+body.preview-mode #pane-content {
+    /* title bar + flow bar + test panel are all hidden;
+       chat-mount is the only child and already flex:1 */
+}
+
+/* Hide slide handle in preview on mobile (only ← IDE is the exit affordance) */
+@media (max-width: 700px) {
+    body.preview-mode #slide-handle { display: none; }
+}
+
+/* ── Touch-friendly tooltip ─────────────────────────────────────────────────── */
+#touch-tooltip {
+    position: fixed;
+    background: rgba(30,33,40,0.95);
+    color: #abb2bf;
+    font-family: 'Segoe UI', sans-serif;
+    font-size: 12px;
+    line-height: 1.4;
+    padding: 7px 11px;
+    border-radius: 7px;
+    border: 1px solid #444;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.45);
+    max-width: 220px;
+    pointer-events: none;
+    z-index: 9999;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+
+#touch-tooltip.visible { opacity: 1; }
+
+/* ── Landscape mobile (≤700px, landscape) ───────────────────────────────────── */
+/*
+ * Side-by-side layout with slide handle, same as desktop.
+ * Right pane overlays diagram as a slide-in panel.
+ */
+@media (max-width: 700px) and (orientation: landscape) {
+    #diagram-pane {
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+    }
+
+    #right-pane {
+        position: absolute;
+        top: 0; right: 0; bottom: 0;
+        width: 88% !important;
+        max-width: unset;
+        z-index: 5;
+        transition: width 0.3s ease;
+    }
+
+    #right-pane.pane-collapsed {
+        width: var(--handle-w) !important;
+    }
+
+    #slide-handle { cursor: ew-resize; }
+}
+
+/* ── Portrait mobile (≤700px, portrait) ─────────────────────────────────────── */
+/*
+ * Stack diagram above right pane in a flex column.
+ * Diagram compresses as test sheet expands but never below 120px.
+ * Right pane sits below at a fixed base height (auto grows with sheet).
+ */
+@media (max-width: 700px) and (orientation: portrait) {
+    #app {
+        flex-direction: column;
+    }
+
+    #diagram-pane {
+        flex: 1;
+        min-height: 120px;
+        width: 100%;
+        position: relative; /* override any absolute from landscape rule */
+        z-index: 1;
+    }
+
+    #right-pane {
+        width: 100% !important;
+        max-width: 100%;
+        min-width: 0;
+        /* No absolute positioning — participates in flex column */
+        position: relative;
+        box-shadow: 0 -2px 10px rgba(0,0,0,0.12);
+        transition: none;
+        /* Height is determined by its contents (titlebar + flowbar + sheet + chat) */
+        flex-shrink: 0;
+        /* Allow right pane to grow but cap so diagram always has ≥120px */
+        max-height: calc(100% - 120px);
+    }
+
+    /* Slide handle becomes a horizontal bar at the top of the right pane */
+    #slide-handle {
+        position: absolute;
+        left: 0; right: 0; top: 0;
+        width: 100%;
+        height: var(--handle-w);
+        bottom: unset;
+        cursor: row-resize;
+        flex-direction: row;
+        justify-content: center;
+        align-items: center;
+        border-right: none;
+        border-bottom: 1px solid #333;
+        z-index: 30;
+    }
+
+    #slide-handle::before {
+        content: '⋯';
+        letter-spacing: 0;
+    }
+
+    #handle-arrow { display: none; }
+
+    #pane-content {
+        margin-left: 0;
+        margin-top: var(--handle-w);
+    }
+
+    /* Test panel expands to 50% of viewport height max on portrait */
+    #test-debug-panel.expanded {
+        max-height: 50vh;
+    }
+
+    /* Hide preview btn on mobile — chrome is already minimal */
+    #preview-btn { display: none; }
+}
+
+/* ── Force mobile layout (for ui-contracts) ─────────────────────────────────── */
+body.force-mobile-layout #diagram-pane {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+}
+
+body.force-mobile-layout #right-pane {
+    position: absolute;
+    top: 0; right: 0; bottom: 0;
+    width: 88% !important;
+    max-width: unset;
+    z-index: 5;
+    transition: width 0.3s ease;
+}
+
+body.force-mobile-layout #right-pane.pane-collapsed {
+    width: var(--handle-w) !important;
+}
+
+body.force-mobile-layout #slide-handle {
+    cursor: ew-resize;
+}

@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>SM-IDE</title>
+    <script type="importmap">
+        { "imports": {
+            "xstate":  "https://unpkg.com/xstate@5/dist/xstate.esm.js",
+            "mermaid": "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs",
+            "fflate":  "https://cdn.jsdelivr.net/npm/fflate@0.8.2/esm/browser.js"
+        }}
+    </script>
+    <link rel="stylesheet" href="./ide3-theme.css">
+    <link rel="stylesheet" href="./chat-theme.css">
+</head>
+<body>
+
+    <div id="app">
+
+        <!-- ── Diagram pane ───────────────────────────────────────────────── -->
+        <div id="diagram-pane">
+            <h2>Live State Machine</h2>
+            <div id="diagram-viewport">
+                <div id="diagram-canvas">
+                    <div id="mermaid-container"></div>
+                </div>
+                <div id="zoom-controls">
+                    <button onclick="window.diagramZoom(0.2)"  title="Zoom in">+</button>
+                    <button onclick="window.diagramZoom(-0.2)" title="Zoom out">−</button>
+                    <button onclick="window.diagramReset()"    title="Reset zoom" style="font-size:11px;">⊙</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── Right pane ─────────────────────────────────────────────────── -->
+        <div id="right-pane">
+
+            <div id="slide-handle" title="Drag to resize / tap to collapse">
+                <span id="handle-arrow">‹</span>
+            </div>
+
+            <!-- Everything else is offset right of the handle -->
+            <div id="pane-content">
+
+                <!-- App title + version -->
+                <div id="app-titlebar">
+                    <span id="app-title">SM-IDE</span>
+                    <span id="version-badge"><span id="version-label">—</span></span>
+                </div>
+
+                <!-- Chat UI mount point — fills all available space between titlebar and bottom tools -->
+                <div id="chat-mount" style="display:flex; flex-direction:column; flex:1; overflow:hidden; min-width:0;"></div>
+
+                <!-- ── Bottom tools ──────────────────────────────────────────
+                     Stacked at the bottom of the right pane in this order:
+                     context viewer toggle → context viewer → replay bar → toolbar
+                ──────────────────────────────────────────────────────────── -->
+
+                <!-- Context viewer (collapsed by default) -->
+                <div id="profile-toggle" onclick="window.toggleProfile()">
+                    <span>CONTEXT &amp; STATE</span>
+                    <span id="test-progress"></span>
+                    <span id="profile-toggle-arrow">▼</span>
+                </div>
+                <div id="profile-viewer">
+                    <div id="profile-viewer-inner">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                            <strong>CONTEXT (REAL-TIME)</strong>
+                            <button id="copy-btn" onclick="window.copyTrace()"
+                                    style="font-size:10px; padding:2px 6px; background:#444;">📋 Copy Trace</button>
+                        </div>
+                        <pre id="profile-view">{}</pre>
+                        <div id="state-id" style="font-size:10px; color:#888; margin-top:4px;">State: loading…</div>
+                    </div>
+                </div>
+
+                <!-- Replay bar -->
+                <div id="replay-bar">
+                    <button onclick="window._restartRuntime()" class="restart-btn" title="Restart conversation">🔄<br>Restart</button>
+                    <input type="text" id="replay-input" placeholder="Paste Replay String…">
+                    <button onclick="window._replayTrace(document.getElementById('replay-input').value)" title="Replay trace">▶<br>Replay</button>
+                </div>
+
+                <!-- Toolbar — large touch-friendly buttons -->
+                <div id="toolbar">
+                    <button id="test-btn" title="Auto-generate all paths and run as tests">🧪<br>Test</button>
+                    <button onclick="document.getElementById('load-results').click()" title="Load a previously saved test results JSON">📋<br>Load<br>Results</button>
+                    <button onclick="window.downloadPair()" title="Save state machine and services as a ZIP file">💾<br>Save<br>Flow</button>
+                    <button onclick="document.getElementById('upload').click()" title="Load state machine (.json), services (.js), or both as a ZIP">📂<br>Load<br>Flow</button>
+                    <button onclick="window.downloadProductionBundle()" title="Pack and download standalone production bundle (no IDE)">📦<br>Pack<br>Prod</button>
+                    <input type="file" id="upload"       style="display:none" accept=".zip,.json,.js" multiple
+                           onchange="window.loadPair(this.files); this.value='';">
+                    <input type="file" id="load-results" style="display:none" accept=".json"
+                           onchange="window.loadTestResults && window.loadTestResults(this.files[0]); this.value='';">
+                </div>
+
+            </div><!-- end #pane-content -->
+
+        </div><!-- end #right-pane -->
+
+    </div><!-- end #app -->
+
+    <!-- Touch tooltip -->
+    <div id="touch-tooltip"></div>
+
+    <script>
+        // Touch tooltip — reads title attribute
+        (() => {
+            const tip = document.getElementById('touch-tooltip');
+            let hideTimer = null;
+
+            function show(text, x, y) {
+                clearTimeout(hideTimer);
+                tip.textContent = text;
+                tip.classList.add('visible');
+                const tw = tip.offsetWidth || 220, th = tip.offsetHeight || 40;
+                let lx = x + 10, ly = y - th - 10;
+                if (lx + tw > window.innerWidth)  lx = x - tw - 10;
+                if (ly < 0)                        ly = y + 10;
+                tip.style.left = lx + 'px';
+                tip.style.top  = ly + 'px';
+            }
+
+            function hide(delay = 0) {
+                clearTimeout(hideTimer);
+                if (delay) hideTimer = setTimeout(() => tip.classList.remove('visible'), delay);
+                else tip.classList.remove('visible');
+            }
+
+            document.addEventListener('touchstart', (e) => {
+                const el = e.target.closest('[title]');
+                if (!el) { hide(); return; }
+                show(el.getAttribute('title'), e.touches[0].clientX, e.touches[0].clientY);
+            }, { passive: true });
+
+            document.addEventListener('touchend',  () => hide(1200), { passive: true });
+            document.addEventListener('touchmove', () => hide(0),    { passive: true });
+        })();
+    </script>
+
+    <script type="module">
+        import mermaid from 'mermaid';
+        mermaid.initialize({ startOnLoad: false, theme: 'neutral' });
+        console.log('✅ Mermaid initialised');
+
+        // ── Profile viewer toggle ─────────────────────────────────────────────
+        window.toggleProfile = () => {
+            const viewer = document.getElementById('profile-viewer');
+            const arrow  = document.getElementById('profile-toggle-arrow');
+            const toggle = document.getElementById('profile-toggle');
+            const isOpen = viewer.classList.toggle('open');
+            arrow.style.transform = isOpen ? 'rotate(180deg)' : '';
+            toggle.classList.toggle('open', isOpen);
+        };
+
+        // ── Zoom / pan state ──────────────────────────────────────────────────
+        let _scale = 1, _tx = 0, _ty = 0;
+        const canvas = () => document.getElementById('diagram-canvas');
+
+        const applyTransform = () => {
+            const c = canvas();
+            if (c) c.style.transform = `translate(${_tx}px, ${_ty}px) scale(${_scale})`;
+        };
+
+        window.diagramZoom = (delta) => {
+            _scale = Math.min(4, Math.max(0.2, _scale + delta));
+            applyTransform();
+        };
+
+        window.diagramReset = () => {
+            _scale = 1; _tx = 0; _ty = 0;
+            const c = canvas();
+            if (c) c.style.transform = '';
+        };
+
+        // ── Diagram pan (mouse) ───────────────────────────────────────────────
+        const vp = document.getElementById('diagram-viewport');
+        let _panning = false, _px = 0, _py = 0;
+
+        vp.addEventListener('mousedown', (e) => {
+            if (e.button !== 0) return;
+            _panning = true; _px = e.clientX - _tx; _py = e.clientY - _ty;
+            vp.style.cursor = 'grabbing';
+        });
+        document.addEventListener('mousemove', (e) => {
+            if (!_panning) return;
+            _tx = e.clientX - _px; _ty = e.clientY - _py;
+            applyTransform();
+        });
+        document.addEventListener('mouseup', () => {
+            if (!_panning) return;
+            _panning = false; vp.style.cursor = 'grab';
+        });
+
+        // ── Diagram pan (touch) ───────────────────────────────────────────────
+        let _tpanning = false, _tpx = 0, _tpy = 0;
+
+        vp.addEventListener('touchstart', (e) => {
+            if (e.touches.length !== 1) return;
+            _tpanning = true;
+            _tpx = e.touches[0].clientX - _tx;
+            _tpy = e.touches[0].clientY - _ty;
+        }, { passive: true });
+
+        vp.addEventListener('touchmove', (e) => {
+            if (!_tpanning || e.touches.length !== 1) return;
+            _tx = e.touches[0].clientX - _tpx;
+            _ty = e.touches[0].clientY - _tpy;
+            applyTransform();
+        }, { passive: true });
+
+        vp.addEventListener('touchend', () => { _tpanning = false; }, { passive: true });
+
+        // ── Wheel zoom ────────────────────────────────────────────────────────
+        vp.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            _scale = Math.min(4, Math.max(0.2, _scale - e.deltaY * 0.001));
+            applyTransform();
+        }, { passive: false });
+
+        // ── Slide handle (desktop resize + mobile collapse) ───────────────────
+        const slideHandle = document.getElementById('slide-handle');
+        const rightPane   = document.getElementById('right-pane');
+
+        const isMobile = () => window.innerWidth <= 700;
+
+        let _collapsed  = false;
+        const updateArrow = () => {
+            const arrow = document.getElementById('handle-arrow');
+            if (!arrow) return;
+            arrow.textContent = _collapsed ? '›' : '‹';
+        };
+
+        // Desktop: drag to resize
+        let _resizing = false;
+
+        slideHandle.addEventListener('mousedown', (e) => {
+            if (isMobile()) return;
+            _resizing = true;
+            document.body.style.cursor     = 'col-resize';
+            document.body.style.userSelect = 'none';
+            e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!_resizing) return;
+            const newW = Math.max(280, Math.min(window.innerWidth * 0.85,
+                window.innerWidth - e.clientX));
+            rightPane.style.width = newW + 'px';
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (!_resizing) return;
+            _resizing = false;
+            document.body.style.cursor     = '';
+            document.body.style.userSelect = '';
+        });
+
+        // Mobile: tap to toggle, drag to set width freely
+        let _touchResizing = false;
+        let _touchStartX   = null;
+        let _touchStartW   = null;
+        const HANDLE_W     = parseInt(getComputedStyle(document.documentElement)
+                                .getPropertyValue('--handle-w')) || 18;
+
+        slideHandle.addEventListener('touchstart', (e) => {
+            if (!isMobile()) return;
+            _touchStartX   = e.touches[0].clientX;
+            _touchStartW   = rightPane.getBoundingClientRect().width;
+            _touchResizing = false;
+            e.stopPropagation();
+        }, { passive: true });
+
+        slideHandle.addEventListener('touchmove', (e) => {
+            if (!isMobile()) return;
+            const dx = _touchStartX - e.touches[0].clientX;
+            if (Math.abs(dx) > 8) _touchResizing = true;
+
+            if (_touchResizing) {
+                const vw   = window.innerWidth;
+                const newW = Math.max(HANDLE_W, Math.min(vw * 0.96, _touchStartW + dx));
+                rightPane.style.width      = newW + 'px';
+                rightPane.style.transition = 'none';
+                _collapsed = newW <= HANDLE_W + 4;
+                updateArrow();
+            }
+            e.stopPropagation();
+        }, { passive: true });
+
+        slideHandle.addEventListener('touchend', (e) => {
+            if (!isMobile()) return;
+            rightPane.style.transition = '';
+
+            if (!_touchResizing) {
+                _collapsed = !_collapsed;
+                rightPane.classList.toggle('pane-collapsed', _collapsed);
+                updateArrow();
+            } else {
+                const w = rightPane.getBoundingClientRect().width;
+                if (w < 120) {
+                    _collapsed = true;
+                    rightPane.classList.add('pane-collapsed');
+                } else {
+                    _collapsed = false;
+                    rightPane.classList.remove('pane-collapsed');
+                }
+                updateArrow();
+            }
+
+            _touchResizing = false;
+            e.stopPropagation();
+        }, { passive: true });
+
+        // ── Test results drawer: lifecycle hook ───────────────────────────────
+        // main3.js owns all drawer logic (row icons, height cap, diagram resize).
+        // This observer just notifies it when the drawer is added/removed.
+        new MutationObserver((mutations) => {
+            mutations.forEach(m => {
+                m.addedNodes.forEach(node => {
+                    if (node.id === 'test-results-drawer')
+                        window._onDrawerAdded?.(node);
+                });
+                m.removedNodes.forEach(node => {
+                    if (node.id === 'test-results-drawer')
+                        window._onDrawerRemoved?.();
+                });
+            });
+        }).observe(document.body, { childList: true });
+
+        // ── Diagram render ────────────────────────────────────────────────────
+        window.renderDiagram = async (config, current, visitedEdges = new Set()) => {
+            let graph = `graph TD\n`;
+
+            Object.keys(config.states).forEach(id => {
+                const style = id === current ? `:::activeNode` : '';
+                graph += `  ${id}["${id}"]${style}\n`;
+
+                if (config.states[id].on) {
+                    Object.entries(config.states[id].on).forEach(([ev, transition]) => {
+                        const entries = Array.isArray(transition) ? transition : [transition];
+                        const targets = new Set();
+                        entries.forEach(t => {
+                            const tId = typeof t === 'string' ? t : t?.target;
+                            if (tId && tId !== id) targets.add(tId);
+                        });
+                        targets.forEach(tId => {
+                            const visited = visitedEdges.has(`${id}|${ev}`);
+                            graph += `  ${id} -- "${visited ? '✅ ' : ''}${ev}" --> ${tId}\n`;
+                        });
+                    });
+                }
+
+                if (config.states[id].always) {
+                    const targets = Array.isArray(config.states[id].always)
+                        ? config.states[id].always : [config.states[id].always];
+                    targets.forEach(t => {
+                        const tId = t.target || t;
+                        graph += `  ${id} -- "${visitedEdges.has(`${id}|auto`) ? '✅ ' : ''}auto" --> ${tId}\n`;
+                    });
+                }
+
+                if (config.states[id].invoke) {
+                    const inv = config.states[id].invoke;
+                    if (inv.onDone?.target) {
+                        const visited = visitedEdges.has(`${id}|done`);
+                        graph += `  ${id} -. "${visited ? '✅ ' : ''}done" .-> ${inv.onDone.target}\n`;
+                    }
+                    if (inv.onError?.target) {
+                        const visited = visitedEdges.has(`${id}|error`);
+                        graph += `  ${id} -. "${visited ? '✅ ' : ''}error" .-> ${inv.onError.target}\n`;
+                    }
+                }
+            });
+
+            graph += `\nclassDef activeNode fill:#0084ff,stroke:#0051ff,stroke-width:4px,color:#fff;`;
+
+            console.log('🗺️  Mermaid source:\n' + graph);
+
+            try {
+                const { svg } = await mermaid.render('mermaid-svg-' + Date.now(), graph);
+                document.getElementById('mermaid-container').innerHTML = svg;
+                console.log('✅ Diagram rendered');
+            } catch (e) {
+                console.error('❌ mermaid.render() threw:', e.message);
+                document.getElementById('mermaid-container').innerHTML =
+                    `<pre style="color:red;font-size:11px;">Diagram error:\n${e.message}</pre>`;
+            }
+        };
+    </script>
+
+    <script type="module" src="./main3.js"></script>
+
+    <script>
+        (function() {
+            const el = document.getElementById('version-label');
+            if (el && el.textContent === '—') el.textContent = 'v0.10.3';
+        })();
+    </script>
+    <script type="module" src="./ui-contracts.js"></script>
+
+</body>
+</html>
