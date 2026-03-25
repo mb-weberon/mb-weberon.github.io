@@ -185,7 +185,7 @@ export async function runAllTraces(config, replayFn, getTrace, getStateId, pause
         // using a hardcoded timer. This eliminates all timing-based flakiness.
         await new Promise(resolve => {
             window.currentRuntime.onReplayDone = resolve;
-            replayFn(JSON.stringify(expected));
+            replayFn(JSON.stringify(expected), undefined, 0);
         });
         // Clear the hook so stray calls from manual replays don't fire
         window.currentRuntime.onReplayDone = null;
@@ -371,11 +371,15 @@ export function showResultsDrawer(results, replayFn) {
         tr.style.outline    = '1px solid #0084ff';
         if (diffRow) diffRow.style.display = diffRow.style.display === 'none' ? '' : 'none';
 
-        // Populate replay input and wire ▶ to use saved config
+        // Populate replay bar and wire ▶ to use saved config
         const replayInput = document.getElementById('replay-input');
         if (replayInput) {
             replayInput.value = JSON.stringify(c.expected);
-            const replayBtn = replayInput.nextElementSibling;
+            // Show the replay bar (it is hidden by default)
+            const replayBar = document.getElementById('replay-bar');
+            if (replayBar) replayBar.classList.add('visible');
+            // ▶ button is the first child of replay-bar (order: ▶, ✕, input)
+            const replayBtn = document.getElementById('replay-go-btn');
             if (replayBtn) replayBtn.onclick = () => window._replayTrace(replayInput.value, config);
         }
 
@@ -570,6 +574,15 @@ export function loadTestResults(file) {
         try {
             const results = JSON.parse(e.target.result);
             window._testResults = results;
+
+            // Restore the config that was active when the results were captured.
+            // _restartRuntime with a config argument calls _activateFlow internally,
+            // which creates a fresh Runtime + ChatUI and starts the machine.
+            if (results.config && window._restartRuntime) {
+                console.log(`✅ Restoring config from results: ${results.config.id}`);
+                window._restartRuntime(results.config);
+            }
+
             showResultsDrawer(results, window._replayTrace);
             console.log(`✅ Loaded ${results.cases?.length} test cases from file`);
         } catch (err) {

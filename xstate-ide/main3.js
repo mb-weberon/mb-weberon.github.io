@@ -23,37 +23,35 @@ async function boot() {
         console.log('🏷️  Version:', version, '| URL:', window.location.href);
     }
 
-    // ── Config ────────────────────────────────────────────────────────────────
-    let config;
-    try {
-        console.log('📄 Fetching realtor-machine.json from:', BASE + 'realtor-machine.json');
-        const res = await fetchLocal('realtor-machine.json');
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        config = await res.json();
-        console.log('✅ Config loaded:', config.id, '| initial:', config.initial);
-        console.log('📊 States:', Object.keys(config.states).join(', '));
-        import('./generate-traces.js').then(m => {
-            window._config             = config;
-            window._showResultsDrawer  = m.showResultsDrawer;
-            window.generateTraces      = () => m.generateTraces(config);
-            window.downloadTestResults = m.downloadTestResults;
-            window.stopAllTraces       = m.stopAllTraces;
-            window.loadTestResults     = m.loadTestResults;
-            window.runAllTraces        = (pauseMs) => m.runAllTraces(
-                config,
-                window._replayTrace,
-                () => window.currentRuntime.getTrace(),
-                () => {
-                    const s = window.currentRuntime.actor.getSnapshot();
-                    return typeof s.value === 'string' ? s.value : Object.keys(s.value)[0];
-                },
-                pauseMs
-            );
-        });
-    } catch (e) {
-        console.error('❌ Failed to load machine config:', e.message);
-        return;
-    }
+    // ── Config — starts null until a flow is explicitly loaded ────────────────
+    // No auto-fetch of realtor-machine.json. The user must load a flow via
+    // "Load Flow" or "Load Results" before the IDE becomes interactive.
+    let config = null;
+
+    // ── Pre-load generate-traces.js so its exports are ready when needed ──────
+    const tracesModule = await import('./generate-traces.js');
+    window._showResultsDrawer  = tracesModule.showResultsDrawer;
+    window.generateTraces      = () => config ? tracesModule.generateTraces(config) : [];
+    window.downloadTestResults = tracesModule.downloadTestResults;
+    window.stopAllTraces       = tracesModule.stopAllTraces;
+    window.runAllTraces        = (pauseMs) => {
+        if (!config || !window.currentRuntime) {
+            console.warn('⚠️  No flow loaded — use Load Flow first');
+            return Promise.resolve();
+        }
+        return tracesModule.runAllTraces(
+            config,
+            window._replayTrace,
+            () => window.currentRuntime.getTrace(),
+            () => {
+                const s = window.currentRuntime.actor.getSnapshot();
+                return typeof s.value === 'string' ? s.value : Object.keys(s.value)[0];
+            },
+            pauseMs
+        );
+    };
+    window.loadTestResults = (file) =>
+        tracesModule.loadTestResults(file);
 
     try {
         const res = await fetchLocal('realtor-services.js');
@@ -65,8 +63,59 @@ async function boot() {
     window._visitedEdges = visitedEdges;
     let _lastStateId     = null;
 
+    // ── Blank-slate UI — shown when no flow is loaded ─────────────────────────
+    // The chat mount shows a placeholder; the diagram shows a hint.
+    // Both are replaced as soon as a flow is loaded and the runtime starts.
+
+    const chatMount = document.getElementById('chat-mount');
+
+    function _showBlankSlate() {
+        chatMount.innerHTML = `
+            <div id="no-flow-placeholder" style="
+                flex:1; display:flex; flex-direction:column;
+                align-items:center; justify-content:center;
+                gap:12px; padding:24px; text-align:center;
+                color:#888; font-family:'Segoe UI',sans-serif;
+            ">
+                <div style="font-size:36px;">📂</div>
+                <div style="font-size:15px; font-weight:600; color:#555;">No flow loaded</div>
+                <div style="font-size:13px; line-height:1.6;">
+                    Use <strong>Load Flow</strong> to open a state machine,<br>
+                    or <strong>Load Results</strong> to restore a previous test run.
+                </div>
+            </div>`;
+
+        const mc = document.getElementById('mermaid-container');
+        if (mc) mc.innerHTML = `
+            <div style="
+                color:#666; font-family:'Segoe UI',sans-serif;
+                font-size:13px; text-align:center; padding:24px;
+            ">No flow loaded</div>`;
+
+        const profile = document.getElementById('profile-view');
+        const stateDisplay = document.getElementById('state-id');
+        if (profile) profile.innerText = '(no flow loaded)';
+        if (stateDisplay) stateDisplay.innerText = 'State: —';
+    }
+
+    _showBlankSlate();
+
+    // Disable buttons that require a loaded flow
+    function _setFlowLoaded(loaded) {
+        const ids = ['test-btn', 'restart-btn', 'save-flow-btn', 'pack-prod-btn', 'copy-btn'];
+        ids.forEach(id => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.disabled = !loaded;
+            el.style.opacity = loaded ? '' : '0.4';
+            el.style.cursor  = loaded ? '' : 'not-allowed';
+        });
+    }
+    _setFlowLoaded(false);
+
     // ── IDE rendering ─────────────────────────────────────────────────────────
     function renderIDE(snap) {
+        if (!config) return;
         const { stateId, context } = snap;
 
         if (_lastStateId && _lastStateId !== stateId && context.trace?.length) {
@@ -98,53 +147,101 @@ async function boot() {
         }
     }
 
-    // ── Start runtime + ChatUI ─────────────────────────────────────────────────
-    console.log('🚀 Starting Runtime…');
-    window.currentRuntime = new Runtime(config, realtorServices, consoleLogger);
+    // ── _activateFlow — creates/replaces Runtime + ChatUI for a given config ──
+    // Called by loadPair (Load Flow) and loadTestResults (Load Results).
+    // Also called by _restartRuntime when the config changes.
+    // chatUI is kept in module scope so _restartRuntime can call chatUI.clear().
+    let chatUI = null;
 
-    const chatMount = document.getElementById('chat-mount');
-    const chatUI    = new ChatUI(window.currentRuntime, chatMount);
-    chatUI.mount();
+    function _activateFlow(newConfig) {
+        // Accept a fresh config object (not necessarily the same reference)
+        if (!newConfig) return;
 
-    const chatSnapshot = window.currentRuntime.onSnapshot;
-    window.currentRuntime.onSnapshot = (snap) => {
-        chatSnapshot(snap);
-        renderIDE(snap);
-    };
+        // Replace module-level config in-place so all closures over `config` see it
+        config = newConfig;
+        window._config = config;
 
-    window.currentRuntime.start();
-    console.log('✅ Runtime started');
+        // Update generate-traces binding now that config is known
+        window.runAllTraces = (pauseMs) => tracesModule.runAllTraces(
+            config,
+            window._replayTrace,
+            () => window.currentRuntime.getTrace(),
+            () => {
+                const s = window.currentRuntime.actor.getSnapshot();
+                return typeof s.value === 'string' ? s.value : Object.keys(s.value)[0];
+            },
+            pauseMs
+        );
 
-    // ── Restart ───────────────────────────────────────────────────────────────
-    window._restartRuntime = (overrideConfig) => {
-        if (overrideConfig && overrideConfig !== config) {
-            Object.assign(config, overrideConfig);
-            window._config = config;
-            window.currentRuntime = new Runtime(config, realtorServices, consoleLogger);
-
-            chatUI.runtime = window.currentRuntime;
-            chatUI.mount();
-
-            const newChatSnapshot = window.currentRuntime.onSnapshot;
-            window.currentRuntime.onSnapshot = (snap) => {
-                newChatSnapshot(snap);
-                renderIDE(snap);
-            };
+        // Tear down old runtime + ChatUI if present
+        if (window.currentRuntime) {
+            try { window.currentRuntime.actor?.stop(); } catch (_) {}
         }
+        // Clear chat area before mounting new ChatUI
+        chatMount.innerHTML = '';
 
         visitedEdges.clear();
         _lastStateId = null;
-        chatUI.clear();
+
+        window.currentRuntime = new Runtime(config, realtorServices, consoleLogger);
+        chatUI = new ChatUI(window.currentRuntime, chatMount);
+        chatUI.mount();
+
+        // Wire IDE rendering on top of ChatUI's snapshot handler
+        const baseSnapshot = window.currentRuntime.onSnapshot;
+        window.currentRuntime.onSnapshot = (snap) => {
+            baseSnapshot(snap);
+            renderIDE(snap);
+        };
+
+        window.currentRuntime.start();
+        console.log('✅ Runtime started for flow:', config.id);
+
+        // Scroll-to-bottom observer on the messages element ChatUI created
+        const _messagesEl = chatMount.querySelector('#messages');
+        if (_messagesEl && window.ResizeObserver) {
+            new ResizeObserver(() => {
+                const d = _messagesEl.scrollHeight - _messagesEl.scrollTop - _messagesEl.clientHeight;
+                if (d < 80) _messagesEl.scrollTop = _messagesEl.scrollHeight;
+            }).observe(_messagesEl);
+        }
+
+        _setFlowLoaded(true);
+    }
+
+    // ── Restart ───────────────────────────────────────────────────────────────
+    // With no arguments: restart the currently loaded flow to its initial state.
+    // With a newConfig argument: load the new config and restart (used by
+    // loadTestResults to restore the config that was active during the test run).
+    window._restartRuntime = (overrideConfig) => {
+        if (overrideConfig && overrideConfig !== config) {
+            // Config is changing — re-activate with the new config
+            _activateFlow(overrideConfig);
+            return;  // _activateFlow calls start(), so we're done
+        }
+        if (!config || !window.currentRuntime) {
+            console.warn('⚠️  No flow loaded — nothing to restart');
+            return;
+        }
+        visitedEdges.clear();
+        _lastStateId = null;
+        chatUI?.clear();
         window.currentRuntime.restart();
+        // Replay bar intentionally NOT cleared — useful for comparison after restart.
     };
 
-    window._replayTrace = (traceString, overrideConfig) => {
+    // Replay: restart the runtime, then after one tick pass the trace string
+    // to Runtime.replay(). delayMs > 0 gives smooth step-by-step UI for manual
+    // replays; automated test runs pass 0 to stay fast.
+    window._replayTrace = (traceString, overrideConfig, delayMs = 350) => {
+        if (!traceString) return;
         window._restartRuntime(overrideConfig);
-        setTimeout(() => window.currentRuntime.replay(traceString), 50);
+        setTimeout(() => window.currentRuntime?.replay(traceString, { delayMs }), 50);
     };
 
     // ── Save / Load Flow ──────────────────────────────────────────────────────
     window.downloadPair = () => {
+        if (!config) { console.warn('⚠️  No flow loaded'); return; }
         const machineStr  = strToU8(JSON.stringify(config, null, 2));
         const servicesStr = strToU8(window._loadedServicesSource || '// realtor-services.js not available');
         const zipped = zipSync({
@@ -174,6 +271,8 @@ async function boot() {
             r.readAsText(f);
         });
 
+        let newConfig = null;
+
         if (zipFile) {
             const buf      = await zipFile.arrayBuffer();
             const unzipped = unzipSync(new Uint8Array(buf));
@@ -181,19 +280,24 @@ async function boot() {
             const servicesEntry = Object.keys(unzipped).find(k => k.endsWith('.js'));
             if (!machineEntry) { console.error('❌ ZIP contains no .json file'); return; }
             try {
-                Object.assign(config, JSON.parse(strFromU8(unzipped[machineEntry])));
+                newConfig = JSON.parse(strFromU8(unzipped[machineEntry]));
             } catch (e) { console.error('❌ Failed to parse machine JSON from ZIP:', e.message); return; }
             if (servicesEntry) await reloadServices(strFromU8(unzipped[servicesEntry]), servicesEntry);
         } else {
             if (jsonFile) {
-                try { Object.assign(config, JSON.parse(await readText(jsonFile))); }
+                try { newConfig = JSON.parse(await readText(jsonFile)); }
                 catch (e) { console.error('❌ Failed to parse machine JSON:', e.message); return; }
             }
             if (jsFile) await reloadServices(await readText(jsFile), jsFile.name);
             if (!jsonFile && !jsFile) { console.error('❌ Unsupported file type'); return; }
         }
 
-        window._restartRuntime();
+        if (newConfig) {
+            _activateFlow(newConfig);
+        } else if (config) {
+            // Only services changed — restart with existing config
+            window._restartRuntime();
+        }
     };
 
     async function reloadServices(src, label) {
@@ -212,22 +316,26 @@ async function boot() {
     }
 
     window.copyTrace = () => {
-        // Extract the replay-compatible value array from _trace.steps,
-        // filtering out validation failures (valid:false) and service steps.
-        const envelope = window.currentRuntime.getTrace();
-        let values;
-        if (envelope && Array.isArray(envelope.steps)) {
-            values = envelope.steps
+        // getTrace() returns the _trace envelope: { steps: [{stateId, value, at, ms}, ...] }
+        // Extract step values (skipping validation failures and service steps) to build
+        // a JSON array string — the exact format Runtime.replay() expects.
+        const raw = window.currentRuntime.getTrace?.();
+        let values = [];
+        if (raw && Array.isArray(raw.steps)) {
+            values = raw.steps
                 .filter(s => s.valid !== false && !s.service && s.value != null)
                 .map(s => s.value);
-        } else if (Array.isArray(envelope)) {
-            // Legacy flat-array format — already a value array
-            values = envelope;
-        } else {
-            values = [];
+        } else if (Array.isArray(raw)) {
+            values = raw.filter(Boolean);
         }
+        if (!values.length) { console.warn('copyTrace: nothing to copy'); return; }
         const str = JSON.stringify(values);
         _showReplayBar(str);
+        // Close the context panel so the replay bar is immediately visible
+        const viewer = document.getElementById('profile-viewer');
+        if (viewer?.classList.contains('open')) {
+            window.toggleProfile?.();
+        }
     };
 
     // ── Replay bar show / hide ────────────────────────────────────────────────
@@ -255,23 +363,32 @@ async function boot() {
     // Test button + results drawer management
     // ─────────────────────────────────────────────────────────────────────────
     //
-    // Test button toggles between 🧪 Test (idle) and ⏹ Stop (running).
-    //
-    // Results drawer (#test-results-drawer) is created by generate-traces.js
-    // and appended to document.body as position:fixed.  We:
-    //   1. Cap its default height so it can't open above #profile-toggle.
-    //   2. Let the user drag it taller (up to the top of the screen).
-    //   3. Prepend two action icons to every result row:
-    //        📋  — copy trace string into #replay-input and collapse drawer
-    //        ▶   — replay the trace immediately
-    //   4. On portrait mobile, shrink #diagram-pane to fit above the drawer.
+    // Test button toggles: 🧪 Test (idle) ↔ ⏹ Stop (running).
+    // Load Results button toggles: 📋 Load Results ↔ 💾 Save Results
+    //   (flips to Save Results after a test run completes or is stopped,
+    //    so the user can save before the results are lost to the next run).
     // ─────────────────────────────────────────────────────────────────────────
 
-    const testBtn    = document.getElementById('test-btn');
-    const progressEl = document.getElementById('test-progress');
-    let _testRunning = false;
+    const testBtn        = document.getElementById('test-btn');
+    const loadResultsBtn = document.getElementById('load-results-btn');
+    const progressEl     = document.getElementById('test-progress');
+    let _testRunning     = false;
 
-    function _setTestRunning(running) {
+    // Flip Load Results ↔ Save Results
+    function _setResultsReady(ready) {
+        if (!loadResultsBtn) return;
+        if (ready) {
+            loadResultsBtn.innerHTML = '💾<br>Save<br>Results';
+            loadResultsBtn.title     = 'Save test results as JSON';
+            loadResultsBtn.onclick   = () => window.downloadTestResults?.();
+        } else {
+            loadResultsBtn.innerHTML = '📋<br>Load<br>Results';
+            loadResultsBtn.title     = 'Load a previously saved test results JSON';
+            loadResultsBtn.onclick   = () => document.getElementById('load-results').click();
+        }
+    }
+
+    function _setTestRunning(running, hadResults) {
         _testRunning = running;
         if (running) {
             testBtn.innerHTML = '⏹<br>Stop';
@@ -282,6 +399,7 @@ async function boot() {
             testBtn.title     = 'Auto-generate all paths and run as tests';
             testBtn.classList.remove('test-btn-stop');
             if (progressEl) progressEl.textContent = '';
+            _setResultsReady(!!hadResults);
         }
     }
 
@@ -316,15 +434,20 @@ async function boot() {
         if (_testRunning) {
             window.stopAllTraces?.();
         } else {
-            if (!window.runAllTraces) {
-                console.warn('⚠️  runAllTraces not ready yet');
+            if (!config || !window.currentRuntime) {
+                console.warn('⚠️  No flow loaded — use Load Flow first');
                 return;
             }
+            // Reset Save/Load button back to Load while a new run starts
+            _setResultsReady(false);
             _setTestRunning(true);
             _startProgressPolling();
-            window.runAllTraces().finally(() => {
+            window.runAllTraces().then(() => {
                 _stopProgressPolling();
-                _setTestRunning(false);
+                _setTestRunning(false, /* hadResults */ true);
+            }).catch(() => {
+                _stopProgressPolling();
+                _setTestRunning(false, /* hadResults */ !!window._testResults);
             });
         }
     });
@@ -435,16 +558,40 @@ async function boot() {
                 };
             }
 
-            // Make clicking the header bar itself toggle collapse (desktop)
-            // generate-traces wires this for mobile; add for desktop too.
+            // Make clicking the header bar itself slide the body down/up.
+            // generate-traces sets header.onclick on mobile (translateY approach) —
+            // we clear it and replace with a single max-height transition handler
+            // that works identically on desktop and mobile.
             mainHeader.style.cursor = 'pointer';
             mainHeader.style.userSelect = 'none';
-            let _drawerCollapsed = false;
+            mainHeader.onclick = null; // clear generate-traces mobile handler
+
+            // tableWrap needs overflow:hidden + transition for the slide to work
+            tableWrap.style.overflow   = 'hidden';
+            tableWrap.style.transition = 'max-height 0.25s ease';
+
+            let _drawerBodyOpen = true; // drawer starts expanded
+            const _setDrawerBody = (open) => {
+                _drawerBodyOpen = open;
+                if (open) {
+                    // Restore natural height
+                    tableWrap.style.maxHeight = tableWrap.scrollHeight + 'px';
+                    // After transition ends, remove cap so table can grow
+                    tableWrap.addEventListener('transitionend', () => {
+                        if (_drawerBodyOpen) tableWrap.style.maxHeight = '';
+                    }, { once: true });
+                } else {
+                    // Capture current height first, then animate to 0
+                    tableWrap.style.maxHeight = tableWrap.offsetHeight + 'px';
+                    requestAnimationFrame(() => {
+                        tableWrap.style.maxHeight = '0';
+                    });
+                }
+            };
+
             mainHeader.addEventListener('click', (e) => {
-                if (e.target.tagName === 'BUTTON') return; // let buttons be
-                _drawerCollapsed = !_drawerCollapsed;
-                if (tableWrap) tableWrap.style.display = _drawerCollapsed ? 'none' : '';
-                subHeader.style.display = _drawerCollapsed ? 'none' : '';
+                if (e.target.tagName === 'BUTTON') return;
+                _setDrawerBody(!_drawerBodyOpen);
             });
 
             // Hide the subHeader (the "Run at XX:XX | Download JSON" bar)

@@ -206,7 +206,7 @@ export class Runtime {
 
     // ── Replay ────────────────────────────────────────────────────────────────
 
-    async replay(traceString) {
+    async replay(traceString, { delayMs = 0 } = {}) {
         if (!traceString) return;
         let trace;
         try {
@@ -240,6 +240,13 @@ export class Runtime {
             // before sending the next event. This replaces the fixed 600ms delay
             // and eliminates timing-based flakiness entirely.
             await this._waitForStableState();
+
+            // Optional per-step pause so the UI can animate between steps.
+            // Manual replay passes delayMs=350 for a smooth visible progression.
+            // Automated test runs use the default (0) to stay as fast as possible.
+            if (delayMs > 0) {
+                await new Promise(r => setTimeout(r, delayMs));
+            }
 
             const snap    = this.actor.getSnapshot();
             const stateId = typeof snap.value === 'string'

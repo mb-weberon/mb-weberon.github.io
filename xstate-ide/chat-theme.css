@@ -30,6 +30,10 @@
     gap: var(--chat-gap);
     background: var(--chat-bg);
     -webkit-overflow-scrolling: touch;
+    /* Keep newest messages anchored to bottom when height shrinks */
+    overflow-anchor: auto;
+    container-type: inline-size;
+    container-name: messages;
 }
 
 /* ── Bubbles ────────────────────────────────────────────────────────────────── */
@@ -39,6 +43,9 @@
     border-radius: 18px;
     font-size: 14px;
     line-height: 1.5;
+    /* Words break inside bubbles, content never reflowed */
+    word-break: break-word;
+    overflow-wrap: break-word;
 }
 
 .msg.bot {
@@ -53,6 +60,23 @@
     color:                    var(--bubble-user-color);
     align-self:               flex-end;
     border-bottom-right-radius: 4px;
+}
+
+/* ── Narrow container: both bubbles anchor left, fill available width ────────── *
+ * Triggered when the messages container itself is narrower than 300px —        *
+ * i.e. when the user slides the pane far enough right that the chat column     *
+ * compresses. Bubbles stretch to fill, content stays legible.                  *
+ * ──────────────────────────────────────────────────────────────────────────── */
+@container messages (max-width: 300px) {
+    .msg {
+        max-width: 100%;
+        align-self: flex-start;
+        border-bottom-right-radius: 18px; /* reset user corner */
+        border-bottom-left-radius:  4px;
+    }
+    .msg.user {
+        border-bottom-right-radius: 4px;
+    }
 }
 
 /* ── Controls / input area ──────────────────────────────────────────────────── */

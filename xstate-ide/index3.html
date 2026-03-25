@@ -77,19 +77,19 @@
 
                 <!-- Replay bar -->
                 <div id="replay-bar">
+                    <button id="replay-go-btn" onclick="window._replayTrace(document.getElementById('replay-input').value)" title="Replay trace">▶</button>
                     <button id="replay-clear-btn" onclick="window._clearReplayBar()" title="Clear and hide replay bar">✕</button>
                     <input type="text" id="replay-input" placeholder="Replay string…">
-                    <button id="replay-go-btn" onclick="window._replayTrace(document.getElementById('replay-input').value)" title="Replay trace">▶</button>
                 </div>
 
                 <!-- Toolbar — large touch-friendly buttons -->
                 <div id="toolbar">
                     <button id="test-btn" title="Auto-generate all paths and run as tests">🧪<br>Test</button>
-                    <button onclick="window._restartRuntime()" class="restart-btn" title="Restart conversation">🔄<br>Restart</button>
-                    <button onclick="document.getElementById('load-results').click()" title="Load a previously saved test results JSON">📋<br>Load<br>Results</button>
-                    <button onclick="window.downloadPair()" title="Save state machine and services as a ZIP file">💾<br>Save<br>Flow</button>
+                    <button id="restart-btn" onclick="window._restartRuntime()" class="restart-btn" title="Restart conversation from the beginning">🔄<br>Restart</button>
+                    <button id="load-results-btn" onclick="document.getElementById('load-results').click()" title="Load a previously saved test results JSON">📋<br>Load<br>Results</button>
+                    <button id="save-flow-btn" onclick="window.downloadPair()" title="Save state machine and services as a ZIP file">💾<br>Save<br>Flow</button>
                     <button onclick="document.getElementById('upload').click()" title="Load state machine (.json), services (.js), or both as a ZIP">📂<br>Load<br>Flow</button>
-                    <button onclick="window.downloadProductionBundle()" title="Pack and download standalone production bundle (no IDE)">📦<br>Pack<br>Prod</button>
+                    <button id="pack-prod-btn" onclick="window.downloadProductionBundle()" title="Pack and download standalone production bundle (no IDE)">📦<br>Pack<br>Prod</button>
                     <input type="file" id="upload"       style="display:none" accept=".zip,.json,.js" multiple
                            onchange="window.loadPair(this.files); this.value='';">
                     <input type="file" id="load-results" style="display:none" accept=".json"
@@ -242,6 +242,9 @@
             _panOffset = Math.max(0, Math.min(maxOffset(), offset));
             rightPane.style.transition = animated ? 'transform 0.3s ease' : 'none';
             rightPane.style.transform  = `translateX(${_panOffset}px)`;
+            // Update --visible-pane-w so #pane-content reflows as pane slides
+            const visibleW = window.innerWidth - _panOffset;
+            rightPane.style.setProperty('--visible-pane-w', visibleW + 'px');
             const arrow = document.getElementById('handle-arrow');
             if (arrow) arrow.textContent = _panOffset > 10 ? '›' : '‹';
         }

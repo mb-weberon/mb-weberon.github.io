@@ -153,7 +153,8 @@ input[type="text"]:focus { border-color: var(--accent); }
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    cursor: col-resize;
+    gap: 6px;
+    cursor: ew-resize;
     z-index: 30;
     flex-shrink: 0;
     user-select: none;
@@ -163,6 +164,7 @@ input[type="text"]:focus { border-color: var(--accent); }
 #slide-handle:hover  { background: #2c313a; }
 #slide-handle:active { background: #353b48; }
 
+/* Vertical grip dots */
 #slide-handle::before {
     content: '⋮';
     color: #555;
@@ -171,10 +173,23 @@ input[type="text"]:focus { border-color: var(--accent); }
     letter-spacing: -2px;
 }
 
+/* Horizontal grab pill — visible cue for touch users */
+#slide-handle::after {
+    content: '';
+    display: block;
+    width: 4px;
+    height: 32px;
+    background: #444;
+    border-radius: 2px;
+    /* Subtle glow on hover via parent */
+}
+
+#slide-handle:hover::after { background: #61dafb; }
+
 #handle-arrow {
     color: #61dafb;
-    font-size: 12px;
-    margin-top: 4px;
+    font-size: 11px;
+    line-height: 1;
     transition: transform 0.3s;
 }
 
@@ -205,9 +220,13 @@ input[type="text"]:focus { border-color: var(--accent); }
     will-change: transform;
 }
 
-/* Content area — offset left to make room for the handle */
+/* Content area — offset left to make room for the handle.
+   --visible-pane-w is set by JS to (viewport width - translateX offset).
+   This makes #pane-content shrink as the pane slides right, so chat reflows. */
 #pane-content {
     margin-left: var(--handle-w);
+    width: calc(var(--visible-pane-w, 100vw) - var(--handle-w));
+    max-width: calc(100vw - var(--handle-w));
     display: flex;
     flex-direction: column;
     flex: 1;
@@ -359,8 +378,9 @@ input[type="text"]:focus { border-color: var(--accent); }
     box-sizing: border-box;
 }
 
-#replay-clear-btn,
-#replay-go-btn {
+/* ▶ and ✕ — identical square buttons, always on the LEFT of the field */
+#replay-go-btn,
+#replay-clear-btn {
     width: 30px;
     height: 30px;
     padding: 0;
