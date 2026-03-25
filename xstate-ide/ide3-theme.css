@@ -179,17 +179,30 @@ input[type="text"]:focus { border-color: var(--accent); }
 }
 
 /* ── Right pane ─────────────────────────────────────────────────────────────── */
+/* ── Right pane — full-width overlay, slides left/right via translateX ──────── *
+ *                                                                               *
+ * The pane is always as wide as the viewport so its internal content never     *
+ * reflows. The diagram sits underneath it at z-index:1. Dragging the handle    *
+ * translates the pane rightward to reveal as much of the diagram as desired.   *
+ *                                                                               *
+ * _panOffset (set by JS) is clamped to [0, maxReveal] where maxReveal is       *
+ * (viewport width - handle width). At offset 0 the pane covers everything;    *
+ * at maxReveal only the handle strip is visible.                               *
+ * ──────────────────────────────────────────────────────────────────────────── */
 #right-pane {
-    width: 460px;
-    min-width: var(--handle-w);
-    max-width: calc(100% - 40px);
+    position: absolute;
+    top: 0; right: 0; bottom: 0;
+    /* Fixed content width — chat never reflows */
+    width: 100%;
     display: flex;
     flex-direction: column;
     background: var(--panel);
     box-shadow: -2px 0 10px rgba(0,0,0,0.08);
     z-index: 10;
-    position: relative;
-    transition: width 0.3s ease;
+    /* translateX is driven by JS; transition only while not dragging */
+    transform: translateX(0);
+    transition: transform 0.3s ease;
+    will-change: transform;
 }
 
 /* Content area — offset left to make room for the handle */
@@ -319,24 +332,49 @@ input[type="text"]:focus { border-color: var(--accent); }
     transition: transform 0.2s;
 }
 
-/* ── Replay bar ─────────────────────────────────────────────────────────────── */
+/* ── Replay bar — hidden until triggered ────────────────────────────────────── */
 #replay-bar {
-    padding: 8px 10px;
-    background: #eee;
-    display: flex;
-    gap: 5px;
-    border-bottom: 1px solid #ddd;
+    padding: 4px 8px;
+    background: #e8e8e8;
+    display: none;
+    gap: 4px;
+    border-bottom: 1px solid #d0d0d0;
     flex-shrink: 0;
+    align-items: center;
+}
+
+#replay-bar.visible {
+    display: flex;
 }
 
 #replay-bar input[type="text"] {
     flex: 1;
     min-width: 0;
-    padding: 6px 8px;
+    padding: 5px 8px;
     border: 1px solid #ccc;
     border-radius: 6px;
     font-size: 12px;
     outline: none;
+    height: 30px;
+    box-sizing: border-box;
+}
+
+#replay-clear-btn,
+#replay-go-btn {
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    font-size: 13px;
+    border-radius: 6px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+}
+
+#replay-clear-btn {
+    background: #888;
 }
 
 .restart-btn { background: #ff4757; }
@@ -430,25 +468,8 @@ input[type="text"]:focus { border-color: var(--accent); }
 
 /* ── Mobile overrides ───────────────────────────────────────────────────────── */
 @media (max-width: 700px) {
-    #diagram-pane {
-        position: absolute;
-        inset: 0;
-        z-index: 1;
-    }
-
-    #right-pane {
-        position: absolute;
-        top: 0; right: 0; bottom: 0;
-        width: 88% !important;
-        max-width: unset;
-        z-index: 5;
-        transition: width 0.3s ease;
-    }
-
-    #right-pane.pane-collapsed {
-        width: var(--handle-w) !important;
-    }
-
+    /* #right-pane is already position:absolute full-width — no changes needed.
+       JS uses the same translateX model on mobile as on desktop. */
     #slide-handle { cursor: ew-resize; }
 }
 
@@ -457,19 +478,6 @@ body.force-mobile-layout #diagram-pane {
     position: absolute;
     inset: 0;
     z-index: 1;
-}
-
-body.force-mobile-layout #right-pane {
-    position: absolute;
-    top: 0; right: 0; bottom: 0;
-    width: 88% !important;
-    max-width: unset;
-    z-index: 5;
-    transition: width 0.3s ease;
-}
-
-body.force-mobile-layout #right-pane.pane-collapsed {
-    width: var(--handle-w) !important;
 }
 
 body.force-mobile-layout #slide-handle {

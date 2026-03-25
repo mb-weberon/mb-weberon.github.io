@@ -212,15 +212,44 @@ async function boot() {
     }
 
     window.copyTrace = () => {
-        const text = JSON.stringify(window.currentRuntime.getTrace());
-        navigator.clipboard.writeText(text).then(() => {
-            const btn = document.getElementById('copy-btn');
-            if (!btn) return;
-            const orig    = btn.innerText;
-            btn.innerText = '✅ Copied!';
-            setTimeout(() => btn.innerText = orig, 2000);
-        });
+        // Extract the replay-compatible value array from _trace.steps,
+        // filtering out validation failures (valid:false) and service steps.
+        const envelope = window.currentRuntime.getTrace();
+        let values;
+        if (envelope && Array.isArray(envelope.steps)) {
+            values = envelope.steps
+                .filter(s => s.valid !== false && !s.service && s.value != null)
+                .map(s => s.value);
+        } else if (Array.isArray(envelope)) {
+            // Legacy flat-array format — already a value array
+            values = envelope;
+        } else {
+            values = [];
+        }
+        const str = JSON.stringify(values);
+        _showReplayBar(str);
     };
+
+    // ── Replay bar show / hide ────────────────────────────────────────────────
+    window._showReplayBar = _showReplayBar;
+    window._clearReplayBar = _clearReplayBar;
+
+    function _showReplayBar(str) {
+        const bar   = document.getElementById('replay-bar');
+        const input = document.getElementById('replay-input');
+        if (!bar || !input) return;
+        if (str !== undefined) input.value = str;
+        bar.classList.add('visible');
+        // Focus input so user can immediately hit ▶ or edit
+        setTimeout(() => input.focus(), 50);
+    }
+
+    function _clearReplayBar() {
+        const bar   = document.getElementById('replay-bar');
+        const input = document.getElementById('replay-input');
+        if (input) input.value = '';
+        if (bar)   bar.classList.remove('visible');
+    }
 
     // ─────────────────────────────────────────────────────────────────────────
     // Test button + results drawer management
@@ -463,9 +492,8 @@ async function boot() {
             const trace = _getTraceFromRow(tr);
             const str   = _traceToReplayString(trace);
             if (!str) { console.warn('row icon: no trace found', tr._caseIndex, window._testResults); return; }
-            const input = document.getElementById('replay-input');
-            if (input) input.value = str;
-            // Collapse the drawer
+            _showReplayBar(str);
+            // Collapse the drawer so the replay bar is visible
             const drawer = document.getElementById('test-results-drawer');
             if (drawer) _collapseDrawer(drawer);
         });

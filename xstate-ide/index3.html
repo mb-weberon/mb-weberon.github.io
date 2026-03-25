@@ -77,14 +77,15 @@
 
                 <!-- Replay bar -->
                 <div id="replay-bar">
-                    <button onclick="window._restartRuntime()" class="restart-btn" title="Restart conversation">🔄<br>Restart</button>
-                    <input type="text" id="replay-input" placeholder="Paste Replay String…">
-                    <button onclick="window._replayTrace(document.getElementById('replay-input').value)" title="Replay trace">▶<br>Replay</button>
+                    <button id="replay-clear-btn" onclick="window._clearReplayBar()" title="Clear and hide replay bar">✕</button>
+                    <input type="text" id="replay-input" placeholder="Replay string…">
+                    <button id="replay-go-btn" onclick="window._replayTrace(document.getElementById('replay-input').value)" title="Replay trace">▶</button>
                 </div>
 
                 <!-- Toolbar — large touch-friendly buttons -->
                 <div id="toolbar">
                     <button id="test-btn" title="Auto-generate all paths and run as tests">🧪<br>Test</button>
+                    <button onclick="window._restartRuntime()" class="restart-btn" title="Restart conversation">🔄<br>Restart</button>
                     <button onclick="document.getElementById('load-results').click()" title="Load a previously saved test results JSON">📋<br>Load<br>Results</button>
                     <button onclick="window.downloadPair()" title="Save state machine and services as a ZIP file">💾<br>Save<br>Flow</button>
                     <button onclick="document.getElementById('upload').click()" title="Load state machine (.json), services (.js), or both as a ZIP">📂<br>Load<br>Flow</button>
@@ -219,96 +220,94 @@
             applyTransform();
         }, { passive: false });
 
-        // ── Slide handle (desktop resize + mobile collapse) ───────────────────
+        // ── Slide handle — translateX overlay model ───────────────────────────
+        //
+        // #right-pane is position:absolute, full viewport width, z-index:10.
+        // Dragging the handle translates the pane rightward (positive X) to
+        // reveal the diagram underneath. Content never reflows.
+        //
+        // _panOffset: current translateX in px. 0 = fully covering, max = handle-only.
         const slideHandle = document.getElementById('slide-handle');
         const rightPane   = document.getElementById('right-pane');
 
-        const isMobile = () => window.innerWidth <= 700;
+        const HANDLE_W = parseInt(getComputedStyle(document.documentElement)
+                            .getPropertyValue('--handle-w')) || 18;
 
-        let _collapsed  = false;
-        const updateArrow = () => {
+        let _panOffset = 0;
+        let _snapOpen  = false;
+
+        const maxOffset = () => window.innerWidth - HANDLE_W;
+
+        function _applyOffset(offset, animated) {
+            _panOffset = Math.max(0, Math.min(maxOffset(), offset));
+            rightPane.style.transition = animated ? 'transform 0.3s ease' : 'none';
+            rightPane.style.transform  = `translateX(${_panOffset}px)`;
             const arrow = document.getElementById('handle-arrow');
-            if (!arrow) return;
-            arrow.textContent = _collapsed ? '›' : '‹';
-        };
+            if (arrow) arrow.textContent = _panOffset > 10 ? '›' : '‹';
+        }
 
-        // Desktop: drag to resize
-        let _resizing = false;
+        // Desktop mouse drag
+        let _dragging = false, _dragStartX = 0, _dragStartOffset = 0;
 
         slideHandle.addEventListener('mousedown', (e) => {
-            if (isMobile()) return;
-            _resizing = true;
-            document.body.style.cursor     = 'col-resize';
+            _dragging        = true;
+            _dragStartX      = e.clientX;
+            _dragStartOffset = _panOffset;
+            document.body.style.cursor     = 'ew-resize';
             document.body.style.userSelect = 'none';
+            rightPane.style.transition     = 'none';
             e.preventDefault();
         });
 
         document.addEventListener('mousemove', (e) => {
-            if (!_resizing) return;
-            const newW = Math.max(280, Math.min(window.innerWidth * 0.85,
-                window.innerWidth - e.clientX));
-            rightPane.style.width = newW + 'px';
+            if (!_dragging) return;
+            _applyOffset(_dragStartOffset + (e.clientX - _dragStartX), false);
         });
 
-        document.addEventListener('mouseup', () => {
-            if (!_resizing) return;
-            _resizing = false;
+        document.addEventListener('mouseup', (e) => {
+            if (!_dragging) return;
+            _dragging = false;
             document.body.style.cursor     = '';
             document.body.style.userSelect = '';
+            const moved = Math.abs(e.clientX - _dragStartX);
+            if (moved < 6) {
+                // Tap: toggle snap
+                _snapOpen = !_snapOpen;
+                _applyOffset(_snapOpen ? maxOffset() * 0.55 : 0, true);
+            } else {
+                _snapOpen = _panOffset > maxOffset() * 0.2;
+                _applyOffset(_snapOpen ? _panOffset : 0, true);
+            }
         });
 
-        // Mobile: tap to toggle, drag to set width freely
-        let _touchResizing = false;
-        let _touchStartX   = null;
-        let _touchStartW   = null;
-        const HANDLE_W     = parseInt(getComputedStyle(document.documentElement)
-                                .getPropertyValue('--handle-w')) || 18;
+        // Touch drag (works on both mobile and desktop touch)
+        let _tDragging = false, _tStartX = 0, _tStartOffset = 0;
 
         slideHandle.addEventListener('touchstart', (e) => {
-            if (!isMobile()) return;
-            _touchStartX   = e.touches[0].clientX;
-            _touchStartW   = rightPane.getBoundingClientRect().width;
-            _touchResizing = false;
+            _tDragging    = true;
+            _tStartX      = e.touches[0].clientX;
+            _tStartOffset = _panOffset;
+            rightPane.style.transition = 'none';
             e.stopPropagation();
         }, { passive: true });
 
         slideHandle.addEventListener('touchmove', (e) => {
-            if (!isMobile()) return;
-            const dx = _touchStartX - e.touches[0].clientX;
-            if (Math.abs(dx) > 8) _touchResizing = true;
-
-            if (_touchResizing) {
-                const vw   = window.innerWidth;
-                const newW = Math.max(HANDLE_W, Math.min(vw * 0.96, _touchStartW + dx));
-                rightPane.style.width      = newW + 'px';
-                rightPane.style.transition = 'none';
-                _collapsed = newW <= HANDLE_W + 4;
-                updateArrow();
-            }
+            if (!_tDragging) return;
+            _applyOffset(_tStartOffset + (e.touches[0].clientX - _tStartX), false);
             e.stopPropagation();
         }, { passive: true });
 
         slideHandle.addEventListener('touchend', (e) => {
-            if (!isMobile()) return;
-            rightPane.style.transition = '';
-
-            if (!_touchResizing) {
-                _collapsed = !_collapsed;
-                rightPane.classList.toggle('pane-collapsed', _collapsed);
-                updateArrow();
+            if (!_tDragging) return;
+            _tDragging = false;
+            const moved = Math.abs(e.changedTouches[0].clientX - _tStartX);
+            if (moved < 6) {
+                _snapOpen = !_snapOpen;
+                _applyOffset(_snapOpen ? maxOffset() * 0.55 : 0, true);
             } else {
-                const w = rightPane.getBoundingClientRect().width;
-                if (w < 120) {
-                    _collapsed = true;
-                    rightPane.classList.add('pane-collapsed');
-                } else {
-                    _collapsed = false;
-                    rightPane.classList.remove('pane-collapsed');
-                }
-                updateArrow();
+                _snapOpen = _panOffset > maxOffset() * 0.2;
+                _applyOffset(_snapOpen ? _panOffset : 0, true);
             }
-
-            _touchResizing = false;
             e.stopPropagation();
         }, { passive: true });
 
