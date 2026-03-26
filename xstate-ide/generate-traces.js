@@ -254,7 +254,7 @@ export function showResultsDrawer(results, replayFn) {
 
     const isMobile   = window.innerWidth <= 700;
     const HEADER_H   = isMobile ? 52 : 36;   // px — height of the title bar
-    let   collapsed  = true;               // always start collapsed
+    let   collapsed  = isMobile ? true : false;               // always start collapsed
 
     // ── Drawer shell ──────────────────────────────────────────────────────────
     const drawer = document.createElement('div');
@@ -470,6 +470,12 @@ export function showResultsDrawer(results, replayFn) {
     // Mobile gets an additional touch-drag handle on the header so the user
     // can drag the drawer to any height between HEADER_H and ~90vh.
     //
+ 
+    function _toolbarClearance() {
+        const toolbar = document.getElementById('toolbar');
+        return toolbar ? toolbar.offsetHeight : 0;
+    }
+
     function applyCollapsed() {
         if (collapsed) {
             // Slide drawer below viewport so only the header strip sits above toolbar.
@@ -558,21 +564,26 @@ export function showResultsDrawer(results, replayFn) {
         let dragging = false, dragOffX = 0, dragOffY = 0;
 
         header.addEventListener('mousedown', (e) => {
-            if (e.target === closeBtn || e.target === collapseBtn) return;
+            if (e.target === closeBtn) return;
             dragging = true;
+            // Snapshot position now (before clearing bottom/right) so offsets are correct
             const rect = drawer.getBoundingClientRect();
             dragOffX   = e.clientX - rect.left;
             dragOffY   = e.clientY - rect.top;
+            // Switch from bottom-anchored to top/left free positioning
+            drawer.style.top    = `${rect.top}px`;
+            drawer.style.left   = `${rect.left}px`;
+            drawer.style.right  = 'auto';
+            drawer.style.bottom = 'auto';
             header.style.cursor = 'grabbing';
             e.preventDefault();
         });
 
         document.addEventListener('mousemove', (e) => {
             if (!dragging) return;
-            drawer.style.left   = `${e.clientX - dragOffX}px`;
-            drawer.style.top    = `${e.clientY - dragOffY}px`;
-            drawer.style.right  = 'auto';
-            drawer.style.bottom = 'auto';
+            _headerDragOccurred = true;
+            drawer.style.left = `${e.clientX - dragOffX}px`;
+            drawer.style.top  = `${e.clientY - dragOffY}px`;
         });
 
         document.addEventListener('mouseup', () => {
