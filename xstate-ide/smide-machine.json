@@ -1,0 +1,260 @@
+{
+  "id": "sm_ide",
+  "initial": "booting",
+  "context": {
+    "flowId": "",
+    "resultsSaved": true,
+    "trace": []
+  },
+  "states": {
+    "booting": {
+      "meta": {
+        "text": "App is starting up. Checking localStorage for a previously loaded flow."
+      },
+      "always": [
+        {
+          "guard": "hasPersistedFlow",
+          "target": "restoring_flow"
+        },
+        {
+          "target": "no_flow"
+        }
+      ]
+    },
+    "restoring_flow": {
+      "meta": {
+        "text": "Flow found in storage. Restoring flow, session and test results."
+      },
+      "invoke": {
+        "src": "restorePersistedState",
+        "onDone": [
+          {
+            "guard": "hasPersistedResults",
+            "target": "results_ready",
+            "actions": [
+              "record"
+            ]
+          },
+          {
+            "guard": "hasPersistedSession",
+            "target": "session_active",
+            "actions": [
+              "record"
+            ]
+          },
+          {
+            "target": "flow_idle",
+            "actions": [
+              "record"
+            ]
+          }
+        ],
+        "onError": {
+          "target": "no_flow",
+          "actions": [
+            "record"
+          ]
+        }
+      }
+    },
+    "no_flow": {
+      "meta": {
+        "text": "No flow loaded. Use Load Flow or Load Results to begin."
+      },
+      "on": {
+        "LOAD_FLOW": {
+          "target": "flow_idle",
+          "actions": [
+            "record"
+          ]
+        },
+        "LOAD_RESULTS": {
+          "target": "results_ready",
+          "actions": [
+            "record"
+          ]
+        }
+      }
+    },
+    "flow_idle": {
+      "meta": {
+        "text": "Flow loaded. Chat is active. Start a conversation or run tests."
+      },
+      "on": {
+        "LOAD_FLOW": {
+          "target": "flow_idle",
+          "actions": [
+            "record"
+          ]
+        },
+        "RUN_TESTS": {
+          "target": "tests_running",
+          "actions": [
+            "record"
+          ]
+        },
+        "CHAT_INPUT": {
+          "target": "session_active",
+          "actions": [
+            "record"
+          ]
+        },
+        "RESTART": {
+          "target": "flow_idle",
+          "actions": [
+            "record"
+          ]
+        }
+      }
+    },
+    "session_active": {
+      "meta": {
+        "text": "Conversation in progress. Trace is being recorded and persisted."
+      },
+      "on": {
+        "LOAD_FLOW": {
+          "target": "flow_idle",
+          "actions": [
+            "record"
+          ]
+        },
+        "RUN_TESTS": {
+          "target": "tests_running",
+          "actions": [
+            "record"
+          ]
+        },
+        "CHAT_INPUT": {
+          "target": "session_active",
+          "actions": [
+            "record"
+          ]
+        },
+        "REPLAY": {
+          "target": "session_active",
+          "actions": [
+            "record"
+          ]
+        },
+        "RESTART": {
+          "target": "flow_idle",
+          "actions": [
+            "record"
+          ]
+        }
+      }
+    },
+    "tests_running": {
+      "meta": {
+        "text": "Test run in progress. All paths are being exercised automatically."
+      },
+      "on": {
+        "TESTS_COMPLETE": {
+          "target": "results_unsaved",
+          "actions": [
+            "record"
+          ]
+        },
+        "TESTS_INTERRUPTED": {
+          "target": "results_unsaved",
+          "actions": [
+            "record"
+          ]
+        }
+      }
+    },
+    "results_unsaved": {
+      "meta": {
+        "text": "Tests done. Results ready. Load Flow is locked until you save."
+      },
+      "on": {
+        "SAVE_RESULTS": {
+          "target": "results_saved",
+          "actions": [
+            "record"
+          ]
+        },
+        "RUN_TESTS": {
+          "target": "tests_running",
+          "actions": [
+            "record"
+          ]
+        },
+        "REPLAY": {
+          "target": "session_active",
+          "actions": [
+            "record"
+          ]
+        }
+      }
+    },
+    "results_saved": {
+      "meta": {
+        "text": "Results saved to disk. Load Flow is re-enabled."
+      },
+      "on": {
+        "LOAD_FLOW": {
+          "target": "flow_idle",
+          "actions": [
+            "record"
+          ]
+        },
+        "RUN_TESTS": {
+          "target": "tests_running",
+          "actions": [
+            "record"
+          ]
+        },
+        "REPLAY": {
+          "target": "session_active",
+          "actions": [
+            "record"
+          ]
+        },
+        "RESTART": {
+          "target": "flow_idle",
+          "actions": [
+            "record"
+          ]
+        }
+      }
+    },
+    "results_ready": {
+      "meta": {
+        "text": "Previous test results restored from storage. Drawer shown collapsed."
+      },
+      "on": {
+        "LOAD_FLOW": {
+          "target": "flow_idle",
+          "actions": [
+            "record"
+          ]
+        },
+        "SAVE_RESULTS": {
+          "target": "results_saved",
+          "actions": [
+            "record"
+          ]
+        },
+        "RUN_TESTS": {
+          "target": "tests_running",
+          "actions": [
+            "record"
+          ]
+        },
+        "REPLAY": {
+          "target": "session_active",
+          "actions": [
+            "record"
+          ]
+        },
+        "RESTART": {
+          "target": "flow_idle",
+          "actions": [
+            "record"
+          ]
+        }
+      }
+    }
+  }
+}

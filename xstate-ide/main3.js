@@ -1,6 +1,10 @@
 import { Runtime }          from './Runtime.js';
 import { ChatUI }            from './ChatUI.js';
 import { realtorServices }   from './realtor-services.js';
+
+// Tracks the currently active services — starts as the static default,
+// replaced by reloadServices() whenever a .js file is loaded dynamically.
+let activeServices = realtorServices;
 import { loadVersion }       from './version.js';
 import { consoleLogger }     from './logger.js';
 import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
@@ -183,7 +187,7 @@ async function boot() {
         visitedEdges.clear();
         _lastStateId = null;
 
-        window.currentRuntime = new Runtime(config, realtorServices, consoleLogger);
+        window.currentRuntime = new Runtime(config, activeServices, consoleLogger);
         chatUI = new ChatUI(window.currentRuntime, chatMount);
         chatUI.mount();
 
@@ -303,12 +307,24 @@ async function boot() {
     async function reloadServices(src, label) {
         window._loadedServicesSource = src;
         try {
-            const blob    = new Blob([src], { type: 'text/javascript' });
+            // Append a unique comment to bust the browser's ES module cache.
+            // Without this, Chrome reuses the cached module from a previous
+            // import of the same source, so reloading the same file has no effect.
+            const cacheBust = `
+// cache-bust: ${Date.now()}`;
+            const blob    = new Blob([src + cacheBust], { type: 'text/javascript' });
             const blobUrl = URL.createObjectURL(blob);
             const mod     = await import(/* @vite-ignore */ blobUrl);
+            // Revoke after import resolves, not before — some browsers re-resolve
+            // the URL during module linking which fails if already revoked.
             URL.revokeObjectURL(blobUrl);
             const newServices = mod.realtorServices ?? mod.default ?? mod;
-            Object.assign(window.currentRuntime.services, newServices);
+            // Update activeServices so _activateFlow (called right after) picks it up
+            activeServices = newServices;
+            // Also patch the live runtime in case only services changed (no new config)
+            if (window.currentRuntime) {
+                Object.assign(window.currentRuntime.services, newServices);
+            }
             console.log('📂 Services loaded:', label);
         } catch (e) {
             console.warn(`⚠️  Could not re-import services (${label}):`, e.message);
