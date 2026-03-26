@@ -185,7 +185,7 @@ export async function runAllTraces(config, replayFn, getTrace, getStateId, pause
         // using a hardcoded timer. This eliminates all timing-based flakiness.
         await new Promise(resolve => {
             window.currentRuntime.onReplayDone = resolve;
-            replayFn(JSON.stringify(expected), undefined, 0);
+            replayFn(JSON.stringify(expected));
         });
         // Clear the hook so stray calls from manual replays don't fire
         window.currentRuntime.onReplayDone = null;
@@ -254,7 +254,7 @@ export function showResultsDrawer(results, replayFn) {
 
     const isMobile   = window.innerWidth <= 700;
     const HEADER_H   = isMobile ? 52 : 36;   // px — height of the title bar
-    let   collapsed  = isMobile;              // start collapsed on mobile, open on desktop
+    let   collapsed  = true;               // always start collapsed
 
     // ── Drawer shell ──────────────────────────────────────────────────────────
     const drawer = document.createElement('div');
@@ -304,9 +304,6 @@ export function showResultsDrawer(results, replayFn) {
     summarySpan.style.cssText = `color:${passColor}; font-weight:bold; font-size:${isMobile ? '14px' : '11px'};`;
     summarySpan.innerText = `${passed}/${total} passed`;
 
-    const collapseBtn = document.createElement('button');
-    collapseBtn.style.cssText = `background:none; border:none; color:#888; font-size:${isMobile ? '18px' : '12px'}; cursor:pointer; padding:0 4px;`;
-
     const closeBtn = document.createElement('button');
     closeBtn.innerText = '✕';
     closeBtn.title = 'Close';
@@ -319,7 +316,6 @@ export function showResultsDrawer(results, replayFn) {
 
     header.appendChild(titleSpan);
     header.appendChild(summarySpan);
-    header.appendChild(collapseBtn);
     header.appendChild(closeBtn);
 
     // ── Sub-header ────────────────────────────────────────────────────────────
@@ -345,7 +341,7 @@ export function showResultsDrawer(results, replayFn) {
 
     // ── Table ─────────────────────────────────────────────────────────────────
     const tableWrap = document.createElement('div');
-    tableWrap.style.cssText = `overflow-y:auto; flex:1; max-height:${isMobile ? '50vh' : 'none'};`;
+    tableWrap.style.cssText = `overflow-y:auto; flex:1; max-height:${isMobile ? '50vh' : '40vh'};`;
 
     const table = document.createElement('table');
     table.style.cssText = `width:100%; border-collapse:collapse; font-size:${isMobile ? '13px' : '11px'};`;
@@ -450,6 +446,11 @@ export function showResultsDrawer(results, replayFn) {
     table.appendChild(tbody);
     tableWrap.appendChild(table);
 
+    // Start collapsed: hide body sections immediately so the drawer never
+    // flashes open before applyCollapsed() runs in the rAF below.
+    subHeader.style.display = 'none';
+    tableWrap.style.display = 'none';
+
     drawer.appendChild(header);
     drawer.appendChild(subHeader);
     drawer.appendChild(tableWrap);
@@ -460,34 +461,30 @@ export function showResultsDrawer(results, replayFn) {
         const dp = document.getElementById('diagram-pane');
         if (dp) dp.style.paddingBottom = px ? `${px}px` : '';
     }
+    if (isMobile) reserveBottomSpace(HEADER_H);
 
     // ── Collapse / expand ─────────────────────────────────────────────────────
     //
-    // Both mobile and desktop use the same model:
-    //   Expanded  — drawer sits at bottom:0, full height visible and scrollable.
-    //   Collapsed — drawer slides down so only the header peeks above the toolbar.
-    //               Rows remain in the DOM; the drawer body is simply off-screen.
-    //               translateY is NOT used (it relies on measuring elements that
-    //               _injectRowIcons may have hidden, yielding 0px translation).
+    // Both mobile and desktop use bottom-positioning (not translateY) so the
+    // drawer always stays anchored above the toolbar.
+    // Mobile gets an additional touch-drag handle on the header so the user
+    // can drag the drawer to any height between HEADER_H and ~90vh.
     //
-    function _toolbarClearance() {
-        const toolbar = document.getElementById('toolbar');
-        return toolbar ? toolbar.offsetHeight : 0;
-    }
-
     function applyCollapsed() {
-        collapseBtn.innerText = collapsed ? '▲' : '▼';
-        collapseBtn.title     = collapsed ? 'Expand' : 'Collapse';
-
         if (collapsed) {
-            // Slide drawer below viewport so only the header strip sits above the toolbar.
+            // Slide drawer below viewport so only the header strip sits above toolbar.
             const fullH     = drawer.scrollHeight;
             const headerH   = header.offsetHeight;
             const clearance = _toolbarClearance();
-            drawer.style.bottom = (clearance + headerH - fullH) + 'px';
+            drawer.style.bottom    = (clearance + headerH - fullH) + 'px';
+            drawer.style.transform = '';
         } else {
-            drawer.style.bottom = '0';
+            drawer.style.bottom    = '0';
+            drawer.style.transform = '';
         }
+        // Show/hide body sections (same on both mobile and desktop)
+        subHeader.style.display = collapsed ? 'none' : '';
+        tableWrap.style.display = collapsed ? 'none' : '';
     }
 
     // Need one rAF after append so offsetHeight is populated
@@ -497,14 +494,61 @@ export function showResultsDrawer(results, replayFn) {
         if (firstTr && firstCase) selectRow(firstCase, firstTr, null);
     });
 
-    collapseBtn.onclick = (e) => {
+    // ── Header tap/drag: toggle collapse on tap, resize on drag ─────────────
+    // Shared between mobile and desktop (desktop also gets mouse drag below).
+    // A "tap" is a touch/click with < 6px movement. A drag suppresses the
+    // click event so the two don't fight each other.
+
+    let _headerDragOccurred = false;
+
+    header.addEventListener('touchstart', (e) => {
+        if (e.target === closeBtn) return;
+        _headerDragOccurred = false;
+        _touchDragStartY    = e.touches[0].clientY;
+        _touchDragStartMaxH = tableWrap.offsetHeight || parseInt(tableWrap.style.maxHeight) || 0;
+        drawer.style.transition = 'none';
         e.stopPropagation();
-        collapsed = !collapsed;
-        applyCollapsed();
-    };
-    // Tapping anywhere on the header also toggles (both mobile and desktop)
+    }, { passive: true });
+
+    let _touchDragStartY    = 0;
+    let _touchDragStartMaxH = 0;
+
+    header.addEventListener('touchmove', (e) => {
+        const dy = _touchDragStartY - e.touches[0].clientY; // up = positive = taller
+        if (Math.abs(dy) < 6) return;
+
+        _headerDragOccurred = true;
+
+        // Expand the drawer when dragging up from collapsed
+        if (collapsed) {
+            collapsed = false;
+            subHeader.style.display = '';
+            tableWrap.style.display = '';
+            drawer.style.bottom = '0';
+        }
+
+        const maxAllowed = window.innerHeight * 0.9 - header.offsetHeight - _toolbarClearance();
+        const minAllowed = 40;
+        const newH = Math.max(minAllowed, Math.min(maxAllowed, _touchDragStartMaxH + dy));
+        tableWrap.style.maxHeight = newH + 'px';
+        e.stopPropagation();
+    }, { passive: true });
+
+    header.addEventListener('touchend', (e) => {
+        drawer.style.transition = '';
+        // Snap fully collapsed if dragged to nearly nothing
+        if (!collapsed && parseInt(tableWrap.style.maxHeight) < 30) {
+            collapsed = true;
+            applyCollapsed();
+        }
+        e.stopPropagation();
+    }, { passive: true });
+
+    // Tap (no drag): toggle collapsed state.
+    // Suppressed when a drag just occurred so they don't fight.
     header.onclick = (e) => {
-        if (e.target === closeBtn || e.target === collapseBtn) return;
+        if (e.target === closeBtn) return;
+        if (_headerDragOccurred) { _headerDragOccurred = false; return; }
         collapsed = !collapsed;
         applyCollapsed();
     };
@@ -583,15 +627,10 @@ export function loadTestResults(file) {
         try {
             const results = JSON.parse(e.target.result);
             window._testResults = results;
-
-            // Restore the config that was active when the results were captured.
-            // _restartRuntime with a config argument calls _activateFlow internally,
-            // which creates a fresh Runtime + ChatUI and starts the machine.
-            if (results.config && window._restartRuntime) {
-                console.log(`✅ Restoring config from results: ${results.config.id}`);
+            // Restore the config that was active when the tests were run
+            if (results.config && typeof window._restartRuntime === 'function') {
                 window._restartRuntime(results.config);
             }
-
             showResultsDrawer(results, window._replayTrace);
             console.log(`✅ Loaded ${results.cases?.length} test cases from file`);
         } catch (err) {

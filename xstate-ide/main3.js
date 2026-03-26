@@ -371,20 +371,44 @@ async function boot() {
 
     const testBtn        = document.getElementById('test-btn');
     const loadResultsBtn = document.getElementById('load-results-btn');
+    const loadFlowBtn    = document.getElementById('load-flow-btn');
     const progressEl     = document.getElementById('test-progress');
     let _testRunning     = false;
+    let _resultsSaved    = true;  // true = no unsaved results; flips false after a run
 
-    // Flip Load Results ↔ Save Results
+    // Flip Load Results ↔ Save Results, and lock/unlock Load Flow.
+    // "Unsaved results" state: results exist but have not been downloaded.
+    // In this state Load Flow is disabled to prevent loading a different flow
+    // that would make the results meaningless / unrestorable.
     function _setResultsReady(ready) {
         if (!loadResultsBtn) return;
         if (ready) {
+            _resultsSaved = false;
             loadResultsBtn.innerHTML = '💾<br>Save<br>Results';
             loadResultsBtn.title     = 'Save test results as JSON';
-            loadResultsBtn.onclick   = () => window.downloadTestResults?.();
+            loadResultsBtn.onclick   = () => {
+                window.downloadTestResults?.();
+                // Mark as saved so Load Flow re-enables
+                _resultsSaved = true;
+                _setResultsReady(false);
+            };
+            // Disable Load Flow while unsaved results exist
+            if (loadFlowBtn) {
+                loadFlowBtn.disabled = true;
+                loadFlowBtn.title    = 'Save Results before loading a new flow';
+                loadFlowBtn.style.opacity = '0.4';
+            }
         } else {
+            _resultsSaved = true;
             loadResultsBtn.innerHTML = '📋<br>Load<br>Results';
             loadResultsBtn.title     = 'Load a previously saved test results JSON';
             loadResultsBtn.onclick   = () => document.getElementById('load-results').click();
+            // Re-enable Load Flow
+            if (loadFlowBtn) {
+                loadFlowBtn.disabled = false;
+                loadFlowBtn.title    = 'Load state machine (.json), services (.js), or both as a ZIP';
+                loadFlowBtn.style.opacity = '';
+            }
         }
     }
 
@@ -534,7 +558,7 @@ async function boot() {
                 });
                 const th = document.createElement('th');
                 th.className = 'th-icons';
-                th.style.cssText = 'width:52px; padding:3px 4px;';
+                th.style.cssText = 'width:28px; padding:3px 4px;';
                 headerRow.insertBefore(th, headerRow.firstChild);
             }
         }
@@ -546,19 +570,6 @@ async function boot() {
         const tableWrap  = drawer.children[2];
 
         if (mainHeader && subHeader && tableWrap) {
-            // Replace the ▼ collapse button with 💾 (download)
-            // collapseBtn is the second-to-last child of mainHeader (before ✕)
-            const headerChildren = Array.from(mainHeader.children);
-            const collapseBtn = headerChildren[headerChildren.length - 2];
-            if (collapseBtn && (collapseBtn.textContent === '▼' || collapseBtn.textContent === '▲')) {
-                collapseBtn.textContent = '💾';
-                collapseBtn.title       = 'Download test results as JSON';
-                collapseBtn.onclick = (e) => {
-                    e.stopPropagation();
-                    window.downloadTestResults?.();
-                };
-            }
-
             // generate-traces.js owns collapse via bottom-position sliding.
             // We do NOT install a separate collapse handler here — rows must
             // never be hidden via display:none or max-height:0.
@@ -605,23 +616,8 @@ async function boot() {
         const iconTd = document.createElement('td');
         iconTd.className = 'row-action-icons';
 
-        // 📋 Copy-to-replay button
-        const copyBtn = document.createElement('button');
-        copyBtn.className   = 'row-icon-btn row-icon-copy';
-        copyBtn.textContent = '📋';
-        copyBtn.title       = 'Copy trace to replay field';
-        copyBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const trace = _getTraceFromRow(tr);
-            const str   = _traceToReplayString(trace);
-            if (!str) { console.warn('row icon: no trace found', tr._caseIndex, window._testResults); return; }
-            _showReplayBar(str);
-            // Collapse the drawer so the replay bar is visible
-            const drawer = document.getElementById('test-results-drawer');
-            if (drawer) _collapseDrawer(drawer);
-        });
-
-        // ▶ Replay button
+        // ▶ Replay button — row click already copies to replay bar,
+        //   this button lets the user replay immediately without a second click.
         const replayBtn = document.createElement('button');
         replayBtn.className   = 'row-icon-btn row-icon-replay';
         replayBtn.textContent = '▶';
@@ -634,7 +630,6 @@ async function boot() {
             window._replayTrace?.(str);
         });
 
-        iconTd.appendChild(copyBtn);
         iconTd.appendChild(replayBtn);
 
         // Prepend to the row before whatever generate-traces.js put there
@@ -736,15 +731,59 @@ async function boot() {
     }
 
     // ── Drawer lifecycle (called by index3.html's inline observer) ────────────
+
+    function _setToolbarDrawerClearance(drawer) {
+        // Lift the toolbar by the drawer's header height so buttons are never
+        // hidden behind the collapsed drawer strip.  The header is always the
+        // first child of the drawer; fall back to 36px (desktop HEADER_H).
+        const toolbar = document.getElementById('toolbar');
+        if (!toolbar) return;
+        const header  = drawer?.firstElementChild;
+        const headerH = header ? header.offsetHeight || 36 : 36;
+        toolbar.style.paddingBottom = headerH + 'px';
+    }
+
+    function _clearToolbarDrawerClearance() {
+        const toolbar = document.getElementById('toolbar');
+        if (toolbar) toolbar.style.paddingBottom = '';
+    }
+
     window._onDrawerAdded = (drawer) => {
         _setupDrawer(drawer);
+        // Wait one rAF so the drawer is painted and offsetHeight is real
+        requestAnimationFrame(() => _setToolbarDrawerClearance(drawer));
     };
 
     window._onDrawerRemoved = () => {
-        // Reset diagram pane height when drawer is gone
+        // Reset toolbar padding and diagram pane height when drawer is gone
+        _clearToolbarDrawerClearance();
         const dp = document.getElementById('diagram-pane');
         if (dp) dp.style.maxHeight = '';
     };
+}
+
+// ── Visual viewport / soft keyboard handling ─────────────────────────────────
+// On mobile, when the soft keyboard appears the visual viewport shrinks but
+// the layout viewport (window.innerHeight) stays the same. position:fixed
+// elements get pushed partly behind the keyboard. We detect this via
+// visualViewport.resize and translate #right-pane upward by the difference
+// so the drawer title bar and toolbar are always visible above the keyboard.
+if (window.visualViewport) {
+    const _vvListener = () => {
+        const pane = document.getElementById('right-pane');
+        if (!pane) return;
+        const keyboardH = window.innerHeight - window.visualViewport.height;
+        if (keyboardH > 50) {
+            // Keyboard is open — shift pane up to stay in view
+            pane.style.transform = `translateX(${pane._panOffset || 0}px) translateY(-${keyboardH}px)`;
+        } else {
+            // Keyboard closed — restore horizontal-only transform
+            const offset = pane._panOffset || 0;
+            pane.style.transform = offset ? `translateX(${offset}px)` : '';
+        }
+    };
+    window.visualViewport.addEventListener('resize', _vvListener);
+    window.visualViewport.addEventListener('scroll', _vvListener);
 }
 
 window.addEventListener('load', () => {
