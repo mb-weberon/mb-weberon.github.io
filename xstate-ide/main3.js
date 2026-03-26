@@ -453,6 +453,7 @@ async function boot() {
     });
 
     // ── Portrait mobile helpers ───────────────────────────────────────────────
+    const isMobile   = () => window.innerWidth <= 700;
     const isPortrait = () =>
         window.innerWidth <= 700 && window.innerHeight > window.innerWidth;
 
@@ -558,41 +559,16 @@ async function boot() {
                 };
             }
 
-            // Make clicking the header bar itself slide the body down/up.
-            // generate-traces sets header.onclick on mobile (translateY approach) —
-            // we clear it and replace with a single max-height transition handler
-            // that works identically on desktop and mobile.
-            mainHeader.style.cursor = 'pointer';
+            // generate-traces.js owns collapse via bottom-position sliding.
+            // We do NOT install a separate collapse handler here — rows must
+            // never be hidden via display:none or max-height:0.
+            mainHeader.style.cursor     = 'grab';
             mainHeader.style.userSelect = 'none';
-            mainHeader.onclick = null; // clear generate-traces mobile handler
 
-            // tableWrap needs overflow:hidden + transition for the slide to work
-            tableWrap.style.overflow   = 'hidden';
-            tableWrap.style.transition = 'max-height 0.25s ease';
-
-            let _drawerBodyOpen = true; // drawer starts expanded
-            const _setDrawerBody = (open) => {
-                _drawerBodyOpen = open;
-                if (open) {
-                    // Restore natural height
-                    tableWrap.style.maxHeight = tableWrap.scrollHeight + 'px';
-                    // After transition ends, remove cap so table can grow
-                    tableWrap.addEventListener('transitionend', () => {
-                        if (_drawerBodyOpen) tableWrap.style.maxHeight = '';
-                    }, { once: true });
-                } else {
-                    // Capture current height first, then animate to 0
-                    tableWrap.style.maxHeight = tableWrap.offsetHeight + 'px';
-                    requestAnimationFrame(() => {
-                        tableWrap.style.maxHeight = '0';
-                    });
-                }
-            };
-
-            mainHeader.addEventListener('click', (e) => {
-                if (e.target.tagName === 'BUTTON') return;
-                _setDrawerBody(!_drawerBodyOpen);
-            });
+            // tableWrap: always scrollable, never hidden
+            tableWrap.style.overflowY  = 'auto';
+            tableWrap.style.overflowX  = 'hidden';
+            tableWrap.style.maxHeight  = '';
 
             // Hide the subHeader (the "Run at XX:XX | Download JSON" bar)
             // This reclaims ~24px of height. The 💾 in the main header covers download.
@@ -666,14 +642,18 @@ async function boot() {
     }
 
     // ── Drawer collapse helper ────────────────────────────────────────────────
+    // Mirrors the applyCollapsed() logic in generate-traces.js: slide the
+    // drawer below the viewport so only the header strip sits above the toolbar.
+    // Never hides rows — they stay in the DOM and are scrollable when expanded.
     function _collapseDrawer(drawer) {
-        // generate-traces.js opens drawers by setting explicit height/maxHeight.
-        // The simplest cross-compatible collapse is to give it a minimal height
-        // matching just its header row (~40px), which the user can drag back up.
-        const header = drawer.firstElementChild;
-        const headerH = header ? header.offsetHeight : 40;
-        drawer.style.height    = headerH + 'px';
-        drawer.style.maxHeight = headerH + 'px';
+        const header    = drawer.firstElementChild;
+        const headerH   = header ? header.offsetHeight : 40;
+        const toolbar   = document.getElementById('toolbar');
+        const clearance = toolbar ? toolbar.offsetHeight : 0;
+        const fullH     = drawer.scrollHeight;
+        drawer.style.bottom     = (clearance + headerH - fullH) + 'px';
+        drawer.style.height     = '';
+        drawer.style.maxHeight  = '';
         _fitDiagramAboveDrawer(drawer);
     }
 
@@ -689,16 +669,10 @@ async function boot() {
         // viewport-based cap (80vh) so the full result set is scrollable.
         function _applyHeightCap() {
             if (drawer.dataset.userResized) return;
-            if (!isMobile && !isPortrait()) {
-                drawer.style.maxHeight = Math.max(80, window.innerHeight * 0.80) + 'px';
-                return;
-            }
-            const toggle = document.getElementById('profile-toggle');
-            if (!toggle) return;
-            const toggleTop    = toggle.getBoundingClientRect().top;
-            const drawerBottom = parseInt(drawer.style.bottom) || 0;
-            const maxH = window.innerHeight - drawerBottom - toggleTop;
-            drawer.style.maxHeight = Math.max(80, maxH) + 'px';
+            // Cap at 80% of viewport height on all viewports.
+            // The toolbar clearance is handled by applyCollapsed() in generate-traces.js
+            // (bottom positioning) — not by constraining maxHeight here.
+            drawer.style.maxHeight = Math.max(80, window.innerHeight * 0.80) + 'px';
         }
         _applyHeightCap();
 

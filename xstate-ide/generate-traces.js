@@ -460,22 +460,33 @@ export function showResultsDrawer(results, replayFn) {
         const dp = document.getElementById('diagram-pane');
         if (dp) dp.style.paddingBottom = px ? `${px}px` : '';
     }
-    if (isMobile) reserveBottomSpace(HEADER_H);
 
     // ── Collapse / expand ─────────────────────────────────────────────────────
+    //
+    // Both mobile and desktop use the same model:
+    //   Expanded  — drawer sits at bottom:0, full height visible and scrollable.
+    //   Collapsed — drawer slides down so only the header peeks above the toolbar.
+    //               Rows remain in the DOM; the drawer body is simply off-screen.
+    //               translateY is NOT used (it relies on measuring elements that
+    //               _injectRowIcons may have hidden, yielding 0px translation).
+    //
+    function _toolbarClearance() {
+        const toolbar = document.getElementById('toolbar');
+        return toolbar ? toolbar.offsetHeight : 0;
+    }
+
     function applyCollapsed() {
-        if (isMobile) {
-            // Slide drawer down until only the header peeks above the bottom edge
-            const fullH = drawer.offsetHeight;
-            const bodyH = subHeader.offsetHeight + tableWrap.offsetHeight;
-            drawer.style.transform = collapsed ? `translateY(${bodyH}px)` : 'translateY(0)';
-            collapseBtn.innerText = collapsed ? '▲' : '▼';
-            collapseBtn.title     = collapsed ? 'Expand' : 'Collapse';
+        collapseBtn.innerText = collapsed ? '▲' : '▼';
+        collapseBtn.title     = collapsed ? 'Expand' : 'Collapse';
+
+        if (collapsed) {
+            // Slide drawer below viewport so only the header strip sits above the toolbar.
+            const fullH     = drawer.scrollHeight;
+            const headerH   = header.offsetHeight;
+            const clearance = _toolbarClearance();
+            drawer.style.bottom = (clearance + headerH - fullH) + 'px';
         } else {
-            subHeader.style.display = collapsed ? 'none' : '';
-            tableWrap.style.display = collapsed ? 'none' : '';
-            collapseBtn.innerText   = collapsed ? '▲' : '▼';
-            collapseBtn.title       = collapsed ? 'Expand' : 'Collapse';
+            drawer.style.bottom = '0';
         }
     }
 
@@ -491,14 +502,12 @@ export function showResultsDrawer(results, replayFn) {
         collapsed = !collapsed;
         applyCollapsed();
     };
-    // On mobile, tapping anywhere on the header also toggles
-    if (isMobile) {
-        header.onclick = (e) => {
-            if (e.target === closeBtn || e.target === collapseBtn) return;
-            collapsed = !collapsed;
-            applyCollapsed();
-        };
-    }
+    // Tapping anywhere on the header also toggles (both mobile and desktop)
+    header.onclick = (e) => {
+        if (e.target === closeBtn || e.target === collapseBtn) return;
+        collapsed = !collapsed;
+        applyCollapsed();
+    };
 
     // ── Desktop drag to move ───────────────────────────────────────────────────
     if (!isMobile) {
