@@ -373,7 +373,7 @@ export function showResultsDrawer(results, replayFn) {
     drawer.style.cssText = `
         position: fixed;
         bottom: 0;
-        ${isMobile ? 'left:0; right:0; width:100%;' : 'right:420px; width:400px;'}
+        ${isMobile ? 'left:0; right:0; width:100%;' : 'width:400px;'}
         background: #1c1e21;
         color: #abb2bf;
         font-family: 'Courier New', monospace;
@@ -555,6 +555,35 @@ export function showResultsDrawer(results, replayFn) {
     drawer.appendChild(subHeader);
     drawer.appendChild(tableWrap);
     document.body.appendChild(drawer);
+
+    // ── Desktop: pin drawer inside the diagram pane area ──────────────────────
+    // The right pane width is variable (user-draggable), so we measure it and
+    // update whenever it resizes rather than hardcoding a pixel value.
+    let _rpObserver = null;
+    function _fitTodiagramPane() {
+        if (isMobile) return;
+        const rp = document.getElementById('right-pane');
+        if (!rp) return;
+        const rpRect = rp.getBoundingClientRect();
+        drawer.style.right = (window.innerWidth - rpRect.left) + 'px';
+    }
+    if (!isMobile) {
+        _fitTodiagramPane();
+        const rp = document.getElementById('right-pane');
+        if (rp && window.ResizeObserver) {
+            _rpObserver = new ResizeObserver(_fitTodiagramPane);
+            _rpObserver.observe(rp);
+        }
+        window.addEventListener('resize', _fitTodiagramPane);
+    }
+
+    // Clean up observer when drawer is removed
+    const _origRemove = drawer.remove.bind(drawer);
+    drawer.remove = () => {
+        _rpObserver?.disconnect();
+        window.removeEventListener('resize', _fitTodiagramPane);
+        _origRemove();
+    };
 
     // ── Reserve bottom space in diagram pane ──────────────────────────────────
     function reserveBottomSpace(px) {

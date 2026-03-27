@@ -121,7 +121,86 @@ async function boot() {
         if (stateDisplay) stateDisplay.innerText = 'State: —';
     }
 
-    _showBlankSlate();
+    // ── Session persistence ───────────────────────────────────────────────────
+    const PERSIST_KEY = 'xstate-ide:flow';
+
+    function _persistFlow(machineJson, servicesSource) {
+        try {
+            localStorage.setItem(PERSIST_KEY, JSON.stringify({ machineJson, servicesSource }));
+        } catch (e) {
+            console.warn('⚠️  Could not persist flow to localStorage:', e.message);
+        }
+    }
+
+    function _clearPersistedFlow() {
+        try { localStorage.removeItem(PERSIST_KEY); } catch (_) {}
+    }
+
+    function _loadPersistedFlow() {
+        try {
+            const raw = localStorage.getItem(PERSIST_KEY);
+            return raw ? JSON.parse(raw) : null;
+        } catch (_) { return null; }
+    }
+
+    // ── Blank-slate or restore prompt ─────────────────────────────────────────
+    const persisted = _loadPersistedFlow();
+
+    if (persisted) {
+        // Show restore prompt instead of blank slate
+        chatMount.innerHTML = `
+            <div id="no-flow-placeholder" style="
+                flex:1; display:flex; flex-direction:column;
+                align-items:center; justify-content:center;
+                gap:14px; padding:24px; text-align:center;
+                color:#888; font-family:'Segoe UI',sans-serif;
+            ">
+                <div style="font-size:36px;">🔄</div>
+                <div style="font-size:15px; font-weight:600; color:#555;">Restore last session?</div>
+                <div style="font-size:13px; color:#888;">
+                    <strong style="color:#61dafb;">${persisted.machineJson?.id ?? 'unknown'}</strong>
+                    ${persisted.servicesSource ? '+ services' : '(no services)'}
+                </div>
+                <div style="display:flex; gap:10px;">
+                    <button id="restore-btn" style="
+                        background:#0084ff; color:#fff; border:none;
+                        border-radius:8px; padding:9px 20px; font-size:13px;
+                        cursor:pointer;
+                    ">Restore</button>
+                    <button id="fresh-btn" style="
+                        background:#444; color:#ccc; border:none;
+                        border-radius:8px; padding:9px 20px; font-size:13px;
+                        cursor:pointer;
+                    ">Start fresh</button>
+                </div>
+                <a href="./help.html" target="_blank" style="
+                    font-size:12px; color:#61dafb; text-decoration:none; opacity:0.8;
+                ">📖 Help &amp; examples</a>
+            </div>`;
+
+        document.getElementById('restore-btn').onclick = async () => {
+            if (persisted.servicesSource) {
+                await reloadServices(persisted.servicesSource, 'restored-services.js');
+            } else {
+                activeServices = {};
+            }
+            _activateFlow(persisted.machineJson);
+        };
+
+        document.getElementById('fresh-btn').onclick = () => {
+            _clearPersistedFlow();
+            _showBlankSlate();
+        };
+
+        const mc = document.getElementById('mermaid-container');
+        if (mc) mc.innerHTML = `
+            <div style="
+                color:#666; font-family:'Segoe UI',sans-serif;
+                font-size:13px; text-align:center; padding:24px;
+            ">No flow loaded</div>`;
+    } else {
+        _showBlankSlate();
+    }
 
     // Disable buttons that require a loaded flow
     function _setFlowLoaded(loaded) {
@@ -207,6 +286,9 @@ async function boot() {
 
         window.currentRuntime.start();
         console.log('✅ Runtime started for flow:', config.id);
+
+        // Persist flow so it can be restored on next page load
+        _persistFlow(config, window._loadedServicesSource ?? null);
 
         // Scroll-to-bottom observer on the messages element ChatUI created
         const _messagesEl = chatMount.querySelector('#messages');
@@ -441,26 +523,36 @@ async function boot() {
             loadResultsBtn.title     = 'Save test results as JSON';
             loadResultsBtn.onclick   = () => {
                 window.downloadTestResults?.();
-                // Mark as saved so Load Flow re-enables
+                // Mark as saved so Load Flow + Test re-enable
                 _resultsSaved = true;
                 _setResultsReady(false);
             };
-            // Disable Load Flow while unsaved results exist
+            // Disable Load Flow and Test while unsaved results exist
             if (loadFlowBtn) {
                 loadFlowBtn.disabled = true;
                 loadFlowBtn.title    = 'Save Results before loading a new flow';
                 loadFlowBtn.style.opacity = '0.4';
+            }
+            if (testBtn) {
+                testBtn.disabled = true;
+                testBtn.title    = 'Save Results before running tests again';
+                testBtn.style.opacity = '0.4';
             }
         } else {
             _resultsSaved = true;
             loadResultsBtn.innerHTML = '📋<br>Load<br>Results';
             loadResultsBtn.title     = 'Load a previously saved test results JSON';
             loadResultsBtn.onclick   = () => document.getElementById('load-results').click();
-            // Re-enable Load Flow
+            // Re-enable Load Flow and Test
             if (loadFlowBtn) {
                 loadFlowBtn.disabled = false;
                 loadFlowBtn.title    = 'Load state machine (.json), services (.js), or both as a ZIP';
                 loadFlowBtn.style.opacity = '';
+            }
+            if (testBtn) {
+                testBtn.disabled = false;
+                testBtn.title    = 'Auto-generate all paths and run as tests';
+                testBtn.style.opacity = '';
             }
         }
     }

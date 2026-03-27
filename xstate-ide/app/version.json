@@ -1,9 +1,24 @@
 {
   "major": 0,
   "minor": 12,
-  "patch": 11,
+  "patch": 14,
   "label": "",
   "history": [
+    {
+      "version": "0.12.14",
+      "date": "2026-03-27",
+      "note": "Fix: results drawer desktop width restored to 400px; right edge tracks right-pane left boundary so drawer never overlaps right pane"
+    },
+    {
+      "version": "0.12.13",
+      "date": "2026-03-27",
+      "note": "Fix: results drawer confined to diagram pane on desktop — right edge tracks right-pane left boundary via ResizeObserver; Test button disabled while unsaved results exist (re-enabled after Save Results)"
+    },
+    {
+      "version": "0.12.12",
+      "date": "2026-03-27",
+      "note": "Feature: auto-persist flow to localStorage (xstate-ide:flow key) — on next load shows restore prompt with flow id and Restore/Start fresh buttons; _activateFlow saves machineJson + servicesSource after every successful load"
+    },
     {
       "version": "0.12.11",
       "date": "2026-03-26",
