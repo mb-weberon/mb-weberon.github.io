@@ -64,7 +64,7 @@ async function boot() {
             console.warn('⚠️  No flow loaded — use Load Flow first');
             return Promise.resolve();
         }
-        return tracesModule.runAllTracesHeadless(config, activeServices, { pauseMs });
+        return tracesModule.runAllTracesHeadless(config, activeServices, { pauseMs, servicesSource: window._loadedServicesSource });
     };
     window.loadTestResults = (file) =>
         tracesModule.loadTestResults(file);
@@ -179,9 +179,6 @@ async function boot() {
         // Replace module-level config in-place so all closures over `config` see it
         config = newConfig;
         window._config = config;
-
-        // Update generate-traces binding now that config is known
-        window.runAllTraces = (pauseMs) => tracesModule.runAllTracesHeadless(config, activeServices, { pauseMs });
 
         // Tear down old runtime + ChatUI if present
         if (window.currentRuntime) {
@@ -324,6 +321,17 @@ async function boot() {
         catch (e) { const m = `Invalid machine JSON: ${e.message}`; console.error('❌', m); showToast(m); return; }
         await reloadServices(servicesText, servicesUrl.split('/').pop());
         _activateFlow(newConfig);
+    };
+
+    // Used by loadTestResults to restore services source from a saved results file.
+    window._reloadServicesFromSource = (src, label) => reloadServices(src, label);
+
+    // Used by loadTestResults to restore the active config so runAllTraces re-runs
+    // against the right machine. Updating the `config` let is enough — all runAllTraces
+    // lambdas close over it by reference.
+    window._setActiveConfig = (newConfig) => {
+        config = newConfig;
+        window._config = newConfig;
     };
 
     async function reloadServices(src, label) {
@@ -866,12 +874,11 @@ window.downloadProductionBundle = async () => {
     const servicesFile = `${flowId}-services.js`;
 
     console.log('📦 Fetching production files…');
-    const [runtime, chatui, chatcss, validators_, logger_, versionjs] =
+    const [runtime, chatui, chatcss, logger_, versionjs] =
         await Promise.all([
             fetchText('Runtime.js'),
             fetchText('ChatUI.js'),
             fetchText('chat-theme.css'),
-            fetchText('validators.js'),
             fetchText('logger.js'),
             fetchText('version.js'),
         ]);
@@ -966,15 +973,18 @@ window.downloadProductionBundle = async () => {
     </div>
   </div>
   <script type="module">
-    import { Runtime }         from './Runtime.js';
-    import { ChatUI }          from './ChatUI.js';
-    import { realtorServices } from './${servicesFile}';
-    import { nullLogger }      from './logger.js';
+    import { Runtime }    from './Runtime.js';
+    import { ChatUI }     from './ChatUI.js';
+    import { nullLogger } from './logger.js';
 
-    const res    = await fetch('./${machineFile}');
-    const config = await res.json();
-    const rt     = new Runtime(config, realtorServices, nullLogger);
-    const ui     = new ChatUI(rt, document.getElementById('chat-mount'));
+    const [res, svcMod] = await Promise.all([
+        fetch('./${machineFile}'),
+        import('./${servicesFile}'),
+    ]);
+    const config   = await res.json();
+    const services = svcMod.default ?? svcMod[Object.keys(svcMod).find(k => k !== 'default')] ?? svcMod;
+    const rt       = new Runtime(config, services, nullLogger);
+    const ui       = new ChatUI(rt, document.getElementById('chat-mount'));
     ui.mount();
     rt.start();
   <\/script>
@@ -993,7 +1003,6 @@ window.downloadProductionBundle = async () => {
         `  chat-theme.css`,
         `  ${machineFile}   (in-memory config at pack time)`,
         `  ${servicesFile}`,
-        `  validators.js`,
         `  logger.js`,
         `  version.js`,
         `  MANIFEST.txt           (this file)`,
@@ -1007,7 +1016,6 @@ window.downloadProductionBundle = async () => {
         'chat-theme.css':          strToU8(chatcss),
         [machineFile]:             strToU8(JSON.stringify(config, null, 2)),
         [servicesFile]:            strToU8(services),
-        'validators.js':           strToU8(validators_),
         'logger.js':               strToU8(logger_),
         'version.js':              strToU8(versionjs),
         'MANIFEST.txt':            strToU8(manifest),

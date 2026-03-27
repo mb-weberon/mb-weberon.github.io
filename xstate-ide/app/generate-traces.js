@@ -264,7 +264,7 @@ export async function runAllTraces(config, replayFn, getTrace, getStateId, pause
 //   runAllTraces()       — headless, instant (default)
 //   runAllTraces(500)    — headless with 500ms pause between paths (for watching)
 
-export async function runAllTracesHeadless(config, services, { pauseMs = 0 } = {}) {
+export async function runAllTracesHeadless(config, services, { pauseMs = 0, servicesSource = null } = {}) {
     _interrupted = false;
     document.getElementById('test-results-drawer')?.remove();
     const diagPane = document.getElementById('diagram-pane');
@@ -287,7 +287,21 @@ export async function runAllTracesHeadless(config, services, { pauseMs = 0 } = {
         showStatusBadge(`Running ${i + 1} / ${total}…`, true);
         console.log(`\n▶ Path ${i + 1} / ${total}: ${JSON.stringify(expected)}`);
 
-        const runtime = new Runtime(config, services, undefined, { headless: true });
+        const runtime      = new Runtime(config, services, undefined, { headless: true });
+        const bubbles      = [];
+        const visitedEdges = [];
+        let   _lastStateId = null;
+
+        runtime.onSnapshot = (snap) => {
+            if (snap.message) bubbles.push({ side: 'bot', text: snap.message });
+            if (_lastStateId && _lastStateId !== snap.stateId) {
+                const trace = snap.context?.trace ?? [];
+                if (trace.length) visitedEdges.push(`${_lastStateId}|${trace[trace.length - 1]}`);
+            }
+            _lastStateId = snap.stateId;
+        };
+        runtime.onReplayStep = (item) => bubbles.push({ side: 'user', text: item });
+
         runtime.start();
         await runtime.replay(JSON.stringify(expected));
 
@@ -306,7 +320,7 @@ export async function runAllTracesHeadless(config, services, { pauseMs = 0 } = {
             diffs.forEach(d => console.warn(`     ${d}`));
         }
 
-        cases.push({ path: i + 1, passed, expected, actual, diffs, finalStateId, finalContext, bubbles: [], visitedEdges: [] });
+        cases.push({ path: i + 1, passed, expected, actual, diffs, finalStateId, finalContext, bubbles, visitedEdges });
 
         if (pauseMs > 0) await new Promise(r => setTimeout(r, pauseMs));
     }
@@ -329,6 +343,7 @@ export async function runAllTracesHeadless(config, services, { pauseMs = 0 } = {
         passed:  passCount,
         failed:  failCount,
         config,
+        servicesSource,
         cases,
     };
 
@@ -730,11 +745,15 @@ function hideStatusBadge() {
 export function loadTestResults(file) {
     if (!file) { console.warn('Pass a File object via the Load Results button.'); return; }
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
         try {
             const results = JSON.parse(e.target.result);
             window._testResults = results;
-            // Restore the config that was active when the tests were run
+            // Restore services so re-runs work
+            if (results.servicesSource && window._reloadServicesFromSource) {
+                await window._reloadServicesFromSource(results.servicesSource, `${results.flowId}-services.js`);
+            }
+            // Restore config so re-runs and diagram use the saved machine
             if (results.config && typeof window._restartRuntime === 'function') {
                 window._restartRuntime(results.config);
             }

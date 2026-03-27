@@ -1,9 +1,19 @@
 {
   "major": 0,
   "minor": 12,
-  "patch": 2,
+  "patch": 4,
   "label": "",
   "history": [
+    {
+      "version": "0.12.4",
+      "date": "2026-03-26",
+      "note": "Fix: load-results → test regression — _activateFlow no longer overwrites window.runAllTraces, preserving servicesSource so guards are restored correctly on fresh-app load"
+    },
+    {
+      "version": "0.12.3",
+      "date": "2026-03-26",
+      "note": "Fix: loadTestResults restores services and config from saved results JSON — servicesSource stored in results object, _reloadServicesFromSource and _setActiveConfig called on load so re-runs work without manual flow reload"
+    },
     {
       "version": "0.12.2",
       "date": "2026-03-26",
