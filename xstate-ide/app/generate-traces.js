@@ -754,6 +754,7 @@ export function loadTestResults(file) {
                 window._restartRuntime(results.config);
             }
             showResultsDrawer(results, window._replayTrace);
+            window._setResultsReady?.(true);   // flip button to Save Results (results_ready state)
             console.log(`✅ Loaded ${results.cases?.length} test cases from file`);
         } catch (err) {
             const m = `Invalid results JSON: ${err.message}`;

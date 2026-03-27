@@ -12,21 +12,22 @@
  * its own baseline and checks against it. No constants to maintain.
  *
  * Usage (browser console):
+ *   await window.ui_full()           — one-call: opens popup, loads fixture, checks (or captures)
+ *   await window.ui_full('capture')  — force capture baseline
+ *   await window.ui_full('check')    — force check against baseline
+ *
+ * Workflow (first time on a machine):
+ *   1. Open the app in any tab.
+ *   2. Run: await window.ui_full('capture')
+ *      Opens a 1024×768 popup, loads the smide test fixture, captures baseline.
+ *      Accept the Save dialog or copy the JSON, then commit ui-baseline-1024x768.json.
+ *   3. Before/after every change: await window.ui_full()
+ *      Automatically opens popup, loads fixture, and checks against the saved baseline.
+ *
+ * Low-level (if you need manual control):
  *   await window.ui_contracts()           — auto: check if baseline exists, else capture
  *   await window.ui_contracts('capture')  — capture baseline for current viewport
  *   await window.ui_contracts('check')    — compare against baseline for current viewport
- *
- * Workflow (first time on a machine):
- *   1. Undock DevTools to a separate window (keeps page viewport clean).
- *   2. Open the app in a stable window — any size, but keep it consistent.
- *      Quickest fixed-size window: window.open(location.href,'_blank','width=NNNN,height=NNNN')
- *      The exact inner dimensions are logged at boot: "📐 Inner viewport: W × H px"
- *   3. Wait for the first bot message + email input to appear.
- *   4. Run: await window.ui_contracts('capture')
- *      Saves ui-baseline-{W}x{H}.json — accept the Save dialog or copy the JSON.
- *   5. Commit ui-baseline-{W}x{H}.json.
- *   6. Before/after every change: await window.ui_contracts()
- *      Automatically loads the baseline for the current viewport size.
  *
  * Prerequisites for capture / check:
  *   - App must be loaded with at least the first bot message visible and
@@ -48,13 +49,10 @@ const RECALC_DELAY_MS   = 350;
 
 // ── Baseline URL ──────────────────────────────────────────────────────────────
 //
-// Baseline files are named ui-baseline-{label}.json.
-// By default the label is the actual inner viewport dimensions at call time.
-// Pass an explicit label to ui_contracts() to point at a specific file — e.g.
-// '1024x768' when the baseline was captured from a window.open(1024,768) session
-// whose actual inner dimensions differ slightly on your platform.
+// Baseline files are named ui-baseline-{label}.json where label = WxH of the
+// inner viewport at capture time. ui_full() always uses 1024x768.
 //
-//   await window.ui_contracts()                       — label: current WxH
+// Pass an explicit label to ui_contracts() to target a specific file:
 //   await window.ui_contracts('check',   '1024x768')  — uses ui-baseline-1024x768.json
 //   await window.ui_contracts('capture', '1024x768')  — saves ui-baseline-1024x768.json
 

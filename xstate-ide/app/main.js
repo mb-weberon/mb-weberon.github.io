@@ -465,6 +465,8 @@ async function boot() {
         }
     }
 
+    window._setResultsReady = _setResultsReady;
+
     function _setTestRunning(running, hadResults) {
         _testRunning = running;
         if (running) {

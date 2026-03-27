@@ -479,6 +479,8 @@ input[type="text"]:focus { border-color: var(--accent); }
 /* ── Mobile overrides ───────────────────────────────────────────────────────── */
 @media (max-width: 700px) {
     /* Switch to the full-width overlay / translateX slide model on small screens */
+    :root { --handle-w: 32px; }
+
     #diagram-pane {
         position: absolute;
         inset: 0;
@@ -500,7 +502,18 @@ input[type="text"]:focus { border-color: var(--accent); }
         max-width: calc(100vw - var(--handle-w));
     }
 
-    #slide-handle { cursor: ew-resize; }
+    #slide-handle {
+        cursor: ew-resize;
+        width: var(--handle-w);
+    }
+
+    /* Wider pill on mobile so it's easy to grab */
+    #slide-handle::after {
+        width: 5px;
+        height: 40px;
+        background: #555;
+        border-radius: 3px;
+    }
 }
 
 /* ── Force mobile layout (for ui-contracts) ─────────────────────────────────── */
@@ -525,6 +538,19 @@ body.force-mobile-layout #pane-content {
     max-width: calc(100vw - var(--handle-w));
 }
 
+body.force-mobile-layout {
+    --handle-w: 32px;
+}
+
 body.force-mobile-layout #slide-handle {
     cursor: ew-resize;
+    width: var(--handle-w);
+}
+
+/* Wider pill on mobile so it's easy to see and grab */
+body.force-mobile-layout #slide-handle::after {
+    width: 5px;
+    height: 40px;
+    background: #555;
+    border-radius: 3px;
 }

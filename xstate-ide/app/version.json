@@ -1,9 +1,19 @@
 {
   "major": 0,
   "minor": 12,
-  "patch": 9,
+  "patch": 11,
   "label": "",
   "history": [
+    {
+      "version": "0.12.11",
+      "date": "2026-03-26",
+      "note": "Docs: ui-contracts.js — workflow instructions updated to lead with ui_full() as primary entry point; low-level ui_contracts() calls moved to secondary section"
+    },
+    {
+      "version": "0.12.10",
+      "date": "2026-03-26",
+      "note": "Fix: mobile slide handle — --handle-w overridden to 32px on :root inside @media (max-width: 700px) and on body.force-mobile-layout so #pane-content calc() rules pick up the wider value; grip pill enlarged (5px × 40px)"
+    },
     {
       "version": "0.12.9",
       "date": "2026-03-26",
