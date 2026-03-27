@@ -1,9 +1,14 @@
 {
   "major": 0,
   "minor": 12,
-  "patch": 4,
+  "patch": 5,
   "label": "",
   "history": [
+    {
+      "version": "0.12.5",
+      "date": "2026-03-26",
+      "note": "Docs: help.html — guide covering machine JSON, services JS, guards, invoke states, testing, and results; realtor bot walkthrough with annotated code examples; help link shown in blank-slate UI"
+    },
     {
       "version": "0.12.4",
       "date": "2026-03-26",

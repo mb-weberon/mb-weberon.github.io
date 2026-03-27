@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SM-IDE — Help</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background: #1c1e21;
+            color: #abb2bf;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            font-size: 14px;
+            line-height: 1.7;
+            padding: 0 0 60px 0;
+        }
+
+        header {
+            background: #21252b;
+            border-bottom: 1px solid #3a3a3a;
+            padding: 16px 32px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        header h1 {
+            font-size: 18px;
+            color: #61dafb;
+            font-weight: 700;
+        }
+
+        header .back {
+            color: #888;
+            text-decoration: none;
+            font-size: 13px;
+        }
+
+        header .back:hover { color: #61dafb; }
+
+        .container {
+            max-width: 760px;
+            margin: 0 auto;
+            padding: 32px 24px;
+        }
+
+        h2 {
+            color: #61dafb;
+            font-size: 16px;
+            font-weight: 700;
+            margin: 36px 0 10px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid #2c313a;
+        }
+
+        h3 {
+            color: #c678dd;
+            font-size: 13px;
+            font-weight: 700;
+            margin: 20px 0 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        p { margin: 8px 0; }
+
+        ul, ol {
+            margin: 8px 0 8px 20px;
+        }
+
+        li { margin: 4px 0; }
+
+        code {
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            color: #e5c07b;
+            background: #2c313a;
+            padding: 1px 5px;
+            border-radius: 3px;
+        }
+
+        pre {
+            background: #21252b;
+            border: 1px solid #3a3a3a;
+            border-radius: 6px;
+            padding: 14px 16px;
+            overflow-x: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            line-height: 1.6;
+            color: #abb2bf;
+            margin: 10px 0;
+        }
+
+        pre .kw  { color: #c678dd; }   /* keywords */
+        pre .str { color: #98c379; }   /* strings  */
+        pre .key { color: #61dafb; }   /* JSON keys */
+        pre .num { color: #d19a66; }   /* numbers  */
+        pre .cm  { color: #5c6370; font-style: italic; } /* comments */
+
+        .callout {
+            background: #2a2d35;
+            border-left: 3px solid #61dafb;
+            border-radius: 0 6px 6px 0;
+            padding: 10px 14px;
+            margin: 12px 0;
+            font-size: 13px;
+        }
+
+        .callout.warn {
+            border-color: #e5c07b;
+            background: #2d2a1e;
+        }
+
+        .step-list {
+            list-style: none;
+            margin-left: 0;
+            counter-reset: steps;
+        }
+
+        .step-list li {
+            counter-increment: steps;
+            display: flex;
+            gap: 12px;
+            margin: 10px 0;
+            align-items: flex-start;
+        }
+
+        .step-list li::before {
+            content: counter(steps);
+            background: #61dafb;
+            color: #1c1e21;
+            font-weight: 700;
+            font-size: 11px;
+            min-width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-top: 2px;
+            flex-shrink: 0;
+        }
+
+        .flow-diagram {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin: 10px 0;
+            align-items: center;
+        }
+
+        .flow-box {
+            background: #2c313a;
+            border: 1px solid #444;
+            border-radius: 4px;
+            padding: 4px 10px;
+            font-size: 12px;
+            font-family: 'Courier New', monospace;
+            color: #61dafb;
+        }
+
+        .flow-box.invoke { border-color: #c678dd; color: #c678dd; }
+        .flow-box.final  { border-color: #98c379; color: #98c379; }
+
+        .flow-arrow {
+            color: #555;
+            font-size: 14px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 10px 0;
+            font-size: 13px;
+        }
+
+        th {
+            text-align: left;
+            padding: 6px 10px;
+            background: #2c313a;
+            color: #61dafb;
+            font-weight: 600;
+            border-bottom: 1px solid #3a3a3a;
+        }
+
+        td {
+            padding: 6px 10px;
+            border-bottom: 1px solid #2c313a;
+        }
+
+        td code { font-size: 11px; }
+    </style>
+</head>
+<body>
+
+<header>
+    <a class="back" href="./">← Back to SM-IDE</a>
+    <h1>SM-IDE Help</h1>
+</header>
+
+<div class="container">
+
+    <!-- ── Overview ── -->
+    <h2>What is SM-IDE?</h2>
+    <p>
+        SM-IDE is a browser-based player and tester for chatbot flows defined as
+        <strong>XState v5 state machines</strong>. You supply two files — a machine
+        definition (JSON) and a services file (JS) — and the IDE renders the chat UI,
+        draws the state diagram, and can automatically run every possible conversation
+        path as a regression test.
+    </p>
+    <p>No build step, no install. Everything runs in the browser.</p>
+
+    <!-- ── Loading a flow ── -->
+    <h2>Loading a Flow</h2>
+    <div class="callout warn">
+        Load Flow requires <strong>both files selected together</strong> in the same
+        file-picker dialog: <code>*-machine.json</code> and <code>*-services.js</code>.
+        Selecting only one will show an error.
+    </div>
+    <ol class="step-list">
+        <li>Click <strong>Load Flow</strong> in the toolbar.</li>
+        <li>In the file picker, select your <code>machine.json</code> <em>and</em>
+            <code>services.js</code> at the same time (hold Ctrl / Cmd to multi-select,
+            or select a ZIP that contains both).</li>
+        <li>The chat UI and diagram appear instantly. The machine starts from its
+            <code>initial</code> state.</li>
+    </ol>
+    <p>
+        You can also load a <strong>ZIP archive</strong> that contains both files —
+        use <strong>Save Flow</strong> to download one from any loaded flow.
+    </p>
+
+    <!-- ── The machine file ── -->
+    <h2>The Machine File (<code>*-machine.json</code>)</h2>
+    <p>
+        A plain JSON object in XState v5 config format. The minimal keys are
+        <code>id</code>, <code>initial</code>, <code>context</code>, and
+        <code>states</code>.
+    </p>
+
+    <h3>State types at a glance</h3>
+    <table>
+        <tr><th>Pattern</th><th>Meaning</th></tr>
+        <tr><td><code>"on": { "EVENT": { "target": "…" } }</code></td>
+            <td>Waits for a user event (button tap or text submit)</td></tr>
+        <tr><td><code>"on": { "SUBMIT": [ { "guard": "…" }, { … } ] }</code></td>
+            <td>Validated text input — guard passes on valid value, fallback on invalid</td></tr>
+        <tr><td><code>"always": [ { "guard": "…", "target": "…" } ]</code></td>
+            <td>Immediate transition — evaluated as soon as the state is entered</td></tr>
+        <tr><td><code>"invoke": { "src": "…", "onDone": … }</code></td>
+            <td>Calls an async service; transitions when it resolves</td></tr>
+        <tr><td><code>"type": "final"</code></td>
+            <td>Terminal state — conversation complete</td></tr>
+    </table>
+
+    <h3>State meta — what the chat UI reads</h3>
+    <table>
+        <tr><th>Field</th><th>Effect</th></tr>
+        <tr><td><code>meta.text</code></td>
+            <td>Bot message shown when entering the state.
+                Use <code>{{contextKey}}</code> to interpolate context values.</td></tr>
+        <tr><td><code>meta.input: "text"</code></td>
+            <td>Shows a free-text input box instead of buttons</td></tr>
+        <tr><td><code>meta.placeholder</code></td>
+            <td>Placeholder for the text input box</td></tr>
+        <tr><td><code>meta.choices</code></td>
+            <td>Array of button labels (overrides auto-generated event names)</td></tr>
+    </table>
+
+    <h3>Example: text input with validation</h3>
+    <pre><span class="cm">// ask_email state from realtor-machine.json</span>
+{
+  <span class="key">"ask_email"</span>: {
+    <span class="key">"meta"</span>: {
+      <span class="key">"text"</span>: <span class="str">"Welcome! Please enter your email address."</span>,
+      <span class="key">"input"</span>: <span class="str">"text"</span>,
+      <span class="key">"placeholder"</span>: <span class="str">"email@example.com"</span>
+    },
+    <span class="key">"on"</span>: {
+      <span class="key">"SUBMIT"</span>: [
+        {
+          <span class="key">"guard"</span>: <span class="str">"isValidEmail"</span>,          <span class="cm">// pass → advance</span>
+          <span class="key">"target"</span>: <span class="str">"ask_status"</span>,
+          <span class="key">"actions"</span>: [
+            { <span class="key">"type"</span>: <span class="str">"updateContext"</span>, <span class="key">"params"</span>: { <span class="key">"mapValueTo"</span>: <span class="str">"user_email"</span> } }
+          ]
+        },
+        {
+          <span class="key">"actions"</span>: [                          <span class="cm">// fail → show error, stay</span>
+            { <span class="key">"type"</span>: <span class="str">"updateContext"</span>, <span class="key">"params"</span>: {
+              <span class="key">"inputError"</span>: <span class="str">"Please provide a valid email address."</span>
+            }}
+          ]
+        }
+      ]
+    }
+  }
+}</pre>
+
+    <h3>Example: choice buttons</h3>
+    <pre>{
+  <span class="key">"ask_status"</span>: {
+    <span class="key">"meta"</span>: { <span class="key">"text"</span>: <span class="str">"Do you rent or own your current home?"</span> },
+    <span class="key">"on"</span>: {
+      <span class="key">"RENT"</span>: { <span class="key">"target"</span>: <span class="str">"ask_timing"</span>, <span class="key">"actions"</span>: [
+        { <span class="key">"type"</span>: <span class="str">"updateContext"</span>, <span class="key">"params"</span>: { <span class="key">"status"</span>: <span class="str">"rent"</span> } }, <span class="str">"record"</span>
+      ]},
+      <span class="key">"OWN"</span>:  { <span class="key">"target"</span>: <span class="str">"ask_order"</span>, <span class="key">"actions"</span>: [
+        { <span class="key">"type"</span>: <span class="str">"updateContext"</span>, <span class="key">"params"</span>: { <span class="key">"status"</span>: <span class="str">"own"</span>  } }, <span class="str">"record"</span>
+      ]}
+    }
+  }
+}</pre>
+
+    <h3>Example: async service invoke</h3>
+    <pre>{
+  <span class="key">"send_transcript"</span>: {
+    <span class="key">"meta"</span>: { <span class="key">"text"</span>: <span class="str">"Got it! A transcript will be emailed to {{user_email}}."</span> },
+    <span class="key">"invoke"</span>: {
+      <span class="key">"src"</span>: <span class="str">"emailTranscript"</span>,   <span class="cm">// name must match a key in services</span>
+      <span class="key">"onDone"</span>:  { <span class="key">"target"</span>: <span class="str">"upload_context"</span> },
+      <span class="key">"onError"</span>: { <span class="key">"target"</span>: <span class="str">"upload_context"</span> }
+    }
+  }
+}</pre>
+
+    <!-- ── The services file ── -->
+    <h2>The Services File (<code>*-services.js</code>)</h2>
+    <p>
+        A single ES module that exports one object containing all async service
+        functions and guards used by the machine. Because the file is loaded as a
+        <strong>blob URL</strong> at runtime, it must be <strong>fully
+        self-contained</strong> — no relative imports.
+    </p>
+
+    <div class="callout">
+        Export your services object as a named export
+        (<code>export const myServices = {…}</code>) or as the default export
+        (<code>export default {…}</code>). The IDE resolves either.
+    </div>
+
+    <h3>Structure</h3>
+    <pre><span class="cm">// Minimal services file structure</span>
+<span class="kw">export const</span> myServices = {
+
+  <span class="cm">// ── Async services ─────────────────────────────────────────────</span>
+  <span class="cm">// Each key matches an "invoke.src" name in the machine JSON.</span>
+  <span class="cm">// Receives { input } where input is the current context.</span>
+  emailTranscript: <span class="kw">async</span> ({ input }) => {
+    <span class="cm">// TODO: replace with real API call</span>
+    <span class="kw">await new</span> Promise(r => setTimeout(r, 0)); <span class="cm">// yield one tick</span>
+    <span class="kw">return</span> { ok: <span class="kw">true</span> };
+  },
+
+  <span class="cm">// ── Guards ─────────────────────────────────────────────────────</span>
+  <span class="cm">// Pure booleans. Each key matches a "guard" name in the machine.</span>
+  guards: {
+    isValidEmail: ({ event })   => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(event.value),
+    isSoon:       ({ context }) => context.timing === <span class="str">'soon'</span>,
+  },
+};</pre>
+
+    <div class="callout warn">
+        Keep all helper code (validators, constants) inside the same file.
+        Relative imports won't work because the file is loaded as a blob URL.
+    </div>
+
+    <!-- ── The full flow of the realtor example ── -->
+    <h2>Walkthrough: Realtor Bot Example</h2>
+    <p>
+        The <code>flows/</code> folder contains a complete example — a real-estate
+        lead-capture chatbot. Its conversation path looks like this:
+    </p>
+
+    <div class="flow-diagram">
+        <div class="flow-box">ask_email</div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-box">ask_status</div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-box">ask_timing / ask_order</div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-box">ask_phone</div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-box">route_by_timing</div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-box">closing_soon / closing_later</div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-box invoke">send_transcript</div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-box invoke">upload_context</div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-box final">finish_screen</div>
+    </div>
+
+    <p>
+        Purple boxes are <strong>invoke states</strong> (async service calls).
+        Green is the <strong>final state</strong>.
+    </p>
+    <p>
+        Guards <code>isValidEmail</code> and <code>isValidPhone</code> keep the user
+        on the current state until valid input is provided.
+        <code>route_by_timing</code> is an <em>always</em> state — it transitions
+        immediately based on <code>context.timing</code> without user interaction.
+    </p>
+
+    <!-- ── Running tests ── -->
+    <h2>Running Tests</h2>
+    <p>
+        Click <strong>Test</strong> to enumerate every possible path through the
+        loaded machine and replay each one headlessly. Results appear in a drawer
+        at the bottom of the screen.
+    </p>
+    <ul>
+        <li>Each row shows the expected event sequence, final state, and pass/fail.</li>
+        <li>Click a row to restore the chat bubbles and diagram for that path.</li>
+        <li>Click <strong>💾 Download JSON</strong> in the results drawer to save the
+            results for later.</li>
+        <li>Click <strong>⛔ Stop</strong> in the status badge to abort a long run.</li>
+    </ul>
+
+    <div class="callout">
+        Tests run <strong>headlessly</strong> — one fresh runtime per path, no DOM
+        rendering during replay. For a 24-path machine like the realtor bot this
+        typically completes in under a second.
+    </div>
+
+    <h3>How paths are generated</h3>
+    <p>
+        The IDE walks the machine graph depth-first and emits one path per unique
+        route to a final state (or per unique prefix if there is no final state).
+        For text-input states it uses sample values defined in
+        <code>generate-traces.js</code> under <code>SAMPLE_INPUTS</code>.
+    </p>
+    <p>
+        Guarded <code>invoke.onDone</code> branches are not enumerated — only the
+        unguarded fallback is tested, because the outcome of a real service call
+        cannot be known statically.
+    </p>
+
+    <!-- ── Loading results ── -->
+    <h2>Loading Saved Results</h2>
+    <ol class="step-list">
+        <li>Click <strong>Load Results</strong> in the toolbar.</li>
+        <li>Select a <code>test-results-*.json</code> file previously downloaded
+            from the results drawer.</li>
+        <li>The IDE restores the machine, services, and all test cases.
+            Click <strong>Test</strong> to re-run against the same machine.</li>
+    </ol>
+    <div class="callout">
+        Results files are self-contained — they include the machine config and the
+        full services source so you can share them and re-run without the original
+        files.
+    </div>
+
+    <!-- ── Toolbar reference ── -->
+    <h2>Toolbar Reference</h2>
+    <table>
+        <tr><th>Button</th><th>What it does</th></tr>
+        <tr><td><strong>Load Flow</strong></td>
+            <td>Open a machine + services pair (or ZIP). Both files must be selected together.</td></tr>
+        <tr><td><strong>Save Flow</strong></td>
+            <td>Download a ZIP of the currently loaded machine + services.</td></tr>
+        <tr><td><strong>Test</strong></td>
+            <td>Run all paths headlessly and show the results drawer.
+                Click again to stop a running test.</td></tr>
+        <tr><td><strong>Restart</strong></td>
+            <td>Reset the chat to the initial state without reloading files.</td></tr>
+        <tr><td><strong>Replay</strong></td>
+            <td>Re-run a specific event sequence entered in the replay bar.</td></tr>
+        <tr><td><strong>Copy Trace</strong></td>
+            <td>Copy the current conversation trace as a JSON array to the clipboard.</td></tr>
+        <tr><td><strong>Pack Prod</strong></td>
+            <td>Download a self-contained HTML file that runs the loaded flow with no
+                dependency on the IDE.</td></tr>
+    </table>
+
+    <!-- ── Context viewer ── -->
+    <h2>Context Viewer</h2>
+    <p>
+        The collapsible panel at the bottom of the right pane shows the current
+        XState context and a step-by-step trace of the conversation:
+    </p>
+    <ul>
+        <li>✅ steps — valid user inputs that advanced the machine</li>
+        <li>❌ steps — validation failures (user stayed on the same state)</li>
+        <li>⚙️ steps — async service calls and their results</li>
+    </ul>
+
+</div>
+</body>
+</html>

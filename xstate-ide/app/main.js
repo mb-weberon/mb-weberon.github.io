@@ -102,6 +102,10 @@ async function boot() {
                     💡 Load Flow requires both files selected together:<br>
                     <code style="color:#61dafb;">*-machine.json</code> and <code style="color:#61dafb;">*-services.js</code>
                 </div>
+                <a href="./help.html" target="_blank" style="
+                    font-size:12px; color:#61dafb; text-decoration:none;
+                    opacity:0.8;
+                ">📖 Help &amp; examples</a>
             </div>`;
 
         const mc = document.getElementById('mermaid-container');
