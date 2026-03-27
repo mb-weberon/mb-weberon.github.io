@@ -365,7 +365,7 @@ export function showResultsDrawer(results, replayFn) {
 
     const isMobile   = window.innerWidth <= 700;
     const HEADER_H   = isMobile ? 52 : 36;   // px — height of the title bar
-    let   collapsed  = isMobile ? true : false;               // always start collapsed
+    let   collapsed  = false;
 
     // ── Drawer shell ──────────────────────────────────────────────────────────
     const drawer = document.createElement('div');
@@ -443,12 +443,6 @@ export function showResultsDrawer(results, replayFn) {
         color: #666;
     `;
     subHeader.innerHTML = `<span>Run at ${new Date(runAt).toLocaleTimeString()}</span>`;
-
-    const dlBtn = document.createElement('button');
-    dlBtn.innerText = '💾 Download JSON';
-    dlBtn.style.cssText = `background:#333; border:none; color:#abb2bf; font-size:10px; padding:2px 6px; border-radius:3px; cursor:pointer;`;
-    dlBtn.onclick = () => window.downloadTestResults?.();
-    subHeader.appendChild(dlBtn);
 
     // ── Table ─────────────────────────────────────────────────────────────────
     const tableWrap = document.createElement('div');
@@ -557,11 +551,6 @@ export function showResultsDrawer(results, replayFn) {
     table.appendChild(tbody);
     tableWrap.appendChild(table);
 
-    // Start collapsed: hide body sections immediately so the drawer never
-    // flashes open before applyCollapsed() runs in the rAF below.
-    subHeader.style.display = 'none';
-    tableWrap.style.display = 'none';
-
     drawer.appendChild(header);
     drawer.appendChild(subHeader);
     drawer.appendChild(tableWrap);
@@ -588,20 +577,28 @@ export function showResultsDrawer(results, replayFn) {
     }
 
     function applyCollapsed() {
-        if (collapsed) {
-            // Slide drawer below viewport so only the header strip sits above toolbar.
-            const fullH     = drawer.scrollHeight;
-            const headerH   = header.offsetHeight;
-            const clearance = _toolbarClearance();
-            drawer.style.bottom    = (clearance + headerH - fullH) + 'px';
-            drawer.style.transform = '';
-        } else {
+        if (isMobile) {
+            // On mobile use transform so the header always peeks at the very
+            // bottom of the viewport when collapsed. Body sections stay rendered
+            // so 100% always reflects the full drawer height.
             drawer.style.bottom    = '0';
-            drawer.style.transform = '';
+            drawer.style.transform = collapsed
+                ? `translateY(calc(100% - ${HEADER_H}px))`
+                : 'translateY(0)';
+        } else {
+            if (collapsed) {
+                const fullH     = drawer.scrollHeight;
+                const headerH   = header.offsetHeight;
+                const clearance = _toolbarClearance();
+                drawer.style.bottom    = (clearance + headerH - fullH) + 'px';
+                drawer.style.transform = '';
+            } else {
+                drawer.style.bottom    = '0';
+                drawer.style.transform = '';
+            }
+            subHeader.style.display = collapsed ? 'none' : '';
+            tableWrap.style.display = collapsed ? 'none' : '';
         }
-        // Show/hide body sections (same on both mobile and desktop)
-        subHeader.style.display = collapsed ? 'none' : '';
-        tableWrap.style.display = collapsed ? 'none' : '';
     }
 
     // Need one rAF after append so offsetHeight is populated
@@ -639,9 +636,8 @@ export function showResultsDrawer(results, replayFn) {
         // Expand the drawer when dragging up from collapsed
         if (collapsed) {
             collapsed = false;
-            subHeader.style.display = '';
-            tableWrap.style.display = '';
-            drawer.style.bottom = '0';
+            drawer.style.transition = 'none';
+            applyCollapsed();
         }
 
         const maxAllowed = window.innerHeight * 0.9 - header.offsetHeight - _toolbarClearance();
