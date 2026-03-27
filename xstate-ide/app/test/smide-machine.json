@@ -1,0 +1,290 @@
+{
+  "id": "sm_ide",
+  "initial": "render_ui",
+  "context": {
+    "flowId": "",
+    "resultsSaved": true,
+    "trace": []
+  },
+  "states": {
+
+    "render_ui": {
+      "meta": {
+        "text": "SM-IDE is ready."
+      },
+      "always": {
+        "target": "booting"
+      }
+    },
+
+    "booting": {
+      "meta": {
+        "text": "Checking for a previously loaded flow."
+      },
+      "invoke": {
+        "src": "checkPersistedState",
+        "onDone": [
+          {
+            "guard": "hasPersistedFlow",
+            "target": "prompt_restore"
+          },
+          {
+            "target": "no_flow"
+          }
+        ],
+        "onError": {
+          "target": "load_error"
+        }
+      }
+    },
+
+    "prompt_restore": {
+      "meta": {
+        "text": "A previous session was found. Restore it or start fresh?"
+      },
+      "on": {
+        "RESTORE": {
+          "target": "restoring_flow",
+          "actions": ["record"]
+        },
+        "START_FRESH": {
+          "target": "no_flow",
+          "actions": ["record"]
+        }
+      }
+    },
+
+    "restoring_flow": {
+      "meta": {
+        "text": "Restoring flow, session, and test results from storage."
+      },
+      "invoke": {
+        "src": "restorePersistedState",
+        "onDone": [
+          {
+            "guard": "hasPersistedResults",
+            "target": "results_ready",
+            "actions": ["record"]
+          },
+          {
+            "guard": "hasPersistedSession",
+            "target": "session_active",
+            "actions": ["record"]
+          },
+          {
+            "target": "flow_idle",
+            "actions": ["record"]
+          }
+        ],
+        "onError": {
+          "target": "load_error"
+        }
+      }
+    },
+
+    "load_error": {
+      "meta": {
+        "text": "Load failed. Check the browser console for details."
+      },
+      "on": {
+        "DISMISS": {
+          "target": "no_flow",
+          "actions": ["record"]
+        }
+      }
+    },
+
+    "no_flow": {
+      "meta": {
+        "text": "No flow loaded. Use Load Flow or Load Results to begin."
+      },
+      "on": {
+        "LOAD_FLOW": {
+          "target": "flow_idle",
+          "actions": ["record"]
+        },
+        "LOAD_RESULTS": {
+          "target": "results_ready",
+          "actions": ["record"]
+        },
+        "LOAD_ERROR": {
+          "target": "load_error",
+          "actions": ["record"]
+        }
+      }
+    },
+
+    "flow_idle": {
+      "meta": {
+        "text": "Flow loaded. Chat at initial state. Ready to converse or run tests."
+      },
+      "on": {
+        "LOAD_FLOW": {
+          "target": "flow_idle",
+          "actions": ["record"]
+        },
+        "LOAD_SERVICES": {
+          "target": "flow_idle",
+          "actions": ["record"]
+        },
+        "RUN_TESTS": {
+          "target": "tests_running",
+          "actions": ["record"]
+        },
+        "CHAT_INPUT": {
+          "target": "session_active",
+          "actions": ["record"]
+        },
+        "RESTART": {
+          "target": "flow_idle",
+          "actions": ["record"]
+        },
+        "LOAD_ERROR": {
+          "target": "load_error",
+          "actions": ["record"]
+        }
+      }
+    },
+
+    "session_active": {
+      "meta": {
+        "text": "Conversation in progress. Trace being recorded."
+      },
+      "on": {
+        "LOAD_FLOW": {
+          "target": "flow_idle",
+          "actions": ["record"]
+        },
+        "LOAD_SERVICES": {
+          "target": "flow_idle",
+          "actions": ["record"]
+        },
+        "RUN_TESTS": {
+          "target": "tests_running",
+          "actions": ["record"]
+        },
+        "CHAT_INPUT": {
+          "target": "session_active",
+          "actions": ["record"]
+        },
+        "REPLAY": {
+          "target": "session_active",
+          "actions": ["record"]
+        },
+        "RESTART": {
+          "target": "flow_idle",
+          "actions": ["record"]
+        },
+        "LOAD_ERROR": {
+          "target": "load_error",
+          "actions": ["record"]
+        }
+      }
+    },
+
+    "tests_running": {
+      "meta": {
+        "text": "Test suite running. All paths exercised automatically. Click Stop to interrupt."
+      },
+      "on": {
+        "TESTS_COMPLETE": {
+          "target": "results_unsaved",
+          "actions": ["record"]
+        },
+        "TESTS_STOP": {
+          "target": "results_unsaved",
+          "actions": ["record"]
+        }
+      }
+    },
+
+    "results_unsaved": {
+      "meta": {
+        "text": "Tests done. Save Results before loading a new flow — Load Flow is locked."
+      },
+      "on": {
+        "SAVE_RESULTS": {
+          "target": "results_saved",
+          "actions": ["record"]
+        },
+        "RUN_TESTS": {
+          "target": "tests_running",
+          "actions": ["record"]
+        },
+        "REPLAY": {
+          "target": "session_active",
+          "actions": ["record"]
+        }
+      }
+    },
+
+    "results_saved": {
+      "meta": {
+        "text": "Results saved to disk. Load Flow re-enabled."
+      },
+      "on": {
+        "LOAD_FLOW": {
+          "target": "flow_idle",
+          "actions": ["record"]
+        },
+        "LOAD_SERVICES": {
+          "target": "flow_idle",
+          "actions": ["record"]
+        },
+        "RUN_TESTS": {
+          "target": "tests_running",
+          "actions": ["record"]
+        },
+        "REPLAY": {
+          "target": "session_active",
+          "actions": ["record"]
+        },
+        "RESTART": {
+          "target": "flow_idle",
+          "actions": ["record"]
+        },
+        "LOAD_ERROR": {
+          "target": "load_error",
+          "actions": ["record"]
+        }
+      }
+    },
+
+    "results_ready": {
+      "meta": {
+        "text": "Results loaded or restored from storage. Drawer shown. Flow active and re-loadable."
+      },
+      "on": {
+        "LOAD_FLOW": {
+          "target": "flow_idle",
+          "actions": ["record"]
+        },
+        "LOAD_SERVICES": {
+          "target": "flow_idle",
+          "actions": ["record"]
+        },
+        "SAVE_RESULTS": {
+          "target": "results_saved",
+          "actions": ["record"]
+        },
+        "RUN_TESTS": {
+          "target": "tests_running",
+          "actions": ["record"]
+        },
+        "REPLAY": {
+          "target": "session_active",
+          "actions": ["record"]
+        },
+        "RESTART": {
+          "target": "flow_idle",
+          "actions": ["record"]
+        },
+        "LOAD_ERROR": {
+          "target": "load_error",
+          "actions": ["record"]
+        }
+      }
+    }
+
+  }
+}
