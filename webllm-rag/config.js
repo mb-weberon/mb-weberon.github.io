@@ -49,8 +49,6 @@ const DEFAULT_SETTINGS = {
     contactBoost:           0.15,
     candidatesMultiplier:   3,
     footnoteSnippetLength:  120,
-    deduplicateSnippets:    true,
-    snippetDedupeThreshold: 0.9,
   },
   ui: {
     systemCommandPrefix: '%SYSTEM%',
@@ -263,7 +261,7 @@ const _state = {
   models:   _doLoadModels(),
 };
 
-const APP_VERSION = 'v1.5';
+const APP_VERSION = 'v1.4';
 
 window.RAGConfig = {
   version: APP_VERSION,

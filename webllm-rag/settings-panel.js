@@ -64,17 +64,6 @@ function populatePanel() {
   _slider('sp-candidates-multiplier',   s.retrieval.candidatesMultiplier);
   _slider('sp-footnote-snippet-length', s.retrieval.footnoteSnippetLength);
 
-  // Content dedup toggle
-  const dedupeEl = document.getElementById('sp-dedupe-snippets');
-  if (dedupeEl) {
-    dedupeEl.checked = s.retrieval.deduplicateSnippets !== false;
-    const dedupeTrack = document.getElementById('sp-dedupe-toggle-track');
-    const dedupeThumb = document.getElementById('sp-dedupe-toggle-thumb');
-    if (dedupeTrack) dedupeTrack.style.background = dedupeEl.checked ? '#3b82f6' : '#d1d5db';
-    if (dedupeThumb) dedupeThumb.style.transform   = dedupeEl.checked ? 'translateX(18px)' : 'translateX(0)';
-  }
-  _slider('sp-dedupe-threshold', s.retrieval.snippetDedupeThreshold ?? 0.9);
-
   // Models tab
   renderModelCards();
 
@@ -115,17 +104,6 @@ function initSliders() {
     ragThumb.style.transform   = ragCheckbox.checked ? 'translateX(18px)' : 'translateX(0)';
   }
   if (ragCheckbox) ragCheckbox.addEventListener('change', updateRagToggleVisual);
-
-  // Content dedup toggle visual wiring
-  const dedupeCheckbox = document.getElementById('sp-dedupe-snippets');
-  const dedupeTrack    = document.getElementById('sp-dedupe-toggle-track');
-  const dedupeThumb    = document.getElementById('sp-dedupe-toggle-thumb');
-  function updateDedupeToggleVisual() {
-    if (!dedupeCheckbox || !dedupeTrack || !dedupeThumb) return;
-    dedupeTrack.style.background = dedupeCheckbox.checked ? '#3b82f6' : '#d1d5db';
-    dedupeThumb.style.transform  = dedupeCheckbox.checked ? 'translateX(18px)' : 'translateX(0)';
-  }
-  if (dedupeCheckbox) dedupeCheckbox.addEventListener('change', updateDedupeToggleVisual);
 }
 
 // ---------------------------------------------------------------------------
@@ -152,9 +130,6 @@ function saveSettings() {
   current.retrieval.contactBoost          = parseFloat(document.getElementById('sp-contact-boost').value);
   current.retrieval.candidatesMultiplier  = parseInt(document.getElementById('sp-candidates-multiplier').value);
   current.retrieval.footnoteSnippetLength = parseInt(document.getElementById('sp-footnote-snippet-length').value);
-  const dedupeEl = document.getElementById('sp-dedupe-snippets');
-  current.retrieval.deduplicateSnippets    = dedupeEl ? dedupeEl.checked : true;
-  current.retrieval.snippetDedupeThreshold = parseFloat(document.getElementById('sp-dedupe-threshold').value);
 
   RAGConfig.applySettings(current);
 
