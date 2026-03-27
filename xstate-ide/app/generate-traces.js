@@ -693,6 +693,12 @@ export function showResultsDrawer(results, replayFn) {
         if (_headerDragOccurred) { _headerDragOccurred = false; return; }
         collapsed = !collapsed;
         applyCollapsed();
+        // Refit diagram: immediately for desktop (no transition), after
+        // transitionend for mobile (300ms transform transition).
+        requestAnimationFrame(() => window._fitDiagramAboveDrawer?.(drawer));
+        drawer.addEventListener('transitionend',
+            () => window._fitDiagramAboveDrawer?.(drawer),
+            { once: true });
     };
 
     // ── Desktop drag to move ───────────────────────────────────────────────────

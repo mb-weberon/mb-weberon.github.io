@@ -19,7 +19,7 @@
     --panel:       #ffffff;
     --accent:      #0084ff;
     --dark:        #1c1e21;
-    --handle-w:    18px;
+    --handle-w:    9px;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -150,38 +150,40 @@ input[type="text"]:focus { border-color: var(--accent); }
     background: #23272e;
     border-right: 1px solid #333;
     display: flex;
-    flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 6px;
     cursor: ew-resize;
     z-index: 30;
     flex-shrink: 0;
     user-select: none;
     touch-action: none;
+    overflow: visible; /* allow hit-zone pseudo-element to extend beyond bounds */
 }
 
 #slide-handle:hover  { background: #2c313a; }
 #slide-handle:active { background: #353b48; }
 
-/* Vertical grip dots */
+/* Transparent hit-zone extension — 30px into diagram (left) + 30px into chat (right).
+   Pointer/touch events on this area fire on #slide-handle. */
 #slide-handle::before {
-    content: '⋮';
-    color: #555;
-    font-size: 18px;
-    line-height: 1;
-    letter-spacing: -2px;
+    content: '';
+    position: absolute;
+    left: -30px;
+    right: -30px;
+    top: 0;
+    bottom: 0;
 }
 
-/* Horizontal grab pill — visible cue for touch users */
+/* Grip pill — centered visual cue */
 #slide-handle::after {
     content: '';
     display: block;
-    width: 4px;
-    height: 32px;
+    width: 3px;
+    height: 28px;
     background: #444;
     border-radius: 2px;
-    /* Subtle glow on hover via parent */
+    position: relative;
+    z-index: 1; /* above the transparent ::before */
 }
 
 #slide-handle:hover::after { background: #61dafb; }
@@ -222,6 +224,65 @@ input[type="text"]:focus { border-color: var(--accent); }
     flex: 1;
     overflow: hidden;
     min-width: 0;
+    position: relative;  /* anchor for #pane-tab absolute positioning */
+}
+
+/* ── Pane tab — mobile-only semicircular pull tab ───────────────────────────── */
+/*                                                                               */
+/* Replaces the full-height slide-handle on mobile. Positioned just above       */
+/* #profile-toggle (set by JS). Protrudes rightward into the chat area.         */
+/* When the pane is fully collapsed, scaleX(-1) flips it so the bump protrudes  */
+/* leftward into the diagram area and the arrow reverses direction.              */
+#pane-tab {
+    display: none;         /* shown only on mobile via media query below */
+    position: absolute;
+    left: 0;
+    /* bottom: set by JS (_positionPaneTab) */
+    width: 60px;
+    height: 60px;
+    background: #23272e;
+    border: 1px solid #3a3f4b;
+    border-left: none;
+    border-radius: 0 30px 30px 0;
+    z-index: 25;
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+    touch-action: none;
+    user-select: none;
+    box-shadow: 3px 0 8px rgba(0,0,0,0.35);
+    transition: transform 0.3s ease, background 0.15s;
+}
+
+#pane-tab:active { background: #353b48; }
+
+#pane-tab-arrow {
+    color: #61dafb;
+    font-size: 15px;
+    line-height: 1;
+    pointer-events: none;
+}
+
+/* ── Ghost tab — fixed at right edge when pane is fully collapsed ────────────── */
+/* Mirror image of #pane-tab: flat edge at screen right, bump protrudes left.    */
+#pane-tab-ghost {
+    display: none;         /* shown by JS (_applyOffset) on mobile when collapsed */
+    position: fixed;
+    right: 0;
+    /* bottom: set by JS (_positionGhostTab) */
+    width: 60px;
+    height: 60px;
+    background: #23272e;
+    border: 1px solid #3a3f4b;
+    border-right: none;
+    border-radius: 30px 0 0 30px;
+    z-index: 30;
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+    touch-action: none;
+    user-select: none;
+    box-shadow: -3px 0 8px rgba(0,0,0,0.35);
 }
 
 /* ── App title bar ──────────────────────────────────────────────────────────── */
@@ -479,7 +540,9 @@ input[type="text"]:focus { border-color: var(--accent); }
 /* ── Mobile overrides ───────────────────────────────────────────────────────── */
 @media (max-width: 700px) {
     /* Switch to the full-width overlay / translateX slide model on small screens */
-    :root { --handle-w: 32px; }
+    /* --handle-w is 0: the full-height slide-handle is hidden; #pane-tab       */
+    /* (the semicircular pull tab) takes over as the sole resize/collapse control */
+    :root { --handle-w: 9px; }
 
     #diagram-pane {
         position: absolute;
@@ -490,7 +553,7 @@ input[type="text"]:focus { border-color: var(--accent); }
     #right-pane {
         position: absolute;
         top: 0; right: 0; bottom: 0;
-        width: 100% !important;
+        width: 99% !important;
         max-width: unset;
         transform: translateX(0);
         transition: transform 0.3s ease;
@@ -498,22 +561,12 @@ input[type="text"]:focus { border-color: var(--accent); }
     }
 
     #pane-content {
-        width: calc(var(--visible-pane-w, 100vw) - var(--handle-w));
-        max-width: calc(100vw - var(--handle-w));
+        margin-left: 0;
+        width: var(--visible-pane-w, 100vw);
+        max-width: 100vw;
     }
 
-    #slide-handle {
-        cursor: ew-resize;
-        width: var(--handle-w);
-    }
-
-    /* Wider pill on mobile so it's easy to grab */
-    #slide-handle::after {
-        width: 5px;
-        height: 40px;
-        background: #555;
-        border-radius: 3px;
-    }
+    #pane-tab     { display: none; }
 }
 
 /* ── Force mobile layout (for ui-contracts) ─────────────────────────────────── */
@@ -526,7 +579,7 @@ body.force-mobile-layout #diagram-pane {
 body.force-mobile-layout #right-pane {
     position: absolute;
     top: 0; right: 0; bottom: 0;
-    width: 100% !important;
+    width: 99% !important;
     max-width: unset;
     transform: translateX(0);
     transition: transform 0.3s ease;
@@ -539,18 +592,13 @@ body.force-mobile-layout #pane-content {
 }
 
 body.force-mobile-layout {
-    --handle-w: 32px;
+    --handle-w: 9px;
 }
 
-body.force-mobile-layout #slide-handle {
-    cursor: ew-resize;
-    width: var(--handle-w);
+body.force-mobile-layout #pane-content {
+    margin-left: 0;
+    width: var(--visible-pane-w, 100vw);
+    max-width: 100vw;
 }
 
-/* Wider pill on mobile so it's easy to see and grab */
-body.force-mobile-layout #slide-handle::after {
-    width: 5px;
-    height: 40px;
-    background: #555;
-    border-radius: 3px;
-}
+body.force-mobile-layout #pane-tab { display: none; }

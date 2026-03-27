@@ -57,6 +57,11 @@
                      context viewer toggle → context viewer → replay bar → toolbar
                 ──────────────────────────────────────────────────────────── -->
 
+                <!-- Mobile pull tab — semicircle at left edge, just above CONTEXT & STATE -->
+                <div id="pane-tab" aria-label="Resize or collapse pane">
+                    <span id="pane-tab-arrow">›</span>
+                </div>
+
                 <!-- Context viewer (collapsed by default) -->
                 <div id="profile-toggle" onclick="window.toggleProfile()">
                     <span>CONTEXT &amp; STATE</span>
@@ -101,6 +106,11 @@
         </div><!-- end #right-pane -->
 
     </div><!-- end #app -->
+
+    <!-- Ghost tab — fixed at right edge, visible only when pane is fully collapsed -->
+    <div id="pane-tab-ghost" aria-label="Expand pane">
+        <span style="color:#61dafb; font-size:15px; line-height:1; pointer-events:none;">‹</span>
+    </div>
 
     <!-- Touch tooltip -->
     <div id="touch-tooltip"></div>
@@ -220,38 +230,90 @@
             applyTransform();
         }, { passive: false });
 
-        // ── Slide handle — translateX overlay model ───────────────────────────
+        // ── Slide handle / pane tab — translateX overlay model ────────────────
         //
-        // #right-pane is position:absolute, full viewport width, z-index:10.
-        // Dragging the handle translates the pane rightward (positive X) to
-        // reveal the diagram underneath. Content never reflows.
+        // Desktop (> 700px):
+        //   #slide-handle is a full-height bar on the left edge of #right-pane.
+        //   Mouse drag resizes freely; click toggles a snap position.
         //
-        // _panOffset: current translateX in px. 0 = fully covering, max = handle-only.
-        const slideHandle = document.getElementById('slide-handle');
-        const rightPane   = document.getElementById('right-pane');
+        // Mobile (≤ 700px):
+        //   #slide-handle is hidden. Two elements handle interaction:
+        //   • #pane-tab  — semicircular tab inside pane-content, visible when open.
+        //                  Drag: free resize (snap closed if < MIN_VISIBLE px chat).
+        //                  Tap: collapse fully.
+        //   • #pane-tab-ghost — fixed at right edge, visible only when fully
+        //                  collapsed. Mirror image (left-protruding bump).
+        //                  Drag: free expand. Tap: expand to full.
+        //
+        // _panOffset: translateX of #right-pane.
+        //   0           = pane fully open (full chat visible).
+        //   maxOffset() = pane fully collapsed (ghost tab at right edge).
+        const slideHandle  = document.getElementById('slide-handle');
+        const rightPane    = document.getElementById('right-pane');
+        const paneTab      = document.getElementById('pane-tab');
+        const paneTabGhost = document.getElementById('pane-tab-ghost');
 
-        const HANDLE_W = parseInt(getComputedStyle(document.documentElement)
-                            .getPropertyValue('--handle-w')) || 18;
+        const HANDLE_W  = parseInt(getComputedStyle(document.documentElement)
+                              .getPropertyValue('--handle-w')) || 18;
+        const TAB_W     = 44;   // must match #pane-tab width in ide-theme.css
+        const MIN_VISIBLE = 80; // px — snap closed if chat narrower than this
+
+        const isMobileLayout = () =>
+            window.innerWidth <= 700 ||
+            document.body.classList.contains('force-mobile-layout');
 
         let _panOffset = 0;
-        let _snapOpen  = false;
 
-        const maxOffset = () => window.innerWidth - HANDLE_W;
+        const maxOffset = () =>
+            isMobileLayout() ? window.innerWidth * 0.9 : window.innerWidth - HANDLE_W;
 
         function _applyOffset(offset, animated) {
             _panOffset = Math.max(0, Math.min(maxOffset(), offset));
-            // Store on element so visualViewport handler in main.js can read it
             rightPane._panOffset = _panOffset;
             rightPane.style.transition = animated ? 'transform 0.3s ease' : 'none';
             rightPane.style.transform  = `translateX(${_panOffset}px)`;
-            // Update --visible-pane-w so #pane-content reflows as pane slides
-            const visibleW = window.innerWidth - _panOffset;
-            rightPane.style.setProperty('--visible-pane-w', visibleW + 'px');
+            rightPane.style.setProperty('--visible-pane-w',
+                (window.innerWidth - _panOffset) + 'px');
+
+            // Desktop handle arrow
             const arrow = document.getElementById('handle-arrow');
             if (arrow) arrow.textContent = _panOffset > 10 ? '›' : '‹';
+
+            // Send button: left when pane is compressed, right when fully open
+            const pc = document.getElementById('pane-content');
+            if (pc) pc.classList.toggle('pane-narrow', _panOffset > 0);
         }
 
-        // Desktop mouse drag
+        // Position #pane-tab above #profile-toggle (with a gap).
+        // Called once at load and on resize.
+        const TAB_GAP = 24; // px gap between tab bottom and profile-toggle top
+        function _positionPaneTab() {
+            if (!paneTab) return;
+            const toggle = document.getElementById('profile-toggle');
+            const pane   = document.getElementById('pane-content');
+            if (!toggle || !pane) return;
+            const paneRect   = pane.getBoundingClientRect();
+            const toggleRect = toggle.getBoundingClientRect();
+            // bottom = dist from pane-content bottom to toggle top, + gap
+            paneTab.style.bottom =
+                Math.round(paneRect.bottom - toggleRect.top + TAB_GAP) + 'px';
+        }
+
+        // Position #pane-tab-ghost at the exact same viewport Y as #pane-tab.
+        // translateX on the pane does not affect getBoundingClientRect().top,
+        // so this stays accurate regardless of the pane's horizontal position.
+        function _positionGhostTab() {
+            if (!paneTabGhost || !paneTab) return;
+            const tabRect = paneTab.getBoundingClientRect();
+            paneTabGhost.style.top    = Math.round(tabRect.top) + 'px';
+            paneTabGhost.style.bottom = 'auto';
+        }
+
+        _positionPaneTab();
+        _positionGhostTab();
+        window.addEventListener('resize', () => { _positionPaneTab(); _positionGhostTab(); });
+
+        // ── Desktop mouse drag on #slide-handle ──────────────────────────────
         let _dragging = false, _dragStartX = 0, _dragStartOffset = 0;
 
         slideHandle.addEventListener('mousedown', (e) => {
@@ -269,52 +331,45 @@
             _applyOffset(_dragStartOffset + (e.clientX - _dragStartX), false);
         });
 
-        document.addEventListener('mouseup', (e) => {
+        document.addEventListener('mouseup', () => {
             if (!_dragging) return;
             _dragging = false;
             document.body.style.cursor     = '';
             document.body.style.userSelect = '';
-            const moved = Math.abs(e.clientX - _dragStartX);
-            if (moved < 6) {
-                // Tap: toggle snap
-                _snapOpen = !_snapOpen;
-                _applyOffset(_snapOpen ? maxOffset() * 0.55 : 0, true);
-            } else {
-                _snapOpen = _panOffset > maxOffset() * 0.2;
-                _applyOffset(_snapOpen ? _panOffset : 0, true);
-            }
         });
 
-        // Touch drag (works on both mobile and desktop touch)
-        let _tDragging = false, _tStartX = 0, _tStartOffset = 0;
+        // ── Touch drag on slide-handle (mobile) ───────────────────────────────
+        // The handle's ::before pseudo-element extends 30px into the diagram and
+        // 30px into the chat pane, so the touch target is ~69px wide despite the
+        // handle being only 9px visually.
 
         slideHandle.addEventListener('touchstart', (e) => {
-            _tDragging    = true;
-            _tStartX      = e.touches[0].clientX;
-            _tStartOffset = _panOffset;
-            rightPane.style.transition = 'none';
-            e.stopPropagation();
+            _dragging        = true;
+            _dragStartX      = e.touches[0].clientX;
+            _dragStartOffset = _panOffset;
+            document.body.style.userSelect = 'none';
+            rightPane.style.transition     = 'none';
+            e.preventDefault(); // prevent scroll and mouse-event emulation
+        }, { passive: false });
+
+        document.addEventListener('touchmove', (e) => {
+            if (!_dragging) return;
+            _applyOffset(_dragStartOffset + (e.touches[0].clientX - _dragStartX), false);
         }, { passive: true });
 
-        slideHandle.addEventListener('touchmove', (e) => {
-            if (!_tDragging) return;
-            _applyOffset(_tStartOffset + (e.touches[0].clientX - _tStartX), false);
-            e.stopPropagation();
-        }, { passive: true });
+        document.addEventListener('touchend', () => {
+            if (!_dragging) return;
+            _dragging = false;
+            document.body.style.userSelect = '';
+            rightPane.style.transition     = '';
+        });
 
-        slideHandle.addEventListener('touchend', (e) => {
-            if (!_tDragging) return;
-            _tDragging = false;
-            const moved = Math.abs(e.changedTouches[0].clientX - _tStartX);
-            if (moved < 6) {
-                _snapOpen = !_snapOpen;
-                _applyOffset(_snapOpen ? maxOffset() * 0.55 : 0, true);
-            } else {
-                _snapOpen = _panOffset > maxOffset() * 0.2;
-                _applyOffset(_snapOpen ? _panOffset : 0, true);
-            }
-            e.stopPropagation();
-        }, { passive: true });
+        document.addEventListener('touchcancel', () => {
+            if (!_dragging) return;
+            _dragging = false;
+            document.body.style.userSelect = '';
+            rightPane.style.transition     = '';
+        });
 
         // ── Test results drawer: lifecycle hook ───────────────────────────────
         // main.js owns all drawer logic (row icons, height cap, diagram resize).

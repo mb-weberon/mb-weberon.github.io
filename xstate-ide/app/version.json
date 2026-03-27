@@ -1,9 +1,24 @@
 {
   "major": 0,
   "minor": 12,
-  "patch": 14,
+  "patch": 17,
   "label": "",
   "history": [
+    {
+      "version": "0.12.17",
+      "date": "2026-03-27",
+      "note": "UX: pane-tab free drag (stops at release position, snaps closed only if chat < 80px); tab raised by 24px above profile-toggle; ghost tab (#pane-tab-ghost, position:fixed right:0, left-protruding bump) replaces tab when fully collapsed — tap to expand, drag to free resize"
+    },
+    {
+      "version": "0.12.16",
+      "date": "2026-03-27",
+      "note": "UX: mobile slide handle replaced by semicircular pull tab (#pane-tab) at left edge of pane just above CONTEXT & STATE — tap to collapse/expand, drag to resize; flips via scaleX(-1) when fully collapsed so bump protrudes into diagram; desktop slide-handle unchanged"
+    },
+    {
+      "version": "0.12.15",
+      "date": "2026-03-27",
+      "note": "UX: narrow pane — Send button moves to left of input field when pane-content width < 220px (ResizeObserver toggles pane-narrow class; flex-direction: row-reverse in chat-theme.css)"
+    },
     {
       "version": "0.12.14",
       "date": "2026-03-27",

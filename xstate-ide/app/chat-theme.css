@@ -139,3 +139,9 @@
 
 #input-area button:hover  { opacity: 0.85; }
 #input-area button:active { opacity: 0.7;  }
+
+/* ── Narrow pane: move Send to the left so it's reachable with one thumb ─── */
+/* Toggled by a ResizeObserver in main.js when #pane-content width < 220px.   */
+#pane-content.pane-narrow #input-area {
+    flex-direction: row-reverse;
+}

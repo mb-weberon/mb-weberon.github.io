@@ -202,6 +202,10 @@ async function boot() {
         _showBlankSlate();
     }
 
+    // ── Narrow-pane input layout ──────────────────────────────────────────────
+    // pane-narrow is toggled by _applyOffset in index.html whenever _panOffset > 0.
+    // No ResizeObserver needed — the slide offset is the canonical signal.
+
     // Disable buttons that require a loaded flow
     function _setFlowLoaded(loaded) {
         const ids = ['test-btn', 'restart-btn', 'save-flow-btn', 'pack-prod-btn', 'copy-btn'];
@@ -894,6 +898,9 @@ async function boot() {
         const toolbar = document.getElementById('toolbar');
         if (toolbar) toolbar.style.paddingBottom = '';
     }
+
+    // Expose so generate-traces.js can call it after snap-collapse
+    window._fitDiagramAboveDrawer = _fitDiagramAboveDrawer;
 
     window._onDrawerAdded = (drawer) => {
         _setupDrawer(drawer);
