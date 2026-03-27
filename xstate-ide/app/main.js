@@ -99,8 +99,8 @@ async function boot() {
                     background:#2a2a2a; border:1px solid #3a3a3a;
                     border-radius:6px; padding:10px 14px; max-width:260px;
                 ">
-                    💡 Load Flow requires both files selected together:<br>
-                    <code style="color:#61dafb;">*-machine.json</code> and <code style="color:#61dafb;">*-services.js</code>
+                    💡 Select <code style="color:#61dafb;">*-machine.json</code> alone, or together with<br>
+                    <code style="color:#61dafb;">*-services.js</code> if the flow uses guards or async services.
                 </div>
                 <a href="./help.html" target="_blank" style="
                     font-size:12px; color:#61dafb; text-decoration:none;
@@ -298,7 +298,7 @@ async function boot() {
             await reloadServices(strFromU8(unzipped[servicesEntry]), servicesEntry);
         } else {
             if (!jsonFile && !jsFile) { const m = 'Unsupported file type — load a .zip, .json, or .js'; console.error('❌', m); showToast(m); return; }
-            if (jsonFile && !jsFile)  { const m = 'Load the .js services file alongside the .json'; console.error('❌', m); showToast(m); return; }
+            if (jsonFile && !jsFile)  activeServices = {};   // no services — reset to empty
             if (jsonFile) {
                 try { newConfig = JSON.parse(await readText(jsonFile)); }
                 catch (e) { const m = `Invalid machine JSON: ${e.message}`; console.error('❌', m); showToast(m); return; }
@@ -352,7 +352,8 @@ async function boot() {
             // Revoke after import resolves, not before — some browsers re-resolve
             // the URL during module linking which fails if already revoked.
             URL.revokeObjectURL(blobUrl);
-            const newServices = mod.realtorServices ?? mod.default ?? mod;
+            const named = Object.keys(mod).find(k => k !== 'default');
+            const newServices = mod.default ?? (named ? mod[named] : { ...mod });
             // Update activeServices so _activateFlow (called right after) picks it up
             activeServices = newServices;
             // Also patch the live runtime in case only services changed (no new config)

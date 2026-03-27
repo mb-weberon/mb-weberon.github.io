@@ -1,9 +1,24 @@
 {
   "major": 0,
   "minor": 12,
-  "patch": 5,
+  "patch": 8,
   "label": "",
   "history": [
+    {
+      "version": "0.12.8",
+      "date": "2026-03-26",
+      "note": "Fix: reloadServices dynamic export resolution — no longer hardcoded to realtorServices; picks default export, then first named export, then plain-object spread; prevents sealed module namespace being stored as activeServices"
+    },
+    {
+      "version": "0.12.7",
+      "date": "2026-03-26",
+      "note": "Fix: subscription-services.js — services hoisted to top level, guard signatures fixed for XState 5, process.env removed, watchRetryWindow made non-resolving to prevent past_due self-loop; subscription-machine.json added to repo"
+    },
+    {
+      "version": "0.12.6",
+      "date": "2026-03-26",
+      "note": "Fix: services file optional — loading a bare machine.json without services.js now works (activeServices reset to {}); blank-slate hint and help.html updated accordingly"
+    },
     {
       "version": "0.12.5",
       "date": "2026-03-26",

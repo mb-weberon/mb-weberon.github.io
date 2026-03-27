@@ -218,16 +218,12 @@
 
     <!-- ── Loading a flow ── -->
     <h2>Loading a Flow</h2>
-    <div class="callout warn">
-        Load Flow requires <strong>both files selected together</strong> in the same
-        file-picker dialog: <code>*-machine.json</code> and <code>*-services.js</code>.
-        Selecting only one will show an error.
-    </div>
     <ol class="step-list">
         <li>Click <strong>Load Flow</strong> in the toolbar.</li>
-        <li>In the file picker, select your <code>machine.json</code> <em>and</em>
-            <code>services.js</code> at the same time (hold Ctrl / Cmd to multi-select,
-            or select a ZIP that contains both).</li>
+        <li>In the file picker, select your <code>machine.json</code>.
+            If the flow uses guards or async services, also select the
+            <code>services.js</code> at the same time (hold Ctrl / Cmd to
+            multi-select). You can also select a ZIP that contains both.</li>
         <li>The chat UI and diagram appear instantly. The machine starts from its
             <code>initial</code> state.</li>
     </ol>
@@ -369,6 +365,11 @@
     <div class="callout warn">
         Keep all helper code (validators, constants) inside the same file.
         Relative imports won't work because the file is loaded as a blob URL.
+    </div>
+    <div class="callout">
+        If the flow has no services or guards, the services file can be omitted
+        entirely — just load the <code>machine.json</code> on its own.
+        An empty <code>services.js</code> also works.
     </div>
 
     <!-- ── The full flow of the realtor example ── -->
