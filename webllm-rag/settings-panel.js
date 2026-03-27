@@ -63,6 +63,8 @@ function populatePanel() {
   _slider('sp-contact-boost',           s.retrieval.contactBoost);
   _slider('sp-candidates-multiplier',   s.retrieval.candidatesMultiplier);
   _slider('sp-footnote-snippet-length', s.retrieval.footnoteSnippetLength);
+  _slider('sp-explore-count',           (s.questions || {}).exploreCount ?? 20);
+  _slider('sp-related-count',           (s.questions || {}).relatedCount ?? 5);
 
   // Models tab
   renderModelCards();
@@ -114,7 +116,7 @@ function saveSettings() {
 
   // Prompt
   current.llm.systemPrompt         = document.getElementById('sp-system-prompt').value.trim();
-  current.ui.systemCommandPrefix    = document.getElementById('sp-sys-cmd-prefix').value.trim() || '%SYSTEM%';
+  current.ui.systemCommandPrefix    = document.getElementById('sp-sys-cmd-prefix').value.trim() || '//';
   current.ui.welcomeMessage         = document.getElementById('sp-welcome-msg').value.trim();
 
   // Inference
@@ -130,6 +132,9 @@ function saveSettings() {
   current.retrieval.contactBoost          = parseFloat(document.getElementById('sp-contact-boost').value);
   current.retrieval.candidatesMultiplier  = parseInt(document.getElementById('sp-candidates-multiplier').value);
   current.retrieval.footnoteSnippetLength = parseInt(document.getElementById('sp-footnote-snippet-length').value);
+  if (!current.questions) current.questions = {};
+  current.questions.exploreCount = parseInt(document.getElementById('sp-explore-count').value);
+  current.questions.relatedCount = parseInt(document.getElementById('sp-related-count').value);
 
   RAGConfig.applySettings(current);
 

@@ -330,6 +330,11 @@ function updateEngineStatus() {
 }
 
 // ---------------------------------------------------------------------------
+// Per-message related questions (in-memory only, not persisted)
+// ---------------------------------------------------------------------------
+const messageRelated = new Map();  // msgIndex (int) → string[]
+
+// ---------------------------------------------------------------------------
 // Index state — split across 3 files
 // ---------------------------------------------------------------------------
 let metaDocs    = [];          // [{ id, url, title }]
@@ -389,6 +394,44 @@ async function loadIndex() {
     updateEngineStatus();
   }
 }
+
+// Refresh index files AND question panel JS without reloading the LLM or the page.
+// Cache-busts index files and reinjects app-hot.js as a new script tag,
+// overwriting live function definitions without touching the loaded model.
+window.refreshIndex = async function() {
+  const statusEl = document.getElementById('status');
+  statusEl.textContent = 'Refreshing…';
+  const t = Date.now();
+  try {
+    // Reload index data
+    const [metaRes, binRes] = await Promise.all([
+      fetch(`index-meta.json?t=${t}`),
+      fetch(`index-embeddings.bin?t=${t}`),
+    ]);
+    if (!metaRes.ok || !binRes.ok) throw new Error('Index files not found');
+    const meta   = await metaRes.json();
+    const binBuf = await binRes.arrayBuffer();
+    metaDocs  = meta.documents;
+    embMatrix = new Float32Array(binBuf);
+    textCache = null;
+    console.log(`✅ Index refreshed — ${metaDocs.length} chunks`);
+
+    // Reload app-hot.js — overwrites window.renderQuestions, selectDiverse etc.
+    await new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = `app-hot.js?t=${t}`;
+      s.onload  = resolve;
+      s.onerror = () => reject(new Error('app-hot.js failed to load'));
+      document.head.appendChild(s);
+    });
+
+    loadInitialQuestions();
+    statusEl.textContent = `✅ Refreshed (${metaDocs.length} chunks)`;
+  } catch (e) {
+    console.error('❌ Refresh failed:', e);
+    statusEl.textContent = `Refresh failed: ${e.message}`;
+  }
+};
 
 // Lazy-load index-text.json on first query
 async function ensureTextLoaded() {
@@ -1137,6 +1180,7 @@ window.ask = async function() {
 
   input.value     = '';
   input.disabled  = true;
+  document.getElementById('questions-list')?.classList.add('questions-disabled');
 
   // Swap send → stop button
   sendBtn.onclick   = window.stopGeneration;
@@ -1206,10 +1250,11 @@ window.ask = async function() {
     saveMessages();
     renderMessages();
   }
-  if (chatSucceeded) updateQuestionsFromChat(answer);
+  if (chatSucceeded) updateQuestionsFromChat(answer, messages.length - 1);
 
   // Restore send button
   input.disabled    = false;
+  document.getElementById('questions-list')?.classList.remove('questions-disabled');
   sendBtn.onclick   = window.ask;
   sendBtn.title     = '';
   sendBtn.classList.remove('bg-red-500', 'hover:bg-red-600', 'active:bg-red-700');
@@ -1235,60 +1280,55 @@ function saveMessages() {
   storageSet(RAGConfig.KEYS.chatMessages, JSON.stringify(messages));
 }
 
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
 function renderMessages() {
   const container = document.getElementById('messages');
 
-  container.innerHTML = messages.map(m => {
+  container.innerHTML = messages.map((m, i) => {
     let content = m.content;
 
     if (m.role === 'assistant') {
-      // Escape raw HTML
       content = content
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
 
-      // Replace [1], [2], [3] citation markers with superscript links
+      // Inline citation markers → superscript links
       if (m.sources && m.sources.length) {
         content = content.replace(/\[(\d+)\]/g, (match, num) => {
-          const idx = parseInt(num) - 1;
-          const source = m.sources[idx];
-          if (!source) return match;
-          const title = source.title || source.url.split('/').pop() || `Source ${num}`;
-          return `<a href="${source.url}" target="_blank" class="text-blue-600 hover:text-blue-800 font-semibold underline" title="${title}">[${num}]</a>`;
+          const src = m.sources[parseInt(num) - 1];
+          if (!src) return match;
+          const title = src.title || src.url.split('/').pop() || `Source ${num}`;
+          return `<a href="${escHtml(src.url)}" target="_blank" class="text-blue-600 hover:text-blue-800 font-semibold underline" title="${escHtml(title)}">[${num}]</a>`;
         });
       }
 
       content = linkify(content);
-
-      // Render **bold** markdown
       content = content.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
 
-      // Build footnotes block from sources
+      // Source chips
       if (m.sources && m.sources.length) {
-        const footnotes = m.sources.map((s, i) => {
+        const chips = m.sources.map(s => {
           let title = s.title;
           if (!title || title === 'undefined') {
             title = s.url.split('/').pop()
-              ?.replace(/-/g, ' ').replace(/\.html?$/, '').replace(/\?.*/, '') || 'Home';
+              ?.replace(/-/g,' ').replace(/\.html?$/,'').replace(/\?.*/,'') || 'Source';
           }
-          const snippet = s.snippet
-            ? `<div class="text-gray-500 text-xs mt-0.5">${s.snippet}…</div>`
-            : '';
-          return `<div class="flex items-start gap-1.5 mb-2">
-            <span class="text-gray-400 font-medium min-w-[1.2rem]">[${i+1}]</span>
-            <div>
-              <a href="${s.url}" target="_blank" class="text-blue-600 hover:underline text-xs font-medium">${title}</a>
-              <div class="text-gray-400 text-xs">${s.url}</div>
-              ${snippet}
-            </div>
-          </div>`;
+          return `<a href="${escHtml(s.url)}" target="_blank" class="msg-source-chip">${escHtml(title)}</a>`;
         }).join('');
+        content += `<div class="msg-source-chips">${chips}</div>`;
+      }
 
-        content += `
-          <div class="mt-3 pt-3 border-t border-gray-100">
-            ${footnotes}
-          </div>`;
+      // Related question chips (populated async)
+      const related = messageRelated.get(i) || [];
+      if (related.length) {
+        const chips = related.map(q =>
+          `<button class="msg-question-chip" data-question="${escHtml(q)}">${escHtml(q)}</button>`
+        ).join('');
+        content += `<div class="msg-related-chips">${chips}</div>`;
       }
     }
 
@@ -1430,80 +1470,36 @@ window.downloadChat = function() {
   URL.revokeObjectURL(url);
 };
 
-// Render question items into the persistent questions panel.
-function renderQuestions(items) {
-  const list = document.getElementById('questions-list');
-  if (!list) return;
-  list.innerHTML = '';
-  for (const item of items) {
-    const btn = document.createElement('button');
-    btn.className = 'question-item';
-    btn.textContent = item.question;
-    btn.addEventListener('click', () => {
-      const input = document.getElementById('input');
-      if (!input) return;
-      input.value = item.question;
-      document.getElementById('questions-panel')?.classList.remove('open');
-      document.getElementById('questions-backdrop')?.classList.remove('open');
-      ask();
-    });
-    list.appendChild(btn);
-  }
-}
-
-// Load initial questions on startup: one per unique page URL, in index order.
-function loadInitialQuestions() {
-  const withQ = metaDocs.filter(d => d.question);
-  if (!withQ.length) return;
-  const seenUrl = new Set();
-  const seenChunk = new Set();
-  const items = [];
-  for (const doc of withQ) {
-    if (!seenChunk.has(doc.chunkId) && !seenUrl.has(doc.url)) {
-      seenChunk.add(doc.chunkId);
-      seenUrl.add(doc.url);
-      items.push(doc);
-      if (items.length >= 20) break;
-    }
-  }
-  renderQuestions(items);
-}
-
-// After LLM responds, update panel with questions contextually relevant to the answer.
-async function updateQuestionsFromChat(lastAnswer) {
-  if (!metaDocs.some(d => d.question)) return;
-  const results = await search(lastAnswer, 40);
-  const seen = new Set();
-  const items = [];
-  for (const doc of results) {
-    if (doc.question && !seen.has(doc.chunkId)) {
-      seen.add(doc.chunkId);
-      items.push(doc);
-      if (items.length >= 20) break;
-    }
-  }
-  if (items.length) renderQuestions(items);
-}
-
-// Toggle mobile bottom drawer
-window.toggleQuestionsDrawer = function() {
-  document.getElementById('questions-panel')?.classList.toggle('open');
-  document.getElementById('questions-backdrop')?.classList.toggle('open');
-};
+// Question panel functions (renderQuestions, selectDiverse, loadInitialQuestions,
+// updateQuestionsFromChat, toggleQuestionsDrawer) live in app-hot.js so they
+// can be reloaded without a full page refresh via the ↻ button.
 
 window.clearChat = function() {
   messages = [];
+  messageRelated.clear();
   saveMessages();
   renderMessages();
-  // Re-show welcome on clear
   generateWelcome();
   loadInitialQuestions();
 };
 
-// Wire up Send button and Enter key
+// Expose for app-hot.js to call after updating messageRelated
+window.messageRelated = messageRelated;
+window.renderMessages  = renderMessages;
+
+// Wire up Send button, Enter key, and message chip clicks
 document.addEventListener('DOMContentLoaded', function() {
   const sendBtn = document.getElementById('send-btn');
   const input   = document.getElementById('input');
+
+  // Event delegation for related question chips inside messages
+  document.getElementById('messages')?.addEventListener('click', e => {
+    const chip = e.target.closest('[data-question]');
+    if (chip && !_abortController) {
+      input.value = chip.dataset.question;
+      ask();
+    }
+  });
 
   if (sendBtn) {
     sendBtn.onclick = window.ask;

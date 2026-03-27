@@ -51,8 +51,12 @@ const DEFAULT_SETTINGS = {
     footnoteSnippetLength:  120,
   },
   ui: {
-    systemCommandPrefix: '%SYSTEM%',
+    systemCommandPrefix: '//',
     welcomeMessage:      '',
+  },
+  questions: {
+    exploreCount: 20,
+    relatedCount: 5,
   },
 };
 
@@ -261,7 +265,7 @@ const _state = {
   models:   _doLoadModels(),
 };
 
-const APP_VERSION = 'v1.4';
+const APP_VERSION = 'v1.5';
 
 window.RAGConfig = {
   version: APP_VERSION,

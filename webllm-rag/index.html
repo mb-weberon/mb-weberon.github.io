@@ -208,16 +208,51 @@
       flex: 1; overflow-y: auto; padding: 8px;
       -webkit-overflow-scrolling: touch;
     }
+    #questions-list.questions-disabled {
+      pointer-events: none; opacity: 0.45;
+      transition: opacity 0.15s;
+    }
     .question-item {
       display: block; width: 100%; text-align: left;
       padding: 8px 10px; margin-bottom: 4px; border-radius: 8px;
-      font-size: 12px; line-height: 1.4; color: #1d4ed8;
-      background: #eff6ff; border: 1px solid #bfdbfe;
+      font-size: 12px; line-height: 1.4;
+      border: 1px solid transparent;
       cursor: pointer; transition: background 0.15s;
       -webkit-tap-highlight-color: transparent;
     }
-    .question-item:hover  { background: #dbeafe; }
-    .question-item:active { background: #bfdbfe; }
+    .question-item.q-contextual {
+      color: #1d4ed8; background: #eff6ff; border-color: #bfdbfe;
+    }
+    .question-item.q-contextual:hover  { background: #dbeafe; }
+    .question-item.q-contextual:active { background: #bfdbfe; }
+    .question-item.q-explore {
+      color: #6b21a8; background: #faf5ff; border-color: #ddd6fe;
+    }
+    .question-item.q-explore:hover  { background: #f3e8ff; }
+    .question-item.q-explore:active { background: #ede9fe; }
+    /* Message-level chips (sources + related questions) */
+    .msg-source-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+    .msg-source-chip {
+      display: inline-block; padding: 3px 10px; border-radius: 999px;
+      font-size: 11px; color: #374151; background: #f3f4f6; border: 1px solid #e5e7eb;
+      text-decoration: none; transition: background 0.15s;
+    }
+    .msg-source-chip:hover { background: #e5e7eb; }
+    .msg-related-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; padding-top: 8px; border-top: 1px solid #e5e7eb; }
+    .msg-question-chip {
+      padding: 4px 10px; border-radius: 999px;
+      font-size: 11px; color: #1d4ed8; background: #eff6ff; border: 1px solid #bfdbfe;
+      cursor: pointer; transition: background 0.15s; text-align: left;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .msg-question-chip:hover  { background: #dbeafe; }
+    .msg-question-chip:active { background: #bfdbfe; }
+
+    .questions-group-hdr {
+      font-size: 10px; font-weight: 700; color: #9ca3af;
+      text-transform: uppercase; letter-spacing: 0.06em;
+      padding: 8px 4px 3px; margin-top: 2px;
+    }
   </style>
 </head>
 <body class="bg-gray-50">
@@ -232,6 +267,7 @@
         <h1 class="text-lg font-bold tracking-tight">📚 Site Notebook <span id="app-version" class="text-xs font-normal text-gray-400 ml-1"></span></h1>
         <div class="flex items-center gap-3">
           <div id="engine-status" class="text-xs"></div>
+          <button onclick="refreshIndex()" class="text-xs text-gray-400 hover:text-blue-500 active:text-blue-600" title="Refresh index">↻</button>
           <button onclick="downloadChat()" class="text-xs text-gray-400 hover:text-blue-500 active:text-blue-600" title="Download chat as JSON">⬇️</button>
           <button id="settings-gear-btn" class="text-gray-400 hover:text-gray-700 active:text-gray-900 text-base px-1" title="Settings">⚙️</button>
           <button onclick="clearChat()" class="text-xs text-gray-400 hover:text-red-500 active:text-red-500" title="Clear chat">🗑</button>
@@ -429,6 +465,21 @@
           <span id="sp-footnote-snippet-length-val" class="sp-slider-val"></span>
         </div>
         <p class="sp-slider-tip">Preview text shown under each source link in responses. Default: 120</p>
+
+        <div class="sp-section-title">Question Panel</div>
+        <div class="sp-slider-row">
+          <span class="sp-slider-label">Explore count</span>
+          <input id="sp-explore-count" class="sp-slider" type="range" min="5" max="30" step="1">
+          <span id="sp-explore-count-val" class="sp-slider-val"></span>
+        </div>
+        <p class="sp-slider-tip">Questions shown in the side panel. Default: 20</p>
+
+        <div class="sp-slider-row">
+          <span class="sp-slider-label">Related count</span>
+          <input id="sp-related-count" class="sp-slider" type="range" min="2" max="10" step="1">
+          <span id="sp-related-count-val" class="sp-slider-val"></span>
+        </div>
+        <p class="sp-slider-tip">Questions shown below each response. Default: 5</p>
       </div>
 
       <!-- Models tab -->
@@ -475,5 +526,6 @@
   <script src="config.js" defer></script>
   <script src="settings-panel.js" defer></script>
   <script src="app.js" defer></script>
+  <script src="app-hot.js" defer></script>
 </body>
 </html>
