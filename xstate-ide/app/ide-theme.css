@@ -333,6 +333,26 @@ input[type="text"]:focus { border-color: var(--accent); }
     white-space: nowrap;
 }
 
+/* ── Fullscreen exit button ─────────────────────────────────────────────────── */
+/* Sits in the title bar, hidden until body.in-fullscreen is set.               */
+#fs-exit-btn {
+    display: none;
+    margin-left: auto;
+    padding: 1px 7px;
+    font-size: 14px;
+    line-height: 1;
+    background: #2c313a;
+    color: #61dafb;
+    border: 1px solid #444;
+    border-radius: 4px;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+#fs-exit-btn:hover { background: #353b48; opacity: 1; }
+
+body.in-fullscreen #fs-exit-btn { display: inline-flex; align-items: center; }
+
 /* ── Toolbar — pinned to bottom of pane-content ─────────────────────────────── */
 #toolbar {
     padding: 10px 12px;

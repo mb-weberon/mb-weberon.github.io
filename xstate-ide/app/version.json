@@ -1,9 +1,19 @@
 {
   "major": 0,
   "minor": 12,
-  "patch": 23,
+  "patch": 25,
   "label": "",
   "history": [
+    {
+      "version": "0.12.25",
+      "date": "2026-03-28",
+      "note": "Version bump"
+    },
+    {
+      "version": "0.12.24",
+      "date": "2026-03-28",
+      "note": "Fix: fullscreen nudge gated to touch devices only (pointer: coarse); #fs-exit-btn added to titlebar — hidden normally, shown via body.in-fullscreen when fullscreen is active; fullscreenchange toggles body.in-fullscreen class"
+    },
     {
       "version": "0.12.23",
       "date": "2026-03-27",

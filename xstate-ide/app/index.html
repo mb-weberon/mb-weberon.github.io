@@ -67,6 +67,8 @@
                 <div id="app-titlebar">
                     <span id="app-title">SM-IDE</span>
                     <span id="version-badge"><span id="version-label">—</span></span>
+                    <button id="fs-exit-btn" title="Exit fullscreen"
+                            onclick="document.exitFullscreen?.(); this.closest('body').classList.remove('in-fullscreen');">⛶</button>
                 </div>
 
                 <!-- Chat UI mount point — fills all available space between titlebar and bottom tools -->
@@ -137,22 +139,27 @@
 
     <script>
         // Fullscreen nudge — hides mobile URL bar on first button tap.
-        // Re-enters fullscreen automatically after the soft keyboard dismisses.
-        // Stops retrying if the user explicitly exits via the back button.
+        // Touch-device only (pointer: coarse). Re-enters fullscreen after the
+        // soft keyboard dismisses. Stops retrying on intentional back/exit.
+        // body.in-fullscreen is toggled so the exit button can be shown/hidden.
         (() => {
+            const isTouch = () => window.matchMedia('(pointer: coarse)').matches;
             let _wantFullscreen = false;
 
-            // First button tap: enter fullscreen and arm the retry logic.
+            // First button tap on a touch device: enter fullscreen.
             document.addEventListener('click', function _fsNudge(e) {
+                if (!isTouch()) return;
                 if (!e.target.closest('button')) return;
+                if (e.target.id === 'fs-exit-btn') return; // exit btn handled separately
                 _wantFullscreen = true;
                 document.documentElement.requestFullscreen?.().catch(() => {});
                 document.removeEventListener('click', _fsNudge);
             }, { passive: true });
 
-            // fullscreenchange: if we exit while the viewport is NOT shrunk
-            // the user pressed Back/Escape intentionally — stop retrying.
+            // Track fullscreen state for exit button visibility.
+            // If we exit while viewport is full-size → intentional exit, stop retrying.
             document.addEventListener('fullscreenchange', () => {
+                document.body.classList.toggle('in-fullscreen', !!document.fullscreenElement);
                 if (!document.fullscreenElement && _wantFullscreen) {
                     const vv = window.visualViewport;
                     const keyboardOpen = vv && vv.height < window.innerHeight * 0.75;
@@ -160,7 +167,7 @@
                 }
             });
 
-            // visualViewport resize: re-enter fullscreen once keyboard is gone.
+            // Re-enter fullscreen when keyboard dismisses (viewport height recovers).
             if (window.visualViewport) {
                 window.visualViewport.addEventListener('resize', () => {
                     if (!_wantFullscreen || document.fullscreenElement) return;
