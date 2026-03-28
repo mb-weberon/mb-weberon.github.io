@@ -556,26 +556,39 @@ export function showResultsDrawer(results, replayFn) {
     drawer.appendChild(tableWrap);
     document.body.appendChild(drawer);
 
-    // ── Desktop: pin drawer inside the diagram pane area ──────────────────────
-    // The right pane width is variable (user-draggable), so we measure it and
-    // update whenever it resizes rather than hardcoding a pixel value.
+    // ── Pin drawer to diagram area (Option A) ────────────────────────────────
+    // Portrait: full width (covers the right pane overlay).
+    // Landscape: constrained to the diagram area only — right edge tracks the
+    // left edge of the right pane so the drawer never covers the chat pane.
+    // Called on initial render and on every resize/rotation.
     let _rpObserver = null;
     function _fitTodiagramPane() {
-        if (isMobile) return;
+        const landscape = window.innerWidth > window.innerHeight;
+        const dp = document.getElementById('diagram-pane');
+        if (!landscape) {
+            // Portrait: full-width drawer, reserve bottom space in diagram pane
+            drawer.style.left  = '0';
+            drawer.style.right = '0';
+            drawer.style.width = '';
+            if (dp) dp.style.paddingBottom = `${HEADER_H}px`;
+            return;
+        }
+        // Landscape: constrain to diagram area only
+        if (dp) dp.style.paddingBottom = '';
         const rp = document.getElementById('right-pane');
         if (!rp) return;
         const rpRect = rp.getBoundingClientRect();
+        drawer.style.left  = '0';
         drawer.style.right = (window.innerWidth - rpRect.left) + 'px';
+        drawer.style.width = '';
     }
-    if (!isMobile) {
-        _fitTodiagramPane();
-        const rp = document.getElementById('right-pane');
-        if (rp && window.ResizeObserver) {
-            _rpObserver = new ResizeObserver(_fitTodiagramPane);
-            _rpObserver.observe(rp);
-        }
-        window.addEventListener('resize', _fitTodiagramPane);
+    _fitTodiagramPane();
+    const rp_el = document.getElementById('right-pane');
+    if (rp_el && window.ResizeObserver) {
+        _rpObserver = new ResizeObserver(_fitTodiagramPane);
+        _rpObserver.observe(rp_el);
     }
+    window.addEventListener('resize', _fitTodiagramPane);
 
     // Clean up observer when drawer is removed
     const _origRemove = drawer.remove.bind(drawer);
@@ -590,8 +603,6 @@ export function showResultsDrawer(results, replayFn) {
         const dp = document.getElementById('diagram-pane');
         if (dp) dp.style.paddingBottom = px ? `${px}px` : '';
     }
-    if (isMobile) reserveBottomSpace(HEADER_H);
-
     // ── Collapse / expand ─────────────────────────────────────────────────────
     //
     // Both mobile and desktop use bottom-positioning (not translateY) so the

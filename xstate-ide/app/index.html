@@ -16,11 +16,31 @@
 </head>
 <body>
 
+    <script>
+        // Pin phone-sized screens to the mobile overlay model regardless of orientation.
+        // Math.min(screen.width, screen.height) is the portrait/shorter dimension —
+        // it stays ≤ 700px for phones even in landscape (where window.innerWidth > 700).
+        // force-mobile-layout makes the CSS overlay rules apply in landscape too.
+        (function () {
+            const portraitW = Math.min(screen.width, screen.height);
+            if (portraitW <= 700) document.body.classList.add('force-mobile-layout');
+
+            function _syncLandscapeClass() {
+                document.body.classList.toggle('mobile-landscape',
+                    portraitW <= 700 && window.innerWidth > window.innerHeight);
+            }
+            _syncLandscapeClass();
+            window.addEventListener('resize', _syncLandscapeClass);
+        })();
+    </script>
+
     <div id="app">
 
         <!-- ── Diagram pane ───────────────────────────────────────────────── -->
         <div id="diagram-pane">
-            <h2>Live State Machine</h2>
+            <h2>Live State Machine
+                <button id="dir-toggle" title="Toggle graph direction" onclick="window.toggleGraphDir()">⇄</button>
+            </h2>
             <div id="diagram-viewport">
                 <div id="diagram-canvas">
                     <div id="mermaid-container"></div>
@@ -114,6 +134,44 @@
 
     <!-- Touch tooltip -->
     <div id="touch-tooltip"></div>
+
+    <script>
+        // Fullscreen nudge — hides mobile URL bar on first button tap.
+        // Re-enters fullscreen automatically after the soft keyboard dismisses.
+        // Stops retrying if the user explicitly exits via the back button.
+        (() => {
+            let _wantFullscreen = false;
+
+            // First button tap: enter fullscreen and arm the retry logic.
+            document.addEventListener('click', function _fsNudge(e) {
+                if (!e.target.closest('button')) return;
+                _wantFullscreen = true;
+                document.documentElement.requestFullscreen?.().catch(() => {});
+                document.removeEventListener('click', _fsNudge);
+            }, { passive: true });
+
+            // fullscreenchange: if we exit while the viewport is NOT shrunk
+            // the user pressed Back/Escape intentionally — stop retrying.
+            document.addEventListener('fullscreenchange', () => {
+                if (!document.fullscreenElement && _wantFullscreen) {
+                    const vv = window.visualViewport;
+                    const keyboardOpen = vv && vv.height < window.innerHeight * 0.75;
+                    if (!keyboardOpen) _wantFullscreen = false;
+                }
+            });
+
+            // visualViewport resize: re-enter fullscreen once keyboard is gone.
+            if (window.visualViewport) {
+                window.visualViewport.addEventListener('resize', () => {
+                    if (!_wantFullscreen || document.fullscreenElement) return;
+                    const keyboardGone = window.visualViewport.height >= window.innerHeight * 0.9;
+                    if (keyboardGone) {
+                        document.documentElement.requestFullscreen?.().catch(() => {});
+                    }
+                });
+            }
+        })();
+    </script>
 
     <script>
         // Touch tooltip — reads title attribute
@@ -331,7 +389,23 @@
 
         _positionPaneTab();
         _positionGhostTab();
-        window.addEventListener('resize', () => { _positionPaneTab(); _positionGhostTab(); });
+
+        // On resize/rotation: reset pane offset if layout mode changed (mobile ↔ desktop),
+        // or re-clamp if still mobile (viewport dimensions changed).
+        let _lastWasMobile = isMobileLayout();
+        window.addEventListener('resize', () => {
+            const nowMobile = isMobileLayout();
+            if (_lastWasMobile !== nowMobile) {
+                // Mode switched (e.g. portrait→landscape crosses 700px): reset fully open
+                _applyOffset(0, false);
+            } else if (nowMobile) {
+                // Same mobile mode, viewport resized: re-clamp to new maxOffset
+                _applyOffset(_panOffset, false);
+            }
+            _lastWasMobile = nowMobile;
+            _positionPaneTab();
+            _positionGhostTab();
+        });
 
         // ── Desktop mouse drag on #slide-handle ──────────────────────────────
         let _dragging = false, _dragStartX = 0, _dragStartOffset = 0;
@@ -359,37 +433,60 @@
         });
 
         // ── Touch drag on slide-handle (mobile) ───────────────────────────────
-        // The handle's ::before pseudo-element extends 30px into the diagram and
-        // 30px into the chat pane, so the touch target is ~69px wide despite the
-        // handle being only 9px visually.
+        // ::before is pointer-events:none so chat content stays tappable.
+        // A document-level handler watches touches near the handle, but does NOT
+        // commit to dragging until there is clear horizontal intent (dx > dy with
+        // dx > 8px).  A pure tap in the touch zone never activates dragging, so
+        // buttons inside the zone (e.g. replay bar) continue to receive clicks.
+        const HIT_EXTEND = 30;
 
-        slideHandle.addEventListener('touchstart', (e) => {
-            _dragging        = true;
-            _dragStartX      = e.touches[0].clientX;
-            _dragStartOffset = _panOffset;
-            document.body.style.userSelect = 'none';
-            rightPane.style.transition     = 'none';
-            e.preventDefault(); // prevent scroll and mouse-event emulation
-        }, { passive: false });
+        // Potential-drag state — set on touchstart, committed only in touchmove.
+        let _potentialDrag = false, _potentialDragX = 0, _potentialDragY = 0, _potentialDragOffset = 0;
 
-        document.addEventListener('touchmove', (e) => {
-            if (!_dragging) return;
-            _applyOffset(_dragStartOffset + (e.touches[0].clientX - _dragStartX), false);
+        document.addEventListener('touchstart', (e) => {
+            if (!isMobileLayout()) return;
+            const x    = e.touches[0].clientX;
+            const rect = slideHandle.getBoundingClientRect();
+            if (x < rect.left - HIT_EXTEND || x > rect.right + HIT_EXTEND) return;
+            // Record where the touch started — commit to drag only in touchmove.
+            _potentialDrag         = true;
+            _potentialDragX        = x;
+            _potentialDragY        = e.touches[0].clientY;
+            _potentialDragOffset   = _panOffset;
         }, { passive: true });
 
-        document.addEventListener('touchend', () => {
-            if (!_dragging) return;
-            _dragging = false;
-            document.body.style.userSelect = '';
-            rightPane.style.transition     = '';
-        });
+        document.addEventListener('touchmove', (e) => {
+            if (_dragging) {
+                _applyOffset(_dragStartOffset + (e.touches[0].clientX - _dragStartX), false);
+                return;
+            }
+            if (!_potentialDrag) return;
+            const dx = Math.abs(e.touches[0].clientX - _potentialDragX);
+            const dy = Math.abs(e.touches[0].clientY - _potentialDragY);
+            if (dx > 8 && dx > dy) {
+                // Clear horizontal intent — commit to pane drag.
+                _dragging              = true;
+                _dragStartX            = _potentialDragX;
+                _dragStartOffset       = _potentialDragOffset;
+                _potentialDrag         = false;
+                document.body.style.userSelect = 'none';
+                rightPane.style.transition     = 'none';
+            } else if (dy > dx + 4) {
+                // Vertical scroll intent — cancel.
+                _potentialDrag = false;
+            }
+        }, { passive: true });
 
-        document.addEventListener('touchcancel', () => {
+        function _endDrag() {
+            _potentialDrag = false;
             if (!_dragging) return;
             _dragging = false;
             document.body.style.userSelect = '';
             rightPane.style.transition     = '';
-        });
+        }
+
+        document.addEventListener('touchend',    _endDrag);
+        document.addEventListener('touchcancel', _endDrag);
 
         // ── Test results drawer: lifecycle hook ───────────────────────────────
         // main.js owns all drawer logic (row icons, height cap, diagram resize).
@@ -408,8 +505,35 @@
         }).observe(document.body, { childList: true });
 
         // ── Diagram render ────────────────────────────────────────────────────
+        // Direction: LR on mobile landscape, TD everywhere else — unless the
+        // user has manually toggled via the ⇄ button.
+        let _dirOverride = null; // null | 'LR' | 'TD'
+
+        const _graphDir = () => {
+            if (_dirOverride) return _dirOverride;
+            const mobile    = window.innerWidth <= 700 ||
+                              document.body.classList.contains('force-mobile-layout');
+            const landscape = window.innerWidth > window.innerHeight;
+            return (mobile && landscape) ? 'LR' : 'TD';
+        };
+
+        window.toggleGraphDir = () => {
+            const current  = _graphDir();
+            _dirOverride   = current === 'LR' ? 'TD' : 'LR';
+            const btn      = document.getElementById('dir-toggle');
+            if (btn) btn.textContent = _dirOverride === 'LR' ? '↕' : '⇄';
+            if (_lastRenderArgs) {
+                const { config, current: cur, visitedEdges } = _lastRenderArgs;
+                window.renderDiagram(config, cur, visitedEdges).catch(() => {});
+            }
+        };
+
+        // Cache last args so orientation changes can re-render automatically.
+        let _lastRenderArgs = null;
+
         window.renderDiagram = async (config, current, visitedEdges = new Set()) => {
-            let graph = `graph TD\n`;
+            _lastRenderArgs = { config, current, visitedEdges };
+            let graph = `graph ${_graphDir()}\n`;
 
             Object.keys(config.states).forEach(id => {
                 const style = id === current ? `:::activeNode` : '';
@@ -468,6 +592,14 @@
                     `<pre style="color:red;font-size:11px;">Diagram error:\n${e.message}</pre>`;
             }
         };
+
+        // Re-render when orientation changes (TD ↔ LR)
+        screen.orientation?.addEventListener('change', () => {
+            if (_lastRenderArgs) {
+                const { config, current, visitedEdges } = _lastRenderArgs;
+                window.renderDiagram(config, current, visitedEdges).catch(() => {});
+            }
+        });
     </script>
 
     <script type="module" src="./main.js"></script>

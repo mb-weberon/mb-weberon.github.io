@@ -83,7 +83,24 @@ input[type="text"]:focus { border-color: var(--accent); }
     font-size: 15px;
     color: #888;
     font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
+
+#dir-toggle {
+    font-size: 13px;
+    padding: 1px 6px;
+    background: #2c313a;
+    color: #61dafb;
+    border: 1px solid #444;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: normal;
+    flex-shrink: 0;
+}
+
+#dir-toggle:hover { background: #353b48; }
 
 #diagram-viewport {
     flex: 1;
@@ -163,8 +180,8 @@ input[type="text"]:focus { border-color: var(--accent); }
 #slide-handle:hover  { background: #2c313a; }
 #slide-handle:active { background: #353b48; }
 
-/* Transparent hit-zone extension — 30px into diagram (left) + 30px into chat (right).
-   Pointer/touch events on this area fire on #slide-handle. */
+/* Visual spacer only — pointer-events disabled so chat content behind it stays
+   clickable. The touch zone is extended via the document-level JS handler. */
 #slide-handle::before {
     content: '';
     position: absolute;
@@ -172,6 +189,7 @@ input[type="text"]:focus { border-color: var(--accent); }
     right: -30px;
     top: 0;
     bottom: 0;
+    pointer-events: none;
 }
 
 /* Grip pill — centered visual cue */
@@ -404,7 +422,7 @@ input[type="text"]:focus { border-color: var(--accent); }
 
 /* ── Replay bar — hidden until triggered ────────────────────────────────────── */
 #replay-bar {
-    padding: 4px 8px;
+    padding: 4px 8px 4px 18px;
     background: #e8e8e8;
     display: none;
     gap: 4px;
@@ -568,6 +586,17 @@ input[type="text"]:focus { border-color: var(--accent); }
 
     #pane-tab     { display: none; }
 }
+
+/* ── Mobile landscape: compact toolbar ─────────────────────────────────────── */
+/* Covers both narrow phones (≤700px CSS width) and wider phones forced into    */
+/* mobile-layout mode via body.mobile-landscape (JS-set class).                 */
+@media (max-width: 700px) and (orientation: landscape) {
+    #toolbar { padding: 3px 8px; gap: 4px; }
+    #toolbar button { padding: 3px 4px; font-size: 10px; line-height: 1.2; }
+}
+
+body.mobile-landscape #toolbar { padding: 3px 8px; gap: 4px; }
+body.mobile-landscape #toolbar button { padding: 3px 4px; font-size: 10px; line-height: 1.2; }
 
 /* ── Force mobile layout (for ui-contracts) ─────────────────────────────────── */
 body.force-mobile-layout #diagram-pane {

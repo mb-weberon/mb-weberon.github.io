@@ -1,9 +1,34 @@
 {
   "major": 0,
   "minor": 12,
-  "patch": 18,
+  "patch": 23,
   "label": "",
   "history": [
+    {
+      "version": "0.12.23",
+      "date": "2026-03-27",
+      "note": "Fix: slide-handle touch zone no longer blocks buttons inside pane — drag committed only after clear horizontal intent (dx > 8px && dx > dy) in touchmove; pure taps pass through to replay bar and other buttons"
+    },
+    {
+      "version": "0.12.22",
+      "date": "2026-03-27",
+      "note": "Fix mobile landscape: force-mobile-layout applied on phones (portrait width ≤ 700px) regardless of orientation — overlay model + touch slider active in landscape; mobile-landscape CSS class for compact toolbar on wider phones"
+    },
+    {
+      "version": "0.12.21",
+      "date": "2026-03-27",
+      "note": "Fix rotation: pane offset reset when layout mode switches (mobile↔desktop) or viewport resizes; results drawer constrained to diagram area in landscape (Option A — right edge tracks right pane left edge); toolbar compact layout in mobile landscape (reduced padding + font-size)"
+    },
+    {
+      "version": "0.12.20",
+      "date": "2026-03-27",
+      "note": "UX: graph direction auto-detects (TD on desktop/portrait, LR on mobile landscape); ⇄ toggle button in diagram heading for manual override; re-renders on screen rotation"
+    },
+    {
+      "version": "0.12.19",
+      "date": "2026-03-27",
+      "note": "Fix: replay bar buttons unclickable on mobile — slide-handle ::before set to pointer-events:none, touch zone extended via document-level proximity check instead; replay bar left padding increased to 18px"
+    },
     {
       "version": "0.12.18",
       "date": "2026-03-27",

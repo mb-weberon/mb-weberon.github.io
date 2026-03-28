@@ -822,7 +822,7 @@ async function boot() {
         }
         _applyHeightCap();
 
-        // Touch drag on drawer header: vertical resize only (portrait) or free (landscape)
+        // Touch drag on drawer header: vertical resize only (horizontal fixed by _fitTodiagramPane)
         const header = drawer.firstElementChild;
         if (header) {
             let _sx, _sy, _sh, _st;
@@ -841,23 +841,13 @@ async function boot() {
                 if (Math.abs(dy) < 4) return;
                 drawer.dataset.userResized = '1';
 
-                if (isPortrait()) {
-                    // Portrait: resize height by dragging up/down, keep bottom fixed
-                    const newH = Math.max(header.offsetHeight,
-                                 Math.min(window.innerHeight - 60, _sh + dy));
-                    drawer.style.height    = newH + 'px';
-                    drawer.style.maxHeight = newH + 'px';
-                    _fitDiagramAboveDrawer(drawer);
-                } else {
-                    // Landscape/desktop: free drag (original behaviour)
-                    const dx = e.touches[0].clientX - _sx;
-                    const newTop  = Math.max(0, Math.min(window.innerHeight - drawer.offsetHeight, _st + (e.touches[0].clientY - _sy)));
-                    const newLeft = Math.max(0, Math.min(window.innerWidth  - drawer.offsetWidth,  drawer.getBoundingClientRect().left + dx));
-                    drawer.style.top    = newTop  + 'px';
-                    drawer.style.left   = newLeft + 'px';
-                    drawer.style.right  = 'auto';
-                    drawer.style.bottom = 'auto';
-                }
+                // Always resize vertically — horizontal position is managed by
+                // _fitTodiagramPane (Option A: drawer stays within diagram area).
+                const newH = Math.max(header.offsetHeight,
+                             Math.min(window.innerHeight - 60, _sh + dy));
+                drawer.style.height    = newH + 'px';
+                drawer.style.maxHeight = newH + 'px';
+                if (isPortrait()) _fitDiagramAboveDrawer(drawer);
             }, { passive: true });
 
             header.addEventListener('touchend', () => {
@@ -884,9 +874,9 @@ async function boot() {
     // ── Drawer lifecycle (called by index.html's inline observer) ────────────
 
     function _setToolbarDrawerClearance(drawer) {
-        // Lift the toolbar by the drawer's header height so buttons are never
-        // hidden behind the collapsed drawer strip.  The header is always the
-        // first child of the drawer; fall back to 36px (desktop HEADER_H).
+        // In landscape the drawer floats over the diagram pane, not the right
+        // pane, so the toolbar needs no extra clearance.
+        if (!isPortrait()) return;
         const toolbar = document.getElementById('toolbar');
         if (!toolbar) return;
         const header  = drawer?.firstElementChild;
