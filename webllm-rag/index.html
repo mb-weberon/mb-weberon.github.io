@@ -173,7 +173,7 @@
       overflow: hidden;
     }
     @media (min-width: 640px) {
-      #questions-panel { width: 260px; flex-shrink: 0; border-left: 1px solid #e5e7eb; }
+      #questions-panel { width: 280px; flex-shrink: 0; border-left: 1px solid #e5e7eb; }
       #questions-backdrop { display: none !important; }
       #questions-toggle-btn { display: none !important; }
     }
@@ -195,19 +195,57 @@
       #questions-backdrop.open { display: block; }
     }
     .questions-panel-hdr {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 10px 14px; border-bottom: 1px solid #e5e7eb;
-      font-size: 12px; font-weight: 700; color: #374151; flex-shrink: 0;
+      display: flex; align-items: center; gap: 0;
+      border-bottom: 1px solid #e5e7eb; flex-shrink: 0;
     }
+    .qp-tab {
+      flex: 1; padding: 9px 6px; font-size: 11px; font-weight: 600;
+      color: #6b7280; background: none; border: none; cursor: pointer;
+      border-bottom: 2px solid transparent; margin-bottom: -1px;
+      transition: color 0.15s;
+    }
+    .qp-tab.active { color: #2563eb; border-bottom-color: #2563eb; }
+    .qp-tab:hover:not(.active) { color: #374151; }
     .questions-panel-close {
       background: none; border: none; font-size: 16px; cursor: pointer;
-      color: #6b7280; padding: 2px 6px;
+      color: #6b7280; padding: 6px 10px; flex-shrink: 0;
     }
     .questions-panel-close:hover { color: #111; }
     #questions-list {
       flex: 1; overflow-y: auto; padding: 8px;
       -webkit-overflow-scrolling: touch;
     }
+    /* Pipeline reference pane */
+    #pipeline-ref-pane {
+      flex: 1; overflow-y: auto; padding: 8px 10px;
+      -webkit-overflow-scrolling: touch; display: none;
+    }
+    #pipeline-ref-pane.active { display: block; }
+    .ref-section-hdr {
+      font-size: 10px; font-weight: 700; color: #9ca3af;
+      text-transform: uppercase; letter-spacing: 0.07em;
+      padding: 10px 2px 4px; margin-top: 4px;
+    }
+    .ref-section-hdr:first-child { padding-top: 4px; margin-top: 0; }
+    .ref-row {
+      display: flex; gap: 6px; padding: 2px 0; font-size: 12px; line-height: 1.5;
+    }
+    .ref-key {
+      font-family: ui-monospace, Consolas, monospace; font-size: 11px;
+      color: #374151; flex-shrink: 0; white-space: nowrap;
+    }
+    .ref-desc { color: #6b7280; font-size: 11px; }
+    .ref-cmd-chip {
+      display: block; width: 100%; text-align: left;
+      font-family: ui-monospace, Consolas, monospace; font-size: 11px;
+      padding: 5px 8px; margin-bottom: 3px; border-radius: 6px;
+      background: #f3f4f6; color: #1d4ed8;
+      border: 1px solid #e5e7eb; cursor: pointer;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      transition: background 0.12s;
+    }
+    .ref-cmd-chip:hover  { background: #eff6ff; border-color: #bfdbfe; }
+    .ref-cmd-chip:active { background: #dbeafe; }
     #questions-list.questions-disabled {
       pointer-events: none; opacity: 0.45;
       transition: opacity 0.15s;
@@ -248,11 +286,106 @@
     .msg-question-chip:hover  { background: #dbeafe; }
     .msg-question-chip:active { background: #bfdbfe; }
 
+    /* Pipeline command terminal card */
+    .msg-pipeline-card {
+      font-family: ui-monospace, 'Cascadia Code', 'Fira Code', Consolas, monospace;
+      font-size: 12.5px; line-height: 1.6;
+      background: #1e1e2e; color: #cdd6f4;
+      border: 1px solid #313244; border-radius: 10px;
+      overflow: hidden; max-width: 90%; width: fit-content;
+    }
+    .msg-pipeline-titlebar {
+      display: flex; align-items: center; gap: 6px;
+      padding: 6px 10px; background: #181825; border-bottom: 1px solid #313244;
+      user-select: none;
+    }
+    .msg-pipeline-dot { width: 10px; height: 10px; border-radius: 50%; }
+    .msg-pipeline-dot-r { background: #f38ba8; }
+    .msg-pipeline-dot-y { background: #f9e2af; }
+    .msg-pipeline-dot-g { background: #a6e3a1; }
+    .msg-pipeline-label {
+      flex: 1; text-align: center; font-size: 11px; color: #6c7086; letter-spacing: 0.04em;
+    }
+    .msg-pipeline-body {
+      padding: 10px 14px; white-space: pre-wrap; word-break: break-word;
+      overflow-x: auto;
+    }
+    .msg-pipeline-sources {
+      padding: 6px 14px 10px; border-top: 1px solid #313244;
+      display: flex; flex-wrap: wrap; gap: 5px;
+    }
+    .msg-pipeline-source-chip {
+      padding: 2px 9px; border-radius: 999px; font-size: 11px;
+      background: #313244; color: #89b4fa; text-decoration: none;
+    }
+    .msg-pipeline-source-chip:hover { background: #45475a; }
+    /* Clickable backtick command spans in help output */
+    .msg-pipeline-cmd-chip {
+      background: #313244; color: #a6e3a1; border: 1px solid #45475a;
+      border-radius: 4px; padding: 0 4px; font: inherit;
+      cursor: pointer; white-space: nowrap;
+    }
+    .msg-pipeline-cmd-chip:hover { background: #45475a; color: #cba6f7; border-color: #cba6f7; }
+    .msg-pipeline-cmd-chip:active { background: #585b70; }
+
     .questions-group-hdr {
       font-size: 10px; font-weight: 700; color: #9ca3af;
       text-transform: uppercase; letter-spacing: 0.06em;
       padding: 8px 4px 3px; margin-top: 2px;
     }
+
+    /* ------------------------------------------------------------------ */
+    /* Index preview modal                                                  */
+    /* ------------------------------------------------------------------ */
+    #ix-preview-backdrop {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.4); z-index: 60;
+    }
+    #ix-preview-backdrop.open { display: block; }
+
+    #ix-preview-panel {
+      display: none; position: fixed;
+      top: 50%; left: 50%; transform: translate(-50%, -50%);
+      width: min(480px, 92vw); max-height: 80dvh;
+      background: #fff; border-radius: 12px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+      z-index: 61; flex-direction: column; overflow: hidden;
+    }
+    #ix-preview-panel.open { display: flex; }
+
+    .ix-preview-hdr {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 16px; border-bottom: 1px solid #e5e7eb;
+      font-weight: 700; font-size: 15px; flex-shrink: 0;
+    }
+    #ix-preview-body {
+      flex: 1; overflow-y: auto; padding: 14px 16px; font-size: 13px;
+      -webkit-overflow-scrolling: touch;
+    }
+    .ix-preview-ftr {
+      display: flex; gap: 8px; justify-content: flex-end;
+      padding: 12px 16px; border-top: 1px solid #e5e7eb; flex-shrink: 0;
+    }
+
+    .ix-alert { border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; }
+    .ix-alert ul { margin: 6px 0 0; padding-left: 16px; font-size: 12px; }
+    .ix-alert li { margin-bottom: 2px; }
+    .ix-alert-error { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+    .ix-alert-warn  { background: #fef3c7; border: 1px solid #fde68a; color: #92400e; }
+
+    .ix-diff-box { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; }
+    .ix-diff-table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12px; }
+    .ix-diff-table td { padding: 2px 4px; color: #374151; }
+    .ix-diff-table td:last-child { text-align: right; }
+
+    .ix-page-list { margin-bottom: 10px; font-size: 12px; }
+    .ix-page-list ul { margin: 4px 0 0; padding-left: 16px; font-family: monospace; font-size: 11px; }
+    .ix-page-list li { margin-bottom: 1px; }
+
+    .ix-pos  { color: #16a34a; }
+    .ix-neg  { color: #dc2626; }
+    .ix-neu  { color: #6b7280; }
+    .ix-muted { color: #6b7280; font-size: 11px; }
   </style>
 </head>
 <body class="bg-gray-50">
@@ -336,10 +469,12 @@
     <!-- Questions panel: sidebar on desktop, slide-up drawer on mobile -->
     <div id="questions-panel">
       <div class="questions-panel-hdr">
-        <span>Suggested Questions</span>
+        <button class="qp-tab active" id="qp-tab-questions" onclick="switchQuestionsTab('questions')">💬 Questions</button>
+        <button class="qp-tab" id="qp-tab-reference" onclick="switchQuestionsTab('reference')">// Reference</button>
         <button class="questions-panel-close" onclick="toggleQuestionsDrawer()" aria-label="Close">✕</button>
       </div>
       <div id="questions-list"></div>
+      <div id="pipeline-ref-pane"></div>
     </div>
 
   </div><!-- end outer flex -->
@@ -522,6 +657,20 @@
     </div>
 
   </div><!-- end settings-panel -->
+
+  <!-- Index preview modal -->
+  <div id="ix-preview-backdrop" onclick="closeIndexPreview()"></div>
+  <div id="ix-preview-panel" role="dialog" aria-modal="true" aria-labelledby="ix-preview-title">
+    <div class="ix-preview-hdr">
+      <span id="ix-preview-title">Index Preview</span>
+      <button onclick="closeIndexPreview()" class="sp-close" aria-label="Close">✕</button>
+    </div>
+    <div id="ix-preview-body"></div>
+    <div class="ix-preview-ftr">
+      <button onclick="closeIndexPreview()" class="sp-btn sp-btn-secondary">Cancel</button>
+      <button id="ix-apply-btn" onclick="applyPendingIndex()" class="sp-btn sp-btn-primary">Apply</button>
+    </div>
+  </div>
 
   <script src="config.js" defer></script>
   <script src="settings-panel.js" defer></script>

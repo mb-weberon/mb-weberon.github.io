@@ -383,6 +383,7 @@ async function loadIndex() {
 
     if (messages.length === 0) generateWelcome();
     loadInitialQuestions();
+    refreshPipelineRef();
 
     await initLLM();
     statusEl.textContent = `✅ Ready to chat! (${metaDocs.length} chunks)`;
@@ -395,38 +396,188 @@ async function loadIndex() {
   }
 }
 
-// Refresh index files AND question panel JS without reloading the LLM or the page.
-// Cache-busts index files and reinjects app-hot.js as a new script tag,
-// overwriting live function definitions without touching the loaded model.
+// ---------------------------------------------------------------------------
+// Index schema validation
+// Returns { ok, errors: string[], warnings: string[] }
+// ---------------------------------------------------------------------------
+function validateIndexSchema(newDocs, binBuf, textJson) {
+  const errors   = [];
+  const warnings = [];
+
+  // 1. Required fields on every entry
+  const REQUIRED = ['id', 'url', 'title', 'chunkId'];
+  const badEntries = newDocs.filter(d => REQUIRED.some(f => d[f] === undefined || d[f] === null));
+  if (badEntries.length) {
+    errors.push(`${badEntries.length} entr${badEntries.length === 1 ? 'y' : 'ies'} missing required fields (id, url, title, chunkId)`);
+  }
+
+  // 2. Embeddings byte length must exactly match doc count × DIMS × 4 bytes
+  const expectedBytes = newDocs.length * DIMS * 4;
+  if (binBuf.byteLength !== expectedBytes) {
+    errors.push(
+      `Embeddings size mismatch:\n` +
+      `  expected ${expectedBytes.toLocaleString()} bytes (${newDocs.length} docs × ${DIMS} dims × 4)\n` +
+      `  got      ${binBuf.byteLength.toLocaleString()} bytes`
+    );
+  }
+
+  // 3. All doc ids must have a text entry
+  if (textJson) {
+    const missingText = newDocs.filter(d => textJson[d.id] === undefined && textJson[String(d.id)] === undefined);
+    if (missingText.length) {
+      errors.push(`${missingText.length} doc id${missingText.length === 1 ? '' : 's'} missing from index-text.json`);
+    }
+  }
+
+  // 4. Warn on index type change (question-indexed ↔ basic)
+  const currentIsQI = metaDocs.some(d => d.question);
+  const newIsQI     = newDocs.some(d => d.question);
+  if (currentIsQI && !newIsQI) {
+    warnings.push('Index type changed: question-indexed → basic. Questions panel will be empty after apply.');
+  } else if (!currentIsQI && newIsQI) {
+    warnings.push('Index type changed: basic → question-indexed. Questions panel will be populated.');
+  }
+
+  return { ok: errors.length === 0, errors, warnings };
+}
+
+// ---------------------------------------------------------------------------
+// Index diff — structural comparison between old and new metaDocs
+// ---------------------------------------------------------------------------
+function diffIndex(oldDocs, newDocs) {
+  const oldUrls = new Set(oldDocs.map(d => d.url));
+  const newUrls = new Set(newDocs.map(d => d.url));
+  return {
+    pagesAdded:    [...newUrls].filter(u => !oldUrls.has(u)),
+    pagesRemoved:  [...oldUrls].filter(u => !newUrls.has(u)),
+    chunksOld:     oldDocs.length,
+    chunksNew:     newDocs.length,
+    questionsOld:  oldDocs.filter(d => d.question).length,
+    questionsNew:  newDocs.filter(d => d.question).length,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Preview panel UI
+// ---------------------------------------------------------------------------
+function showIndexPreview({ errors, warnings, diff }) {
+  const body     = document.getElementById('ix-preview-body');
+  const applyBtn = document.getElementById('ix-apply-btn');
+  let html = '';
+
+  if (errors && errors.length) {
+    html += `<div class="ix-alert ix-alert-error">
+      <strong>❌ Schema validation failed — no changes applied</strong>
+      <ul>${errors.map(e => `<li>${escHtml(e).replace(/\n/g, '<br>')}</li>`).join('')}</ul>
+    </div>`;
+    applyBtn.style.display = 'none';
+  } else {
+    if (warnings && warnings.length) {
+      html += `<div class="ix-alert ix-alert-warn">
+        <strong>⚠️ Warning</strong>
+        <ul>${warnings.map(w => `<li>${escHtml(w)}</li>`).join('')}</ul>
+      </div>`;
+    }
+
+    const chunkDelta = diff.chunksNew - diff.chunksOld;
+    const qDelta     = diff.questionsNew - diff.questionsOld;
+    const fmt = n => n > 0 ? `<span class="ix-pos">+${n}</span>` : n < 0 ? `<span class="ix-neg">${n}</span>` : '<span class="ix-neu">±0</span>';
+
+    html += `<div class="ix-diff-box">
+      <strong>Changes</strong>
+      <table class="ix-diff-table">
+        <tr><td>Pages</td><td>${fmt(diff.pagesAdded.length)} added &nbsp; ${fmt(-diff.pagesRemoved.length)} removed</td></tr>
+        <tr><td>Chunks</td><td>${fmt(chunkDelta)} &nbsp; (${diff.chunksOld} → ${diff.chunksNew})</td></tr>
+        ${diff.questionsOld || diff.questionsNew ? `<tr><td>Questions</td><td>${fmt(qDelta)} &nbsp; (${diff.questionsOld} → ${diff.questionsNew})</td></tr>` : ''}
+      </table>
+    </div>`;
+
+    if (diff.pagesAdded.length) {
+      html += `<div class="ix-page-list">
+        <strong>Added (${diff.pagesAdded.length})</strong>
+        <ul>${diff.pagesAdded.slice(0, 10).map(u => `<li class="ix-pos">${escHtml(u)}</li>`).join('')}
+        ${diff.pagesAdded.length > 10 ? `<li class="ix-muted">…+${diff.pagesAdded.length - 10} more</li>` : ''}</ul>
+      </div>`;
+    }
+    if (diff.pagesRemoved.length) {
+      html += `<div class="ix-page-list">
+        <strong>Removed (${diff.pagesRemoved.length})</strong>
+        <ul>${diff.pagesRemoved.slice(0, 10).map(u => `<li class="ix-neg">${escHtml(u)}</li>`).join('')}
+        ${diff.pagesRemoved.length > 10 ? `<li class="ix-muted">…+${diff.pagesRemoved.length - 10} more</li>` : ''}</ul>
+      </div>`;
+    }
+    if (!diff.pagesAdded.length && !diff.pagesRemoved.length && chunkDelta === 0) {
+      html += `<p class="ix-muted" style="margin:8px 0;">No structural changes detected.</p>`;
+    }
+
+    applyBtn.style.display = '';
+  }
+
+  body.innerHTML = html;
+  document.getElementById('ix-preview-panel').classList.add('open');
+  document.getElementById('ix-preview-backdrop').classList.add('open');
+}
+
+window.closeIndexPreview = function() {
+  document.getElementById('ix-preview-panel').classList.remove('open');
+  document.getElementById('ix-preview-backdrop').classList.remove('open');
+  window._pendingIndex = null;
+};
+
+window.applyPendingIndex = async function() {
+  const pending = window._pendingIndex;
+  if (!pending) return;
+
+  metaDocs  = pending.newDocs;
+  embMatrix = new Float32Array(pending.binBuf);
+  textCache = pending.textJson;   // pre-loaded — avoids a future fetch
+  window._pendingIndex = null;
+
+  await new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = `app-hot.js?t=${pending.t}`;
+    s.onload  = resolve;
+    s.onerror = () => reject(new Error('app-hot.js failed to load'));
+    document.head.appendChild(s);
+  });
+
+  loadInitialQuestions();
+  refreshPipelineRef();
+  window.closeIndexPreview();
+  document.getElementById('status').textContent = `✅ Refreshed (${metaDocs.length} chunks)`;
+};
+
+// ---------------------------------------------------------------------------
+// Refresh — fetch → validate → diff → preview (no immediate apply)
+// ---------------------------------------------------------------------------
 window.refreshIndex = async function() {
   const statusEl = document.getElementById('status');
-  statusEl.textContent = 'Refreshing…';
+  statusEl.textContent = 'Fetching new index…';
   const t = Date.now();
   try {
-    // Reload index data
-    const [metaRes, binRes] = await Promise.all([
+    const [metaRes, binRes, textRes] = await Promise.all([
       fetch(`index-meta.json?t=${t}`),
       fetch(`index-embeddings.bin?t=${t}`),
+      fetch(`index-text.json?t=${t}`),
     ]);
     if (!metaRes.ok || !binRes.ok) throw new Error('Index files not found');
-    const meta   = await metaRes.json();
-    const binBuf = await binRes.arrayBuffer();
-    metaDocs  = meta.documents;
-    embMatrix = new Float32Array(binBuf);
-    textCache = null;
-    console.log(`✅ Index refreshed — ${metaDocs.length} chunks`);
 
-    // Reload app-hot.js — overwrites window.renderQuestions, selectDiverse etc.
-    await new Promise((resolve, reject) => {
-      const s = document.createElement('script');
-      s.src = `app-hot.js?t=${t}`;
-      s.onload  = resolve;
-      s.onerror = () => reject(new Error('app-hot.js failed to load'));
-      document.head.appendChild(s);
-    });
+    const meta    = await metaRes.json();
+    const binBuf  = await binRes.arrayBuffer();
+    const textJson = textRes.ok ? await textRes.json() : null;
+    const newDocs = meta.documents;
 
-    loadInitialQuestions();
-    statusEl.textContent = `✅ Refreshed (${metaDocs.length} chunks)`;
+    const validation = validateIndexSchema(newDocs, binBuf, textJson);
+    if (!validation.ok) {
+      showIndexPreview({ errors: validation.errors, warnings: validation.warnings });
+      statusEl.textContent = '⚠️ Index schema mismatch';
+      return;
+    }
+
+    const diff = diffIndex(metaDocs, newDocs);
+    window._pendingIndex = { newDocs, binBuf, textJson, t };
+    showIndexPreview({ warnings: validation.warnings, diff });
+    statusEl.textContent = 'Index preview ready';
   } catch (e) {
     console.error('❌ Refresh failed:', e);
     statusEl.textContent = `Refresh failed: ${e.message}`;
@@ -742,171 +893,400 @@ async function search(query, k = 5) {
     .slice(0, k);
 }
 
-// Category definitions — matched against URL slug and title
-const CATEGORIES = [
-  {
-    name: 'reports',
-    urlPatterns: [/\/rpt-/],
-    titlePatterns: [/report/i],
-    keywords: ['report', 'reports'],
-  },
-  {
-    name: 'seller resources',
-    urlPatterns: [/\/(sellers?|sell_|seller_|seminar_|coaching_|gold_|silver_|savethousands|homeeval|insideraccess|inspection)/],
-    titlePatterns: [/sell|seller|listing|price|seminar|coaching/i],
-    keywords: ['seller', 'sellers', 'selling', 'sell', 'seller resource', 'seller resources'],
-  },
-  {
-    name: 'buyer resources',
-    urlPatterns: [/\/(buyers?|buyer_|gc_|buyertraps?|vip_buyer|zerodown|stop_renting|27tips|agent_questions|homewardbound)/],
-    titlePatterns: [/buy|buyer|home guide|first.?time|down payment/i],
-    keywords: ['buyer', 'buyers', 'buying', 'buy', 'buyer resource', 'buyer resources'],
-  },
-  {
-    name: 'landing pages',
-    urlPatterns: [/\/lp-/],
-    titlePatterns: [],
-    keywords: ['landing page', 'landing pages', 'campaigns'],
-  },
-  {
-    name: 'coaching',
-    urlPatterns: [/\/coaching_/],
-    titlePatterns: [/coaching/i],
-    keywords: ['coaching'],
-  },
-  {
-    name: 'seminars',
-    urlPatterns: [/\/seminar_/],
-    titlePatterns: [/seminar/i],
-    keywords: ['seminar', 'seminars'],
-  },
-];
+// ---------------------------------------------------------------------------
+// Collection — chainable query API over metaDocs
+//
+// Roots (re-evaluated against current metaDocs on each // command):
+//   metaDocs  — all index entries
+//   pages     — metaDocs.unique('url')
+//   topics    — metaDocs deduplicated on title
+//   questions — metaDocs entries that have a .question field
+//
+// Sync transforms:   .filter(field, strOrRegex)  .unique(field)  .slice(n)
+// Sync terminals:    .count   .pluck(field)   .join(sep)
+// Async transforms:  .search("q", k)   .chunks()
+// Async terminal:    .llm()  .llm("question")  .llm(prompt="...", "question")
+// ---------------------------------------------------------------------------
+class Collection {
+  constructor(docs, query = null) {
+    this._docs  = Array.isArray(docs) ? docs : [];
+    this._query = query;
+  }
 
-function detectCategoryQuery(query) {
-  const q = query.toLowerCase().trim();
-  // Require an explicit listing/overview intent word before checking category keywords
-  const hasListingIntent = /^(list|show|give me|display|what are|overview of|summarize)\b/.test(q) ||
-    /\b(all|every)\b.{0,20}\b(report|seller|buyer|landing|coaching|seminar)\b/.test(q);
-  if (!hasListingIntent) return null;
-  return CATEGORIES.find(cat => cat.keywords.some(kw => q.includes(kw))) ?? null;
-}
+  filter(field, pattern) {
+    const test = pattern instanceof RegExp
+      ? s => pattern.test(s)
+      : s => s.toLowerCase().includes(String(pattern).toLowerCase());
+    return new Collection(
+      this._docs.filter(d => test(String(d[field] ?? ''))),
+      this._query
+    );
+  }
 
-async function handleCategoryQuery(category) {
-  await ensureTextLoaded();
+  unique(field) {
+    const seen = new Set();
+    return new Collection(
+      this._docs.filter(d => { const v = d[field]; return seen.has(v) ? false : (seen.add(v), true); }),
+      this._query
+    );
+  }
 
-  const seen = new Set();
-  const pages = [];
+  slice(n) {
+    return new Collection(this._docs.slice(0, n), this._query);
+  }
 
-  for (const doc of metaDocs) {
-    if (seen.has(doc.url)) continue;
-    const slug = doc.url.split('/').pop() ?? '';
-    const matchesUrl   = category.urlPatterns.some(re => re.test('/' + slug));
-    const matchesTitle = category.titlePatterns.some(re => re.test(doc.title ?? ''));
-    if (matchesUrl || matchesTitle) {
-      seen.add(doc.url);
-      const text = getText(doc.id).replace(/\s+/g, ' ').trim().substring(0, RAGConfig.get("retrieval.footnoteSnippetLength"));
-      pages.push({ url: doc.url, title: doc.title, snippet: text });
+  get count() { return this._docs.length; }
+
+  pluck(field) {
+    return this._docs.map(d => d[field]).filter(v => v != null);
+  }
+
+  join(sep = ', ') {
+    return this._docs.map(d => typeof d === 'string' ? d : (d.title || d.url || String(d))).join(sep);
+  }
+
+  // k defaults to min(50, docs.length) — generous for display, trimmed by llm() budget
+  async search(q, k) {
+    if (!q) return new Collection(this._docs, this._query);
+    k = k ?? Math.min(this._docs.length, 50);
+
+    if (embedder && embMatrix) {
+      try {
+        const output   = await embedder(q, { pooling: 'mean', normalize: true });
+        const queryVec = new Float32Array(output.data);
+        const scored = this._docs.map(doc => {
+          const slice = embMatrix.subarray(doc.id * DIMS, (doc.id + 1) * DIMS);
+          const sim   = cosineSimilarity(queryVec, slice);
+          const boost = doc.type === 'contact' ? RAGConfig.get('retrieval.contactBoost') : 0;
+          return { ...doc, score: sim + boost };
+        }).sort((a, b) => b.score - a.score);
+        return new Collection(scored.slice(0, k), q);
+      } catch(e) {
+        console.warn('Collection.search semantic failed, keyword fallback:', e.message);
+      }
     }
+
+    await ensureTextLoaded();
+    const words = q.toLowerCase().split(/\s+/).filter(w => w.length > 1);
+    const scored = this._docs.map(doc => {
+      const text = getText(doc.id).toLowerCase();
+      let score = 0;
+      if (text.includes(q.toLowerCase())) score += 3;
+      words.forEach(w => {
+        if (text.includes(w)) score += 1;
+        if ((doc.title || '').toLowerCase().includes(w)) score += 2;
+        if ((doc.url  || '').toLowerCase().includes(w)) score += 1;
+      });
+      return { ...doc, score };
+    }).sort((a, b) => b.score - a.score);
+    return new Collection(scored.slice(0, k), q);
   }
 
-  if (pages.length === 0) {
-    return {
-      answer: `No pages found matching **${category.name}** in the index.`,
-      sources: []
-    };
+  async chunks() {
+    await ensureTextLoaded();
+    return new Collection(
+      this._docs.map(d => ({ ...d, _text: getText(d.id) })),
+      this._query
+    );
   }
 
-  const answer = `Here are the **${pages.length} ${category.name}** on this site:\n\n` +
-    pages.map((p, i) =>
-      `[${i + 1}] **${p.title || p.url}**\n${p.snippet}…`
-    ).join('\n\n');
+  // Sends all docs up to the character budget (passageCharLimit × maxSources).
+  // No arbitrary doc-count cap — the budget is controlled by settings.
+  // _query defaults to a generic instruction when no .search() was in the chain.
+  async llm(argsStr, signal) {
+    const { prompt, userInput } = _parseLlmArgs(argsStr);
+    const systemPrompt = prompt ?? RAGConfig.get('llm.systemPrompt');
+    const query        = userInput ?? this._query ?? 'Summarize the key information.';
 
-  return {
-    answer,
-    sources: pages.map((p, i) => ({ id: i, url: p.url, title: p.title, score: 1 }))
-  };
-}
+    const charBudget = RAGConfig.get('retrieval.passageCharLimit') * getMaxSources();
+    const passageLen = RAGConfig.get('retrieval.passageCharLimit');
 
-// Handle meta-queries — list all pages
-function handleMetaQuery() {
-  const seen = new Set();
-  const pages = [];
-  for (const doc of metaDocs) {
-    if (!seen.has(doc.url)) {
-      seen.add(doc.url);
-      pages.push({ url: doc.url, title: doc.title });
+    await ensureTextLoaded();
+    const seenUrls = new Set();
+    const sources  = [];
+    let usedChars  = 0;
+    for (const doc of this._docs) {
+      if (seenUrls.has(doc.url)) continue;
+      const text = (doc._text || getText(doc.id)).substring(0, passageLen);
+      if (usedChars + text.length > charBudget && sources.length > 0) break;
+      seenUrls.add(doc.url);
+      sources.push({ ...doc, _resolvedText: text });
+      usedChars += text.length;
     }
-  }
-  const answer = `This site has **${pages.length} indexed pages**:\n\n` +
-    pages.map((p, i) => `[${i + 1}] ${p.title || p.url}`).join('\n');
-  return {
-    answer,
-    sources: pages.map((p, i) => ({ id: i, url: p.url, title: p.title, score: 1 }))
-  };
-}
 
-// Handle summary queries — first snippet of each page
-async function handleSummaryQuery() {
-  await ensureTextLoaded();
-  const seen = new Set();
-  const pages = [];
-  for (const doc of metaDocs) {
-    if (!seen.has(doc.url)) {
-      seen.add(doc.url);
-      const snippet = getText(doc.id).replace(/\s+/g, ' ').trim().substring(0, RAGConfig.get("retrieval.footnoteSnippetLength"));
-      pages.push({ url: doc.url, title: doc.title, snippet });
-    }
+    const passages = sources.map((d, i) => `[${i+1}] ${d._resolvedText}`).join('\n\n');
+    const { answer } = await _callLLM(systemPrompt, query, passages, signal);
+    return { answer, sources };
   }
-  const answer = `Here's a summary of all **${pages.length} pages** on this site:\n\n` +
-    pages.map((p, i) => `[${i + 1}] **${p.title || p.url}**\n${p.snippet}…`).join('\n\n');
-  return {
-    answer,
-    sources: pages.map((p, i) => ({ id: i, url: p.url, title: p.title, score: 1 }))
-  };
 }
 
 // ---------------------------------------------------------------------------
-// Meta-query dispatch
-//
-// Preferred: use %SYSTEM% prefix for explicit admin commands, e.g.:
-//   %SYSTEM% list urls
-//   %SYSTEM% summarize pages
-//   %SYSTEM% seller resources
-//   %SYSTEM% buyer resources
-//   %SYSTEM% reports
-//   %SYSTEM% count
-//
-// NLP detection below is kept as a fallback for obvious cases only,
-// with tight patterns to minimise false positives on normal queries.
+// LLM streaming helper — used by Collection.llm() and the normal RAG path
 // ---------------------------------------------------------------------------
+async function _callLLM(systemPrompt, userInput, passages, signal) {
+  if (!llmEngine) return { answer: 'LLM not available.' };
 
-// Build system command prefix regex from config — rebuilt on each call so
-// it reflects any changes made in the settings panel without page reload
-function getSystemPrefix() {
-  const prefix = RAGConfig.get('ui.systemCommandPrefix') || '%SYSTEM%';
-  return new RegExp('^' + prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*', 'i');
+  const systemContent = passages
+    ? `${systemPrompt}\n\nPassages:\n${passages}`
+    : systemPrompt;
+
+  const HISTORY_EXCHANGES = RAGConfig.get('llm.historyExchanges');
+  const history = messages
+    .filter(m => !m.isWelcome && (m.role === 'user' || m.role === 'assistant'))
+    .slice(-(HISTORY_EXCHANGES * 2 + 1), -1)
+    .map(m => ({
+      role: m.role,
+      content: m.role === 'assistant'
+        ? m.content.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().substring(0, 150)
+        : m.content.substring(0, 100)
+    }));
+
+  if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+
+  const typingText = document.querySelector('#typing-indicator span.text-gray-400');
+  if (typingText) typingText.textContent = 'Reading…';
+
+  const stream = await llmEngine.chat.completions.create({
+    messages: [
+      { role: 'system', content: systemContent },
+      ...history,
+      { role: 'user',   content: userInput }
+    ],
+    temperature:        RAGConfig.get('llm.temperature'),
+    repetition_penalty: RAGConfig.get('llm.repetitionPenalty'),
+    max_tokens:         RAGConfig.get('llm.maxTokens'),
+    stream: true,
+  });
+
+  let raw = '', firstToken = true;
+  for await (const chunk of stream) {
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+    const token = chunk.choices[0]?.delta?.content ?? '';
+    if (token && firstToken) { firstToken = false; if (typingText) typingText.textContent = 'Generating…'; }
+    raw += token;
+  }
+
+  const answer = deduplicateSentences(raw)
+    .replace(/\n+\[?\d+\]?\s*https?:\/\/\S+/g, '')
+    .replace(/\n+(sources|references|source list|cited|links)[\s\S]*/gi, '')
+    .replace(/\n+\[\d+\][^\n]*/g, '')
+    .trimEnd();
+
+  return { answer };
 }
 
-function parseSystemCommand(query) {
-  const prefix = getSystemPrefix();
-  if (!prefix.test(query)) return null;
-  const cmd = query.replace(prefix, '').trim().toLowerCase();
+// ---------------------------------------------------------------------------
+// Pipeline engine — parses and executes // expressions
+//
+// Grammar:  root ( '.' method '(' args? ')' )*
+// Roots:    metaDocs | pages | topics | questions
+// Methods:  search filter unique slice chunks llm count pluck join
+// Template blocks {{ }} are evaluated first and returned directly.
+// ---------------------------------------------------------------------------
 
-  if (/^(list\s+)?(all\s+)?(url|urls|pages|links)$/.test(cmd) || cmd === 'list' || cmd === 'urls') {
-    return 'list-urls';
-  }
-  if (/^(summarize?|summary|overview)(\s+all)?(\s+pages?)?$/.test(cmd)) {
-    return 'summarize-pages';
-  }
-  if (/^(count|how many)$/.test(cmd)) {
-    return 'count';
-  }
-  // Check category keywords
-  const matchedCat = CATEGORIES.find(cat => cat.keywords.some(kw => cmd.includes(kw)));
-  if (matchedCat) return { type: 'category', category: matchedCat };
+function _parseLlmArgs(argsStr) {
+  if (!argsStr) return {};
+  const result  = {};
+  const promptM = argsStr.match(/prompt\s*=\s*["']([^"']*)["']/);
+  if (promptM) result.prompt = promptM[1];
+  const rest = argsStr.replace(/\w+\s*=\s*["'][^"']*["']\s*,?\s*/g, '').trim();
+  const posM = rest.match(/^["'](.*)["']$/s);
+  if (posM) result.userInput = posM[1];
+  return result;
+}
 
-  // Unknown system command — show help
-  return 'help';
+function _splitArgs(argsStr) {
+  const parts = [];
+  let cur = '', inQ = false, qCh = '';
+  for (const ch of argsStr) {
+    if (!inQ && (ch === '"' || ch === "'")) { inQ = true; qCh = ch; cur += ch; }
+    else if (inQ && ch === qCh)             { inQ = false; cur += ch; }
+    else if (!inQ && ch === ',')            { parts.push(cur.trim()); cur = ''; }
+    else                                    { cur += ch; }
+  }
+  if (cur.trim()) parts.push(cur.trim());
+  return parts;
+}
+
+function _parsePattern(s) {
+  s = (s || '').trim();
+  const reM = s.match(/^\/(.*)\/([gimsuy]*)$/);
+  if (reM) return new RegExp(reM[1], reM[2]);
+  const strM = s.match(/^["'](.*)["']$/s);
+  return strM ? strM[1] : s;
+}
+
+function _getRootCollection(name) {
+  switch (name) {
+    case 'pages':     return new Collection(metaDocs).unique('url');
+    case 'topics':    return new Collection(metaDocs.filter(d => d.title && d.title !== 'Untitled')).unique('title');
+    case 'questions': return new Collection(metaDocs.filter(d => d.question));
+    default:          return new Collection(metaDocs);
+  }
+}
+
+function _formatCollectionResult(col) {
+  if (!col._docs.length) return 'No results.';
+  const seen = new Set();
+  return col._docs
+    .filter(d => { if (seen.has(d.url)) return false; seen.add(d.url); return true; })
+    .map((d, i) => `[${i+1}] **${d.title || d.url || ''}**${d.url ? `\n${d.url}` : ''}`)
+    .join('\n\n');
+}
+
+async function _pipelineHelp(prefix) {
+  const p = prefix;
+
+  // --- Live evaluation of non-LLM examples against current index ---
+  const allPages     = _getRootCollection('pages');
+  const allQuestions = _getRootCollection('questions');
+
+  // counts
+  const pageCount = allPages.count;
+  const qCount    = allQuestions.count;
+
+  // filter examples — sync, always available
+  const buyerPages       = allPages.filter('url', 'buyer');
+  const sellerBuyerPages = allPages.filter('url', /seller|buyer/);
+
+  const fmtList = (col, max = 4) => {
+    const seen = new Set();
+    const rows = col._docs
+      .filter(d => { if (seen.has(d.url)) return false; seen.add(d.url); return true; })
+      .slice(0, max)
+      .map((d, i) => `  [${i+1}] ${d.title || d.url}  —  ${d.url}`);
+    const extra = col.count - rows.length;
+    if (extra > 0) rows.push(`  …+${extra} more`);
+    return rows.join('\n');
+  };
+
+  // search example — only if embedder is loaded (async)
+  let searchResult = '  (embedding model not loaded yet — run the command to see results)';
+  if (embedder && embMatrix) {
+    try {
+      const res = await allPages.search('mortgage rates');
+      const unique = res.unique('url');
+      searchResult = fmtList(unique, 5);
+    } catch(e) {
+      searchResult = `  (search unavailable: ${e.message})`;
+    }
+  }
+
+  // char budget info
+  const budget = RAGConfig.get('retrieval.passageCharLimit') * getMaxSources();
+
+  return { answer: `**${p} pipeline reference**
+
+**Roots**
+  \`pages\`      — ${pageCount} unique pages
+  \`questions\`  — ${qCount} indexed questions
+  \`metaDocs\`   — all ${metaDocs.length} index entries (one per question)
+  \`topics\`     — unique page titles
+
+**Transforms**
+  \`.search("q")\`            — semantic search (sets implicit LLM query)
+  \`.filter("field","text")\`  — field contains text (case-insensitive)
+  \`.filter("field",/regex/)\` — field matches regex
+  \`.unique("field")\`         — deduplicate by field
+  \`.slice(n)\`                — first n results
+  \`.chunks()\`                — attach prose text (required before .llm())
+
+**Terminals**
+  \`.count\`                   — number of results
+  \`.pluck("field")\`          — list of field values
+  \`.join("sep")\`             — join to string
+  \`.llm()\`                   — send to LLM (query from .search context, or "Summarize the key information.")
+  \`.llm("question")\`         — explicit question
+  \`.llm(prompt="...", "q")\`  — override system prompt + question
+
+**LLM context budget:** ${budget} chars (passageCharLimit × maxSources — adjust in Settings → Retrieval)
+
+---
+**Live examples against current index**
+
+\`${p} pages.count\`
+  → ${pageCount}
+
+\`${p} questions.count\`
+  → ${qCount}
+
+\`${p} pages.filter("url","buyer")\`
+  → ${buyerPages.count} pages:
+${fmtList(buyerPages)}
+
+\`${p} pages.filter("url",/seller|buyer/)\`
+  → ${sellerBuyerPages.count} pages:
+${fmtList(sellerBuyerPages)}
+
+\`${p} metaDocs.search("mortgage rates").unique("url")\`
+${searchResult}
+
+---
+**LLM examples** (syntax only — run to execute)
+
+\`${p} metaDocs.search("buyer homes").chunks().llm()\`
+\`${p} pages.chunks().llm("summarize all pages")\`
+\`${p} pages.filter("url","seller").chunks().llm("what seller resources are available?")\`
+\`${p} pages.filter("url","seller").chunks().llm(prompt="Answer in bullet points","seller resources")\`
+
+---
+**Template blocks** (mix with text)
+
+\`${p} {{pages.count}} pages and {{questions.count}} questions indexed\`
+\`${p} {{topics.slice(5).join(", ")}}\``, sources: [] };
+}
+
+async function executePipeline(expr, signal) {
+  // {{ }} template expressions — evaluate and return directly
+  if (expr.includes('{{')) {
+    return { answer: renderWelcomeTemplate(expr), sources: [] };
+  }
+
+  const rootM = expr.trim().match(/^(metaDocs|pages|topics|questions)([\s\S]*)$/);
+  if (!rootM) return null;
+
+  let value = _getRootCollection(rootM[1]);
+  let rest  = rootM[2] || '';
+
+  while (rest.startsWith('.')) {
+    rest = rest.slice(1);
+    const m = rest.match(/^(\w+)(?:\(([^)]*)\))?([\s\S]*)$/);
+    if (!m) break;
+    const [, method, argsStr, tail] = m;
+    rest = tail || '';
+
+    if (method === 'search') {
+      const qM = (argsStr || '').match(/^["'](.*)["']$/s);
+      const q  = qM ? qM[1] : (argsStr || '').trim();
+      value = await value.search(q);  // k defaults to min(50, docs.length)
+    } else if (method === 'filter') {
+      const [fPart = '', pPart = ''] = _splitArgs(argsStr || '');
+      value = value.filter(fPart.replace(/^["']|["']$/g, ''), _parsePattern(pPart));
+    } else if (method === 'unique') {
+      const fM = (argsStr || '').match(/^["']?(\w+)["']?$/);
+      value = value.unique(fM ? fM[1] : 'url');
+    } else if (method === 'slice') {
+      value = value.slice(parseInt(argsStr || '10') || 10);
+    } else if (method === 'count') {
+      return { answer: String(value.count), sources: [] };
+    } else if (method === 'pluck') {
+      const fM = (argsStr || '').match(/^["']?(\w+)["']?$/);
+      return { answer: value.pluck(fM ? fM[1] : 'title').join('\n'), sources: [] };
+    } else if (method === 'join') {
+      const sM = (argsStr || '').match(/^["'](.*)["']$/s);
+      return { answer: value.join(sM ? sM[1] : ', '), sources: [] };
+    } else if (method === 'chunks') {
+      value = await value.chunks();
+    } else if (method === 'llm') {
+      return await value.llm(argsStr || '', signal);
+    }
+  }
+
+  // No terminal method — format Collection as a numbered list
+  if (value instanceof Collection) {
+    return { answer: _formatCollectionResult(value), sources: value._docs };
+  }
+  return { answer: String(value), sources: [] };
 }
 
 // Sync the model dropdown to reflect what's actually running —
@@ -953,63 +1333,25 @@ function syncDropdownToLoadedModel(modelId) {
   // Invalidate the backend cache so next reload re-probes cleanly
   _detectedBackends = null;
 }
-function detectMetaQuery(query) {
-  const q = query.toLowerCase().trim();
-  return (
-    /^(list|dump|show|print|display)\s+(all\s+)?(url|urls|pages|links)$/.test(q) ||
-    /^how many (pages|urls|documents|files)(\s+do you have)?$/.test(q)
-  );
-}
-
-function detectSummaryQuery(query) {
-  const q = query.toLowerCase().trim();
-  return /^(summarize|overview of|describe)\s+all\s+(pages|urls|content)$/.test(q) ||
-    /^(each page|all pages|every page)$/.test(q);
-}
-
-function detectCategoryQuery(query) {
-  const q = query.toLowerCase().trim();
-  const hasListingIntent = /^(list|show|give me all|display all)\s/.test(q);
-  if (!hasListingIntent) return null;
-  return CATEGORIES.find(cat => cat.keywords.some(kw => q.includes(kw))) ?? null;
-}
-
 // RAG + LLM generation
 async function chat(query, signal = null) {
 
-  // --- %SYSTEM% prefix: explicit admin command, zero false positives ---
-  const sysCmd = parseSystemCommand(query);
-  if (sysCmd) {
-    if (sysCmd === 'list-urls')       return handleMetaQuery(query);
-    if (sysCmd === 'summarize-pages') return await handleSummaryQuery();
-    if (sysCmd === 'count') {
-      const n = new Set(metaDocs.map(d => d.url)).size;
-      return { answer: `The index contains **${n} unique pages**.`, sources: [] };
+  // --- Pipeline: // prefix triggers power-user expression mode ---
+  const _sysPrefix   = RAGConfig.get('ui.systemCommandPrefix') || '//';
+  const _sysPrefixRe = new RegExp('^' + _sysPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*');
+  if (_sysPrefixRe.test(query)) {
+    const expr   = query.replace(_sysPrefixRe, '').trim();
+    // Explicit help command or empty expression → open reference panel, no chat message
+    if (!expr || expr === 'help') {
+      _openReferencePanel();
+      return { answer: '', sources: [] };
     }
-    if (sysCmd?.type === 'category')  return await handleCategoryQuery(sysCmd.category);
-    if (sysCmd === 'help') {
-      const p = RAGConfig.get('ui.systemCommandPrefix');
-      return {
-        answer: `**${p} commands:**\n\n` +
-          `\`${p} urls\` — list all indexed URLs\n` +
-          `\`${p} summarize\` — summarize every page\n` +
-          `\`${p} count\` — how many pages are indexed\n` +
-          `\`${p} seller resources\` — seller pages\n` +
-          `\`${p} buyer resources\` — buyer pages\n` +
-          `\`${p} reports\` — report pages\n` +
-          `\`${p} coaching\` — coaching pages\n` +
-          `\`${p} seminars\` — seminar pages\n` +
-          `\`${p} landing pages\` — landing pages`,
-        sources: []
-      };
-    }
+    const result = await executePipeline(expr, signal);
+    if (result) return result;
+    // Unrecognized expression — open reference panel instead of flooding chat
+    _openReferencePanel();
+    return { answer: '', sources: [] };
   }
-
-  // --- Fallback NLP detection for obvious cases ---
-  const matchedCategory = detectCategoryQuery(query);
-  if (matchedCategory) return await handleCategoryQuery(matchedCategory);
-  if (detectSummaryQuery(query))  return await handleSummaryQuery();
-  if (detectMetaQuery(query))     return handleMetaQuery(query);
 
   // --- Normal RAG path ---
 
@@ -1042,90 +1384,17 @@ async function chat(query, signal = null) {
   // LLM path
   if (llmEngine) {
     try {
-      // Build context block — empty when RAG is disabled
-      const trimmedContext = ragEnabled && uniqueSources.length
+      const passages = ragEnabled && uniqueSources.length
         ? uniqueSources.map((s, i) =>
             `[${i+1}] ${getText(s.id).substring(0, RAGConfig.get('retrieval.passageCharLimit'))}`
           ).join('\n\n')
         : '';
-
-      if (ragEnabled) {
-        console.log('📤 Sending context to LLM:\n', trimmedContext);
-      } else {
-        console.log('📤 RAG disabled — sending query directly to LLM (no retrieved context)');
-      }
-
-      // Only last N exchanges for history — reduces prefill tokens significantly
-      const HISTORY_EXCHANGES = RAGConfig.get('llm.historyExchanges');
-      const history = messages
-        .filter(m => !m.isWelcome)
-        .filter(m => m.role === 'user' || m.role === 'assistant')
-        .slice(-(HISTORY_EXCHANGES * 2 + 1), -1)
-        .map(m => ({
-          role: m.role,
-          content: m.role === 'assistant'
-            ? m.content.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().substring(0, 150)
-            : m.content.substring(0, 100)
-        }));
-
-      // Throw immediately if already aborted
-      if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
-
-      // Update typing indicator to show prefill phase
-      const typingText = document.querySelector('#typing-indicator span.text-gray-400');
-      if (typingText) typingText.textContent = 'Reading…';
-
-      // Build system message — only append passages when RAG is enabled and has results
-      const systemContent = ragEnabled && trimmedContext
-        ? `${RAGConfig.get('llm.systemPrompt')}\n\nPassages:\n${trimmedContext}`
-        : RAGConfig.get('llm.systemPrompt');
-
-      // Use streaming so we can abort between tokens —
-      // non-streaming holds the JS thread until fully done, abort never fires
-      const stream = await llmEngine.chat.completions.create({
-        messages: [
-          {
-            role: 'system',
-            content: systemContent
-          },
-          ...history,
-          {
-            role: 'user',
-            content: query
-          }
-        ],
-        temperature:       RAGConfig.get('llm.temperature'),
-        repetition_penalty: RAGConfig.get('llm.repetitionPenalty'),
-        max_tokens:        RAGConfig.get('llm.maxTokens'),
-        stream: true,
-      });
-
-      // Switch indicator to generating phase on first token
-      let firstToken = true;
-
-      // Accumulate streamed tokens, checking abort between each chunk
-      let raw = '';
-      for await (const chunk of stream) {
-        if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
-        const token = chunk.choices[0]?.delta?.content ?? '';
-        if (token && firstToken) {
-          firstToken = false;
-          if (typingText) typingText.textContent = 'Generating…';
-        }
-        raw += token;
-      }
-
-      // Strip duplicate sentences — split on ., !, ? then dedupe preserving order
-      const deduped = deduplicateSentences(raw);
-      const answer = deduped
-        .replace(/\n+\[?\d+\]?\s*https?:\/\/\S+/g, '')
-        .replace(/\n+(sources|references|source list|cited|links)[\s\S]*/gi, '')
-        .replace(/\n+\[\d+\][^\n]*/g, '')
-        .trimEnd();
+      if (ragEnabled) console.log('📤 Sending context to LLM:\n', passages);
+      else            console.log('📤 RAG disabled — sending query directly to LLM');
+      const { answer } = await _callLLM(RAGConfig.get('llm.systemPrompt'), query, passages, signal);
       return { answer, sources: uniqueSources };
     } catch (e) {
-      if (e.name === 'AbortError') throw e; // propagate abort to ask()
-      // GPU device lost — null the engine so subsequent queries don't hit the dead engine
+      if (e.name === 'AbortError') throw e;
       if (e.message?.includes('Device was lost') || e.message?.includes('external Instance')) {
         console.warn('⚠️ GPU device lost — resetting engine, please reload model');
         llmEngine = null;
@@ -1175,7 +1444,7 @@ window.stopGeneration = function() {
 window.ask = async function() {
   const input   = document.getElementById('input');
   const sendBtn = document.getElementById('send-btn');
-  const query   = input.value.trim();
+  const query   = renderWelcomeTemplate(input.value.trim());
   if (!query) return;
 
   input.value     = '';
@@ -1225,6 +1494,8 @@ window.ask = async function() {
   let answer = null;
   let sources = [];
   let chatSucceeded = false;
+  const _sysP   = RAGConfig.get('ui.systemCommandPrefix') || '//';
+  const isPipelineCmd = new RegExp('^' + _sysP.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*').test(query);
 
   try {
     const result = await chat(query, signal);
@@ -1246,11 +1517,11 @@ window.ask = async function() {
   typing.remove();
 
   if (answer) {
-    messages.push({ role: 'assistant', content: answer, sources });
+    messages.push({ role: 'assistant', content: answer, sources, isPipelineCmd });
     saveMessages();
     renderMessages();
   }
-  if (chatSucceeded) updateQuestionsFromChat(answer, messages.length - 1);
+  if (chatSucceeded && !isPipelineCmd) updateQuestionsFromChat(answer, messages.length - 1);
 
   // Restore send button
   input.disabled    = false;
@@ -1289,6 +1560,44 @@ function renderMessages() {
 
   container.innerHTML = messages.map((m, i) => {
     let content = m.content;
+
+    if (m.role === 'assistant' && m.isPipelineCmd) {
+      // Terminal card for pipeline command output
+      const _pfx  = RAGConfig.get('ui.systemCommandPrefix') || '//';
+      const _pfxH = escHtml(_pfx);
+      const _pfxRe = _pfxH.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      // Wrap `// cmd` backtick spans into clickable chips (fill input on click, don't submit)
+      let body = escHtml(content).replace(
+        new RegExp('`(' + _pfxRe + '[^`]+)`', 'g'),
+        (match, cmd) => `<button class="msg-pipeline-cmd-chip" data-cmd="${cmd.trim()}">${match}</button>`
+      );
+      let sourcesHtml = '';
+      if (m.sources && m.sources.length) {
+        const chips = m.sources.map(s => {
+          let title = s.title;
+          if (!title || title === 'undefined') {
+            title = s.url.split('/').pop()
+              ?.replace(/-/g,' ').replace(/\.html?$/,'').replace(/\?.*/,'') || 'Source';
+          }
+          return `<a href="${escHtml(s.url)}" target="_blank" class="msg-pipeline-source-chip">${escHtml(title)}</a>`;
+        }).join('');
+        sourcesHtml = `<div class="msg-pipeline-sources">${chips}</div>`;
+      }
+      return `
+        <div class="flex justify-start">
+          <div class="msg-pipeline-card">
+            <div class="msg-pipeline-titlebar">
+              <span class="msg-pipeline-dot msg-pipeline-dot-r"></span>
+              <span class="msg-pipeline-dot msg-pipeline-dot-y"></span>
+              <span class="msg-pipeline-dot msg-pipeline-dot-g"></span>
+              <span class="msg-pipeline-label">pipeline</span>
+            </div>
+            <div class="msg-pipeline-body">${body}</div>
+            ${sourcesHtml}
+          </div>
+        </div>
+      `;
+    }
 
     if (m.role === 'assistant') {
       content = content
@@ -1561,6 +1870,97 @@ window.clearChat = function() {
   loadInitialQuestions();
 };
 
+// ---------------------------------------------------------------------------
+// Questions panel tab switching
+// ---------------------------------------------------------------------------
+window.switchQuestionsTab = function(tab) {
+  document.getElementById('qp-tab-questions')?.classList.toggle('active', tab === 'questions');
+  document.getElementById('qp-tab-reference')?.classList.toggle('active', tab === 'reference');
+  const qList = document.getElementById('questions-list');
+  const rPane = document.getElementById('pipeline-ref-pane');
+  if (qList) qList.style.display = tab === 'questions' ? '' : 'none';
+  if (rPane) rPane.classList.toggle('active', tab === 'reference');
+  if (tab === 'reference' && rPane && !rPane.dataset.populated) populatePipelineRef();
+};
+
+// Build the pipeline reference pane content
+function populatePipelineRef() {
+  const pane = document.getElementById('pipeline-ref-pane');
+  if (!pane) return;
+  const p = RAGConfig.get('ui.systemCommandPrefix') || '//';
+
+  // Live counts (available once index is loaded)
+  const pageCount = metaDocs.length ? new Collection(metaDocs).unique('url').count : '…';
+  const qCount    = metaDocs.length ? metaDocs.filter(d => d.question).length : '…';
+  const docCount  = metaDocs.length || '…';
+
+  const chip = (cmd) =>
+    `<button class="ref-cmd-chip" data-cmd="${escHtml(p + ' ' + cmd)}">${escHtml(p + ' ' + cmd)}</button>`;
+
+  const row = (key, desc) =>
+    `<div class="ref-row"><span class="ref-key">${escHtml(key)}</span><span class="ref-desc">${escHtml(desc)}</span></div>`;
+
+  pane.innerHTML = `
+    <div class="ref-section-hdr">Roots</div>
+    ${row('pages', `${pageCount} unique pages`)}
+    ${row('questions', `${qCount} indexed questions`)}
+    ${row('metaDocs', `all ${docCount} entries`)}
+    ${row('topics', 'unique page titles')}
+
+    <div class="ref-section-hdr">Transforms</div>
+    ${row('.search("q")', 'semantic search')}
+    ${row('.filter("field","text")', 'field contains text')}
+    ${row('.filter("field",/regex/)', 'field matches regex')}
+    ${row('.unique("field")', 'deduplicate by field')}
+    ${row('.slice(n)', 'first n results')}
+    ${row('.chunks()', 'attach prose (required before .llm())')}
+
+    <div class="ref-section-hdr">Terminals</div>
+    ${row('.count', 'number of results')}
+    ${row('.pluck("field")', 'list field values')}
+    ${row('.join("sep")', 'join to string')}
+    ${row('.llm()', 'send to LLM')}
+    ${row('.llm("question")', 'explicit question')}
+    ${row('.llm(prompt="…","q")', 'override system prompt')}
+
+    <div class="ref-section-hdr">Examples — click to fill input</div>
+    ${chip('pages.count')}
+    ${chip('questions.count')}
+    ${chip('pages.filter("url","buyer")')}
+    ${chip('pages.filter("url",/seller|buyer/)')}
+    ${chip('metaDocs.search("mortgage rates").unique("url")')}
+    ${chip('metaDocs.search("buyer homes").chunks().llm()')}
+    ${chip('pages.chunks().llm("summarize all pages")')}
+    ${chip('pages.filter("url","seller").chunks().llm("seller resources")')}
+
+    <div class="ref-section-hdr">Template syntax</div>
+    ${row('{{pages.count}}', 'embed count in text')}
+    ${row('{{topics.slice(5).join(", ")}}', 'list first 5 topics')}
+    ${row('{{questions.count}}', 'total questions')}
+  `;
+  pane.dataset.populated = '1';
+}
+
+// Re-populate reference pane after index changes (counts may differ)
+function refreshPipelineRef() {
+  const pane = document.getElementById('pipeline-ref-pane');
+  if (!pane) return;
+  delete pane.dataset.populated;
+  if (pane.classList.contains('active')) populatePipelineRef();
+}
+
+// Open the questions panel (mobile drawer) and switch to Reference tab
+function _openReferencePanel() {
+  // On mobile the panel needs to be opened
+  const panel = document.getElementById('questions-panel');
+  const backdrop = document.getElementById('questions-backdrop');
+  if (panel && !panel.classList.contains('open')) {
+    panel.classList.add('open');
+    if (backdrop) backdrop.classList.add('open');
+  }
+  window.switchQuestionsTab('reference');
+}
+
 // Expose for app-hot.js to call after updating messageRelated
 window.messageRelated = messageRelated;
 window.renderMessages  = renderMessages;
@@ -1570,12 +1970,28 @@ document.addEventListener('DOMContentLoaded', function() {
   const sendBtn = document.getElementById('send-btn');
   const input   = document.getElementById('input');
 
-  // Event delegation for related question chips inside messages
+  // Event delegation for chips inside messages
   document.getElementById('messages')?.addEventListener('click', e => {
+    // Pipeline command chip in terminal card — fill input, don't submit
+    const cmdChip = e.target.closest('.msg-pipeline-cmd-chip');
+    if (cmdChip) {
+      input.value = cmdChip.dataset.cmd;
+      input.focus();
+      return;
+    }
     const chip = e.target.closest('[data-question]');
     if (chip && !_abortController) {
       input.value = chip.dataset.question;
       ask();
+    }
+  });
+
+  // Event delegation for reference panel command chips — fill input, don't submit
+  document.getElementById('pipeline-ref-pane')?.addEventListener('click', e => {
+    const chip = e.target.closest('.ref-cmd-chip');
+    if (chip) {
+      input.value = chip.dataset.cmd;
+      input.focus();
     }
   });
 
