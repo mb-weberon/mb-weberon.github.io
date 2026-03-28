@@ -1,9 +1,14 @@
 {
   "major": 0,
   "minor": 12,
-  "patch": 17,
+  "patch": 18,
   "label": "",
   "history": [
+    {
+      "version": "0.12.18",
+      "date": "2026-03-27",
+      "note": "UX: slide-handle restored on mobile (9px visual, 69px touch zone via ::before); pane 99% width; send button flips left on any pan offset; choice buttons stack vertically left in narrow mode; diagram pinch-zoom (2-finger); results drawer snap-collapse refits diagram via rAF + transitionend"
+    },
     {
       "version": "0.12.17",
       "date": "2026-03-27",
