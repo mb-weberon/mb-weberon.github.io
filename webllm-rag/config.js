@@ -52,7 +52,7 @@ const DEFAULT_SETTINGS = {
   },
   ui: {
     systemCommandPrefix: '//',
-    welcomeMessage:      '',
+    welcomeMessage:      '👋 Welcome! This site has **{{pages.count}} pages** covering {{topics.slice(6).join(", ")}}.\n\nAsk me anything about it.',
   },
   questions: {
     exploreCount: 20,

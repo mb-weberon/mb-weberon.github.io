@@ -1372,37 +1372,115 @@ function buildModelDropdown() {
     ).join('');
 }
 
+// ---------------------------------------------------------------------------
+// Welcome message template engine
+// Syntax: {{ expr }} — expressions evaluated against index collections.
+//
+// Root collections:
+//   pages      — unique pages (by URL); each item has .title and .url
+//   topics     — unique page titles (strings)
+//   questions  — unique question strings (only present in question-indexed sites)
+//
+// Chainable methods:
+//   .count            — number of items
+//   .slice(n)         — first n items
+//   .search("text")   — filter items whose title/question contains text (case-insensitive)
+//   .join("sep")      — collapse to string (default ", ")
+//
+// count(expr) — shorthand function form for expr.count
+//
+// Examples:
+//   {{pages.count}}
+//   {{topics.slice(6).join(", ")}}
+//   {{pages.search("waterfront").count}}
+//   {{questions.slice(3).join(" · ")}}
+// ---------------------------------------------------------------------------
+function _buildWelcomeCtx() {
+  const seenUrls = new Set();
+  const pages = [];
+  for (const d of metaDocs) {
+    if (!seenUrls.has(d.url)) { seenUrls.add(d.url); pages.push(d); }
+  }
+  const topics    = [...new Set(metaDocs.map(d => d.title).filter(t => t && t !== 'Untitled'))];
+  const questions = [...new Set(metaDocs.filter(d => d.question).map(d => d.question))];
+  return { pages, topics, questions };
+}
+
+function _evalWelcomeExpr(exprStr, ctx) {
+  const toStr = item => typeof item === 'string' ? item : (item.title || item.url || '');
+  exprStr = exprStr.trim();
+
+  // count(expr) function form
+  const countM = exprStr.match(/^count\((.+)\)$/s);
+  if (countM) {
+    const inner = _evalWelcomeExpr(countM[1].trim(), ctx);
+    return Array.isArray(inner) ? inner.length : (typeof inner === 'number' ? inner : 0);
+  }
+
+  // Root collection
+  const rootM = exprStr.match(/^(pages|topics|questions)([\s\S]*)$/);
+  if (!rootM) return '';
+
+  let value = ctx[rootM[1]];
+  let rest  = rootM[2] || '';
+
+  while (rest.length) {
+    if (!rest.startsWith('.')) break;
+    rest = rest.slice(1);
+    const m = rest.match(/^(\w+)(?:\(([^)]*)\))?([\s\S]*)$/);
+    if (!m) break;
+    const [, method, argsStr, tail] = m;
+    rest = tail || '';
+
+    if (method === 'count') {
+      value = Array.isArray(value) ? value.length : 0;
+    } else if (method === 'slice' && argsStr !== undefined) {
+      const n = parseInt(argsStr);
+      value = Array.isArray(value) ? value.slice(0, isNaN(n) ? value.length : n) : value;
+    } else if (method === 'search' && argsStr !== undefined) {
+      const qM = argsStr.match(/^["'](.*)["']$/s);
+      const q  = (qM ? qM[1] : argsStr).toLowerCase();
+      value = Array.isArray(value) ? value.filter(item => toStr(item).toLowerCase().includes(q)) : value;
+    } else if (method === 'join') {
+      const sM  = argsStr !== undefined ? argsStr.match(/^["'](.*)["']$/s) : null;
+      const sep = sM ? sM[1] : ', ';
+      value = Array.isArray(value) ? value.map(toStr).join(sep) : String(value ?? '');
+    }
+  }
+
+  if (Array.isArray(value)) return value.map(toStr).join(', ');
+  return String(value ?? '');
+}
+
+function renderWelcomeTemplate(text) {
+  if (!text.includes('{{')) return text;
+  const ctx = _buildWelcomeCtx();
+  return text.replace(/\{\{([^}]+)\}\}/g, (_, expr) => {
+    try {
+      return String(_evalWelcomeExpr(expr, ctx));
+    } catch(e) {
+      console.warn('Welcome template error in:', expr, e);
+      return `{{${expr}}}`;
+    }
+  });
+}
+
 // Generate a welcome message — uses config welcome if set, else auto-generates from index
 async function generateWelcome() {
-  // Use configured welcome message if set
   const configWelcome = RAGConfig.get('ui.welcomeMessage');
   if (configWelcome && configWelcome.trim()) {
-    messages.push({ role: 'assistant', content: configWelcome.trim(), sources: [], isWelcome: true });
+    messages.push({ role: 'assistant', content: renderWelcomeTemplate(configWelcome.trim()), sources: [], isWelcome: true });
     renderMessages();
     return;
   }
 
   if (!metaDocs.length) return;
 
-  const seen = new Set();
-  const sample = [];
-  for (const doc of metaDocs) {
-    if (!seen.has(doc.url)) {
-      seen.add(doc.url);
-      sample.push(doc);
-      if (sample.length >= 8) break;
-    }
-  }
-
-  // Unique page titles
-  const titles = [...new Set(sample.map(s => s.title).filter(t => t && t !== 'Untitled'))];
-
-  // Build welcome instantly from titles
-  const topicList = titles.length
-    ? titles.slice(0, 6).join(', ')
-    : 'various topics';
-
-  const welcomeText = `👋 Welcome! This site covers **${topicList}**${titles.length > 6 ? ` and more` : ''}.\n\nAsk me anything about it.`;
+  // Fallback auto-generate (used when welcomeMessage is blank)
+  const ctx = _buildWelcomeCtx();
+  const topicList = ctx.topics.length ? ctx.topics.slice(0, 6).join(', ') : 'various topics';
+  const more = ctx.topics.length > 6 ? ' and more' : '';
+  const welcomeText = `👋 Welcome! This site covers **${topicList}**${more}.\n\nAsk me anything about it.`;
 
   messages.push({ role: 'assistant', content: welcomeText, sources: [], isWelcome: true });
   renderMessages();
