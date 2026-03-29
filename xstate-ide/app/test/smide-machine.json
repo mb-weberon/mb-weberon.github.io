@@ -123,7 +123,7 @@
     "flow_idle": {
       "meta": {
         "text": "Flow loaded. Chat at initial state. Ready to converse or run tests.",
-        "toolbar": ["test-btn", "restart-btn", "save-flow-btn", "load-flow-btn", "load-results-btn", "pack-prod-btn"]
+        "toolbar": ["test-btn", "restart-btn", "load-flow-btn", "load-results-btn", "pack-prod-btn"]
       },
       "on": {
         "LOAD_FLOW": {
@@ -156,7 +156,7 @@
     "session_active": {
       "meta": {
         "text": "Conversation in progress. Trace being recorded.",
-        "toolbar": ["test-btn", "restart-btn", "save-flow-btn", "load-flow-btn", "load-results-btn", "pack-prod-btn"]
+        "toolbar": ["test-btn", "restart-btn", "load-flow-btn", "load-results-btn", "pack-prod-btn"]
       },
       "on": {
         "LOAD_FLOW": {
@@ -210,7 +210,7 @@
     "results_unsaved": {
       "meta": {
         "text": "Tests done. Save Results before loading a new flow — Load Flow is locked.",
-        "toolbar": ["test-btn", "restart-btn", "save-results-btn", "save-flow-btn", "pack-prod-btn"]
+        "toolbar": ["test-btn", "restart-btn", "save-results-btn", "pack-prod-btn"]
       },
       "on": {
         "SAVE_RESULTS": {
@@ -231,7 +231,7 @@
     "results_saved": {
       "meta": {
         "text": "Results saved to disk. Load Flow re-enabled.",
-        "toolbar": ["test-btn", "restart-btn", "save-flow-btn", "load-flow-btn", "load-results-btn", "pack-prod-btn"]
+        "toolbar": ["test-btn", "restart-btn", "load-flow-btn", "load-results-btn", "pack-prod-btn"]
       },
       "on": {
         "LOAD_FLOW": {

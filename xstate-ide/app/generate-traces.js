@@ -26,6 +26,10 @@ const SAMPLE_INPUTS = {
     ask_email: 'test@example.com',
     ask_phone: '4155550123',
     // ucbs_bot (ask_phone and ask_email reuse the same keys above)
+    // subscription_management_v2
+    extend_quota_check:   'extend',
+    upgrade_plan_check:   'Pro',
+    downgrade_plan_check: 'Starter',
 };
 
 
@@ -158,10 +162,12 @@ function captureBubbles() {
 
 // ── Interrupt flag ────────────────────────────────────────────────────────────
 
-let _interrupted = false;
+let _interrupted            = false;
+let _currentHeadlessRuntime = null;
 
 export function stopAllTraces() {
     _interrupted = true;
+    _currentHeadlessRuntime?.actor?.stop();
     console.warn('⛔ Test run interrupted by user');
 }
 
@@ -303,7 +309,15 @@ export async function runAllTracesHeadless(config, services, { pauseMs = 0, serv
         runtime.onReplayStep = (item) => bubbles.push({ side: 'user', text: item });
 
         runtime.start();
+        _currentHeadlessRuntime = runtime;
         await runtime.replay(JSON.stringify(expected));
+        _currentHeadlessRuntime = null;
+
+        if (_interrupted) {
+            runtime.actor.stop();
+            console.warn(`⛔ Stopped after ${i + 1} of ${total} paths`);
+            break;
+        }
 
         const snap         = runtime.actor.getSnapshot();
         const finalStateId = typeof snap.value === 'string' ? snap.value : Object.keys(snap.value)[0];

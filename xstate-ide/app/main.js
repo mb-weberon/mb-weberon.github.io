@@ -72,6 +72,13 @@ async function boot() {
             if (!el) return;
             // load-results-btn is enabled for both load-mode and save-mode
             const enabled = toolbar.includes(id) || (id === 'load-results-btn' && saveMode);
+            // save-flow-btn is only relevant when a flow is embedded in loaded results —
+            // hide it entirely rather than greying it out to avoid toolbar noise.
+            if (id === 'save-flow-btn') {
+                el.style.display = enabled ? '' : 'none';
+                el.disabled = !enabled;
+                return;
+            }
             el.disabled      = !enabled;
             el.style.opacity = enabled ? '' : '0.4';
             el.style.cursor  = enabled ? '' : 'not-allowed';

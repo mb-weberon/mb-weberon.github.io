@@ -1,9 +1,19 @@
 {
   "major": 0,
   "minor": 12,
-  "patch": 31,
+  "patch": 33,
   "label": "",
   "history": [
+    {
+      "version": "0.12.33",
+      "date": "2026-03-29",
+      "note": "Fix: stopAllTraces() now stops the in-flight headless runtime actor, unblocking _waitForStateChange when a guard failure causes replay() to hang; added post-replay interrupt check so the loop breaks immediately; added SAMPLE_INPUTS for subscription_management_v2 text-input states"
+    },
+    {
+      "version": "0.12.32",
+      "date": "2026-03-28",
+      "note": "UX: Save Flow removed from toolbar except in results_ready — only useful when extracting an embedded flow from loaded results; button is hidden (not greyed) in all other states"
+    },
     {
       "version": "0.12.31",
       "date": "2026-03-28",
