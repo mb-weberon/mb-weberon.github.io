@@ -1242,6 +1242,15 @@ async function executePipeline(expr, signal) {
     return { answer: renderWelcomeTemplate(expr), sources: [] };
   }
 
+  // Bare llm(...) root — ask LLM directly with no RAG passages
+  const llmRootM = expr.trim().match(/^llm\(([^)]*)\)\s*$/);
+  if (llmRootM) {
+    const { prompt, userInput } = _parseLlmArgs(llmRootM[1]);
+    const systemPrompt = prompt ?? RAGConfig.get('llm.systemPrompt');
+    const question = userInput ?? 'Summarize the key information.';
+    return await _callLLM(systemPrompt, question, [], signal);
+  }
+
   const rootM = expr.trim().match(/^(metaDocs|pages|topics|questions)([\s\S]*)$/);
   if (!rootM) return null;
 
@@ -1906,6 +1915,7 @@ function populatePipelineRef() {
     ${row('questions', `${qCount} indexed questions`)}
     ${row('metaDocs', `all ${docCount} entries`)}
     ${row('topics', 'unique page titles')}
+    ${row('llm("question")', 'ask LLM directly — no RAG')}
 
     <div class="ref-section-hdr">Transforms</div>
     ${row('.search("q")', 'semantic search')}
@@ -1929,6 +1939,7 @@ function populatePipelineRef() {
     ${chip('pages.filter("url","buyer")')}
     ${chip('pages.filter("url",/seller|buyer/)')}
     ${chip('metaDocs.search("mortgage rates").unique("url")')}
+    ${chip('llm("What is a good question to ask about this site?")')}
     ${chip('metaDocs.search("buyer homes").chunks().llm()')}
     ${chip('pages.chunks().llm("summarize all pages")')}
     ${chip('pages.filter("url","seller").chunks().llm("seller resources")')}
@@ -1965,6 +1976,170 @@ function _openReferencePanel() {
 window.messageRelated = messageRelated;
 window.renderMessages  = renderMessages;
 
+// ---------------------------------------------------------------------------
+// Pipeline autocomplete strip
+// ---------------------------------------------------------------------------
+function _pcSets() {
+  const knownFields = ['url', 'title', 'type', 'chunkId', 'question'];
+  const fields = metaDocs.length
+    ? [...new Set(Object.keys(metaDocs[0]).filter(k => k !== '_text' && typeof metaDocs[0][k] === 'string'))]
+    : knownFields;
+
+  const ROOT = [
+    { label: 'pages',      insert: 'pages',     cursorBack: 0 },
+    { label: 'metaDocs',   insert: 'metaDocs',  cursorBack: 0 },
+    { label: 'questions',  insert: 'questions', cursorBack: 0 },
+    { label: 'topics',     insert: 'topics',    cursorBack: 0 },
+    { label: 'llm("")',    insert: 'llm("")',   cursorBack: 2 },
+  ];
+
+  // Insert strings have NO leading dot — dot is part of commitPart or added by caller
+  const TRANSFORMS = [
+    { label: '.search()',  insert: 'search("")',         cursorBack: 2 },
+    { label: '.filter()',  insert: 'filter("url", "")',  cursorBack: 2 },
+    { label: '.unique()',  insert: 'unique("url")',      cursorBack: 5 },
+    { label: '.slice()',   insert: 'slice(10)',           cursorBack: 2 },
+    { label: '.chunks()',  insert: 'chunks()',            cursorBack: 0 },
+    { label: '.count',     insert: 'count',               cursorBack: 0 },
+    { label: '.pluck()',   insert: 'pluck("title")',     cursorBack: 8 },
+    { label: '.join()',    insert: 'join(", ")',          cursorBack: 4 },
+  ];
+
+  const AFTER_CHUNKS = [
+    { label: '.llm()',     insert: 'llm()',              cursorBack: 0 },
+    { label: '.llm("…")', insert: 'llm("")',            cursorBack: 2 },
+    { label: '.count',     insert: 'count',               cursorBack: 0 },
+    { label: '.pluck()',   insert: 'pluck("title")',     cursorBack: 8 },
+    { label: '.join()',    insert: 'join(", ")',          cursorBack: 4 },
+  ];
+
+  // For .filter(): picking a field closes with value placeholder inside second quotes
+  const FILTER_FIELDS = fields.map(f => ({ label: `"${f}"`, insert: `"${f}", "")`, cursorBack: 2 }));
+  // For .unique(): picking a field closes the call
+  const UNIQUE_FIELDS = fields.map(f => ({ label: `"${f}"`, insert: `"${f}")`, cursorBack: 0 }));
+
+  return { ROOT, TRANSFORMS, AFTER_CHUNKS, FILTER_FIELDS, UNIQUE_FIELDS };
+}
+
+function _getPipelineCompletions(expr) {
+  const { ROOT, TRANSFORMS, AFTER_CHUNKS, FILTER_FIELDS, UNIQUE_FIELDS } = _pcSets();
+  // Prepend dot to inserts for cases where commitPart doesn't end with dot
+  const dot = arr => arr.map(c => ({ ...c, insert: '.' + c.insert }));
+
+  if (!expr) return { completions: ROOT, commitPart: '' };
+
+  // Inside unclosed parenthesis?
+  const lastOpen  = expr.lastIndexOf('(');
+  const lastClose = expr.lastIndexOf(')');
+  if (lastOpen > lastClose) {
+    const beforeParen = expr.slice(0, lastOpen + 1);
+    const inside      = expr.slice(lastOpen + 1);
+    const meth        = beforeParen.match(/\.(\w+)\($/)?.[1];
+    if (meth === 'filter' && !inside.includes(',')) {
+      const partial = inside.replace(/^"?/, '');
+      return {
+        completions: FILTER_FIELDS.filter(f => !partial || f.label.slice(1).startsWith(partial)),
+        commitPart: beforeParen,
+      };
+    }
+    if (meth === 'unique') {
+      const partial = inside.replace(/^"?/, '');
+      return {
+        completions: UNIQUE_FIELDS.filter(f => !partial || f.label.slice(1).startsWith(partial)),
+        commitPart: beforeParen,
+      };
+    }
+    return { completions: [], commitPart: expr };
+  }
+
+  // Ends with a dot
+  if (expr.endsWith('.')) {
+    const hasChunks = /\.chunks\(\)/.test(expr);
+    return { completions: hasChunks ? AFTER_CHUNKS : TRANSFORMS, commitPart: expr };
+  }
+
+  // Partial method name after dot: "pages.sea" → base="pages.", partial="sea"
+  const partialDot = expr.match(/^(.*\.)([a-zA-Z]*)$/);
+  if (partialDot) {
+    const [, base, partial] = partialDot;
+    const hasChunks = /\.chunks\(\)/.test(base.slice(0, -1));
+    const pool = hasChunks ? AFTER_CHUNKS : TRANSFORMS;
+    return {
+      completions: partial ? pool.filter(c => c.insert.startsWith(partial)) : pool,
+      commitPart: base,
+    };
+  }
+
+  // Ends with ) — after a complete method call
+  if (expr.endsWith(')')) {
+    const hasChunks = /\.chunks\(\)/.test(expr);
+    if (/\.(llm|pluck|join)\([^)]*\)$/.test(expr)) return { completions: [], commitPart: expr };
+    return { completions: dot(hasChunks ? AFTER_CHUNKS : TRANSFORMS), commitPart: expr };
+  }
+
+  // Ends with .count (terminal property)
+  if (/\.count$/.test(expr)) return { completions: [], commitPart: expr };
+
+  // Exact root name
+  if (/^(metaDocs|pages|topics|questions)$/.test(expr)) {
+    return { completions: dot(TRANSFORMS), commitPart: expr };
+  }
+  if (expr === 'llm') return { completions: [], commitPart: expr };
+
+  // Partial root name
+  const roots = ROOT.filter(c => c.insert.startsWith(expr));
+  if (roots.length) return { completions: roots, commitPart: '' };
+
+  return { completions: [], commitPart: expr };
+}
+
+let _pcState = null;
+
+function _renderPipelineStrip(completions) {
+  const strip = document.getElementById('pipeline-strip');
+  if (!strip) return;
+  if (!completions.length) {
+    strip.classList.remove('active');
+    strip.innerHTML = '';
+    return;
+  }
+  strip.innerHTML = completions.map((c, i) =>
+    `<button class="pc-chip${i === 0 ? ' pc-chip-first' : ''}" data-pc-idx="${i}">${escHtml(c.label)}</button>`
+  ).join('');
+  strip.classList.add('active');
+}
+
+function _hidePipelineStrip() {
+  const strip = document.getElementById('pipeline-strip');
+  if (strip) { strip.classList.remove('active'); strip.innerHTML = ''; }
+  _pcState = null;
+}
+
+function _applyPipelineCompletion(comp, commitPart) {
+  const input = document.getElementById('input');
+  if (!input) return;
+  const prefix = (RAGConfig.get('ui.systemCommandPrefix') || '//') + ' ';
+  const newValue = prefix + commitPart + comp.insert;
+  input.value = newValue;
+  const pos = newValue.length - (comp.cursorBack || 0);
+  input.setSelectionRange(pos, pos);
+  input.focus();
+  _onPipelineInput();   // re-evaluate completions for the new state
+}
+
+function _onPipelineInput() {
+  const input = document.getElementById('input');
+  if (!input) return;
+  const val = input.value;
+  const prefix = RAGConfig.get('ui.systemCommandPrefix') || '//';
+  const re = new RegExp('^' + prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*');
+  if (!re.test(val)) { _hidePipelineStrip(); return; }
+  const expr   = val.replace(re, '');
+  const result = _getPipelineCompletions(expr);
+  _pcState = result;
+  _renderPipelineStrip(result.completions);
+}
+
 // Wire up Send button, Enter key, and message chip clicks
 document.addEventListener('DOMContentLoaded', function() {
   const sendBtn = document.getElementById('send-btn');
@@ -1992,7 +2167,17 @@ document.addEventListener('DOMContentLoaded', function() {
     if (chip) {
       input.value = chip.dataset.cmd;
       input.focus();
+      _onPipelineInput();
     }
+  });
+
+  // Pipeline autocomplete strip — mousedown keeps focus, tap works on mobile
+  document.getElementById('pipeline-strip')?.addEventListener('mousedown', e => {
+    const chip = e.target.closest('.pc-chip');
+    if (!chip || !_pcState) return;
+    e.preventDefault(); // keep input focused / keyboard visible
+    const comp = _pcState.completions[parseInt(chip.dataset.pcIdx)];
+    if (comp) _applyPipelineCompletion(comp, _pcState.commitPart);
   });
 
   if (sendBtn) {
@@ -2000,10 +2185,23 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   if (input) {
+    input.addEventListener('input', _onPipelineInput);
+
     input.addEventListener('keydown', function(e) {
+      // Tab accepts first completion
+      if (e.key === 'Tab' && _pcState?.completions?.length) {
+        e.preventDefault();
+        _applyPipelineCompletion(_pcState.completions[0], _pcState.commitPart);
+        return;
+      }
+      // Escape dismisses strip
+      if (e.key === 'Escape' && _pcState) {
+        _hidePipelineStrip();
+        return;
+      }
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
-        // Only submit if not currently generating
+        _hidePipelineStrip();
         if (!_abortController) ask();
       }
     });

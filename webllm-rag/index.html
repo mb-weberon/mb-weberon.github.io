@@ -286,6 +286,26 @@
     .msg-question-chip:hover  { background: #dbeafe; }
     .msg-question-chip:active { background: #bfdbfe; }
 
+    /* Pipeline autocomplete strip */
+    #pipeline-strip {
+      display: none; overflow-x: auto; white-space: nowrap;
+      padding: 0 0 7px; scrollbar-width: none;
+      -webkit-overflow-scrolling: touch;
+    }
+    #pipeline-strip::-webkit-scrollbar { display: none; }
+    #pipeline-strip.active { display: block; }
+    .pc-chip {
+      display: inline-block;
+      font-family: ui-monospace, 'Cascadia Code', Consolas, monospace; font-size: 11.5px;
+      padding: 3px 9px; border-radius: 6px; margin-right: 5px;
+      background: #f3f4f6; color: #374151; border: 1px solid #e5e7eb;
+      cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent;
+      transition: background 0.1s;
+    }
+    .pc-chip:hover  { background: #e5e7eb; }
+    .pc-chip:active { background: #dbeafe; }
+    .pc-chip-first  { background: #eff6ff; border-color: #93c5fd; color: #1d4ed8; }
+
     /* Pipeline command terminal card */
     .msg-pipeline-card {
       font-family: ui-monospace, 'Cascadia Code', 'Fira Code', Consolas, monospace;
@@ -445,6 +465,7 @@
 
     <!-- Input bar -->
     <div id="input-bar" class="flex-none border-t bg-white px-3 pt-3 pb-2">
+      <div id="pipeline-strip"></div>
       <div class="flex gap-2 items-center">
         <input
           id="input"
