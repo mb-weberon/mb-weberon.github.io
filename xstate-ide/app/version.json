@@ -1,9 +1,14 @@
 {
   "major": 0,
   "minor": 12,
-  "patch": 33,
+  "patch": 34,
   "label": "",
   "history": [
+    {
+      "version": "0.12.34",
+      "date": "2026-03-29",
+      "note": "UX: live results drawer built upfront showing all N paths as pending before tests start; rows update in-place with running/pass/fail/skipped status; per-row Skip button on running row calls skipCurrentTrace() (stops headless actor, unblocks polling loops); per-row ▶ Re-run button on failed/skipped rows replays path in foreground IDE Runtime with consoleLogger for full console visibility; _createDrawerShell() extracted as shared infrastructure for live runner and Load Results path"
+    },
     {
       "version": "0.12.33",
       "date": "2026-03-29",

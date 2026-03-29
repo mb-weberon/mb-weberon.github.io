@@ -118,6 +118,7 @@ async function boot() {
     window.generateTraces      = () => config ? tracesModule.generateTraces(config) : [];
     window.downloadTestResults = tracesModule.downloadTestResults;
     window.stopAllTraces       = tracesModule.stopAllTraces;
+    window.skipCurrentTrace    = tracesModule.skipCurrentTrace;
     window.runAllTraces        = (pauseMs) => {
         if (!config) {
             console.warn('⚠️  No flow loaded — use Load Flow first');

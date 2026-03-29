@@ -7,8 +7,10 @@ import { Runtime } from './Runtime.js';
  * logs them to the console or runs them one after another in the IDE,
  * capturing chat bubbles, final state, final context, and pass/fail.
  *
- * After runAllTraces() completes a results drawer appears in the IDE.
- * The drawer is draggable, collapsible, and can be loaded from a saved JSON.
+ * The results drawer is built upfront before any tests run, showing all N paths
+ * with live per-row status (pending → running → pass/fail/skipped). Each running
+ * row has an inline Skip button. Skipped/failed rows have a ▶ Re-run button that
+ * replays in the foreground IDE Runtime so console logs are visible.
  *
  * Usage (browser console):
  *   generateTraces()          — log all trace arrays
@@ -160,15 +162,23 @@ function captureBubbles() {
     }));
 }
 
-// ── Interrupt flag ────────────────────────────────────────────────────────────
+// ── Interrupt flags ───────────────────────────────────────────────────────────
 
 let _interrupted            = false;
+let _skipCurrent            = false;
 let _currentHeadlessRuntime = null;
 
 export function stopAllTraces() {
     _interrupted = true;
     _currentHeadlessRuntime?.actor?.stop();
     console.warn('⛔ Test run interrupted by user');
+}
+
+/** Skip only the currently-running path and continue with the next one. */
+export function skipCurrentTrace() {
+    _skipCurrent = true;
+    _currentHeadlessRuntime?.actor?.stop();
+    console.warn('⏭ Skipping current path…');
 }
 
 // ── Main runner ───────────────────────────────────────────────────────────────
@@ -266,12 +276,17 @@ export async function runAllTraces(config, replayFn, getTrace, getStateId, pause
 // no inter-path delays. One fresh Runtime per path, keyboard listeners skipped.
 // Significantly faster than runAllTraces for machines with many paths.
 //
+// The results drawer is built upfront before any tests run, showing all N rows
+// with "pending" status. Each row updates live. The running row shows a Skip
+// button; skipped/failed rows show a ▶ Re-run button (foreground, with logs).
+//
 // Usage:
 //   runAllTraces()       — headless, instant (default)
 //   runAllTraces(500)    — headless with 500ms pause between paths (for watching)
 
 export async function runAllTracesHeadless(config, services, { pauseMs = 0, servicesSource = null } = {}) {
     _interrupted = false;
+    _skipCurrent = false;
     document.getElementById('test-results-drawer')?.remove();
     const diagPane = document.getElementById('diagram-pane');
     if (diagPane) diagPane.style.paddingBottom = '';
@@ -279,6 +294,58 @@ export async function runAllTracesHeadless(config, services, { pauseMs = 0, serv
     const traces = getAllTraces(config);
     const total  = traces.length;
     const cases  = [];
+    const runAt  = new Date().toISOString();
+
+    // ── Build live drawer with all N rows before tests start ──────────────────
+    const { summarySpan, tbody, isMobile } =
+        _createDrawerShell(config, `Running… 0 / ${total}`, runAt);
+
+    const p  = isMobile ? '8px' : '5px';
+    const fs = isMobile ? '13px' : '11px';
+
+    // One DOM ref per path row for live status updates
+    const rowRefs = traces.map((expected, i) => {
+        const tr = document.createElement('tr');
+        tr.style.cssText = `border-bottom:1px solid #2c313a;`;
+
+        const numCell    = _td(String(i + 1), `padding:${p} 8px; color:#666; width:28px;`);
+        const statusCell = _td('⬜', `padding:${p} 8px; font-size:${isMobile ? '16px' : '13px'}; width:20px;`);
+        const traceCell  = _td(expected.join(' → '), `padding:${p} 8px; color:#555; max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:${fs};`);
+        traceCell.title  = expected.join(' → ');
+        const stateCell  = _td('—', `padding:${p} 8px; color:#555; font-size:${fs};`);
+        const actionCell = _td('', `padding:${p} 4px; width:52px;`);
+
+        tr.append(numCell, statusCell, traceCell, stateCell, actionCell);
+        tbody.appendChild(tr);
+        return { tr, statusCell, stateCell, actionCell, expected };
+    });
+
+    function updateRow(i, status, c = null) {
+        const { statusCell, stateCell, actionCell, expected: exp } = rowRefs[i];
+        const icons  = { pending: '⬜', running: '⏳', pass: '✅', fail: '❌', skipped: '⏭' };
+        const colors = { pending: '#555', running: '#61dafb', pass: '#98c379', fail: '#e06c75', skipped: '#e5c07b' };
+        statusCell.textContent = icons[status] ?? '?';
+        if (c?.finalStateId) {
+            stateCell.textContent = c.finalStateId;
+            stateCell.style.color = colors[status];
+        }
+        actionCell.innerHTML = '';
+        if (status === 'running') {
+            const btn = document.createElement('button');
+            btn.textContent = 'Skip';
+            btn.title = 'Skip this path and continue with the next';
+            btn.style.cssText = `background:#3a3a2a; border:1px solid #666; color:#e5c07b; font-size:10px; padding:2px 6px; border-radius:3px; cursor:pointer;`;
+            btn.onclick = (e) => { e.stopPropagation(); window.skipCurrentTrace?.(); };
+            actionCell.appendChild(btn);
+        } else if (status === 'fail' || status === 'skipped') {
+            const btn = document.createElement('button');
+            btn.textContent = '▶';
+            btn.title = 'Re-run in foreground (logs to console)';
+            btn.style.cssText = `background:#2a3a3a; border:1px solid #666; color:#61dafb; font-size:10px; padding:2px 6px; border-radius:3px; cursor:pointer;`;
+            btn.onclick = (e) => { e.stopPropagation(); window._replayTrace?.(JSON.stringify(exp), config); };
+            actionCell.appendChild(btn);
+        }
+    }
 
     showStatusBadge(`Running 0 / ${total}…`, true);
     console.group(`▶▶ Running all ${total} paths (headless)`);
@@ -292,6 +359,7 @@ export async function runAllTracesHeadless(config, services, { pauseMs = 0, serv
         const expected = traces[i];
         showStatusBadge(`Running ${i + 1} / ${total}…`, true);
         console.log(`\n▶ Path ${i + 1} / ${total}: ${JSON.stringify(expected)}`);
+        updateRow(i, 'running');
 
         const runtime      = new Runtime(config, services, undefined, { headless: true });
         const bubbles      = [];
@@ -312,6 +380,17 @@ export async function runAllTracesHeadless(config, services, { pauseMs = 0, serv
         _currentHeadlessRuntime = runtime;
         await runtime.replay(JSON.stringify(expected));
         _currentHeadlessRuntime = null;
+
+        if (_skipCurrent) {
+            _skipCurrent = false;
+            runtime.actor.stop();
+            console.warn(`  ⏭ SKIP  (skipped by user)`);
+            const c = { path: i + 1, passed: false, skipped: true, expected, actual: [], diffs: ['skipped by user'], finalStateId: '—', finalContext: {}, bubbles: [], visitedEdges: [] };
+            cases.push(c);
+            updateRow(i, 'skipped', c);
+            if (pauseMs > 0) await new Promise(r => setTimeout(r, pauseMs));
+            continue;
+        }
 
         if (_interrupted) {
             runtime.actor.stop();
@@ -334,28 +413,67 @@ export async function runAllTracesHeadless(config, services, { pauseMs = 0, serv
             diffs.forEach(d => console.warn(`     ${d}`));
         }
 
-        cases.push({ path: i + 1, passed, expected, actual, diffs, finalStateId, finalContext, bubbles, visitedEdges });
+        const c = { path: i + 1, passed, skipped: false, expected, actual, diffs, finalStateId, finalContext, bubbles, visitedEdges };
+        cases.push(c);
+        updateRow(i, passed ? 'pass' : 'fail', c);
 
         if (pauseMs > 0) await new Promise(r => setTimeout(r, pauseMs));
     }
 
     const passCount = cases.filter(c => c.passed).length;
-    const failCount = cases.filter(c => !c.passed).length;
+    const failCount = cases.filter(c => !c.passed && !c.skipped).length;
+    const skipCount = cases.filter(c => c.skipped).length;
 
     console.log(`\n${'─'.repeat(40)}`);
-    if (failCount === 0) {
+    if (failCount === 0 && skipCount === 0) {
         console.log(`✅ All ${cases.length} paths passed`);
     } else {
-        console.warn(`❌ ${failCount} of ${cases.length} paths failed`);
+        const parts = [];
+        if (failCount) parts.push(`${failCount} failed`);
+        if (skipCount) parts.push(`${skipCount} skipped`);
+        console.warn(`❌ ${parts.join(', ')} of ${cases.length} paths`);
     }
     console.groupEnd();
 
+    // Finalize drawer header summary
+    const passColor = failCount === 0 ? '#98c379' : '#e06c75';
+    summarySpan.style.color = passColor;
+    let summaryText = `${passCount}/${total} passed`;
+    if (skipCount) summaryText += ` · ${skipCount} skipped`;
+    summarySpan.textContent = summaryText;
+
+    // Wire up row-click handlers now that all cases are complete
+    let selectedRow = null;
+    cases.forEach((c, i) => {
+        if (c.skipped) return;
+        const { tr } = rowRefs[i];
+        tr.style.cursor = 'pointer';
+        let diffRow = null;
+        if (!c.passed) {
+            diffRow = document.createElement('tr');
+            diffRow.style.cssText = `display:none; background:#2c1e1e;`;
+            diffRow.innerHTML = `<td colspan="5" style="padding:5px 12px; color:#e06c75; font-size:10px; line-height:1.6;">${c.diffs.map(d => `⚠ ${d}`).join('<br>')}</td>`;
+            tr.after(diffRow);
+        }
+        tr.onmouseenter = () => { if (tr !== selectedRow) tr.style.background = '#2c313a'; };
+        tr.onmouseleave = () => { if (tr !== selectedRow) tr.style.background = ''; };
+        tr.onclick = () => {
+            if (selectedRow) { selectedRow.style.background = ''; selectedRow.style.outline = ''; }
+            selectedRow = tr;
+            tr.style.background = '#2d3a4a';
+            tr.style.outline    = '1px solid #0084ff';
+            if (diffRow) diffRow.style.display = diffRow.style.display === 'none' ? '' : 'none';
+            _restoreCase(c, config);
+        };
+    });
+
     const results = {
-        runAt:   new Date().toISOString(),
+        runAt,
         flowId:  config.id,
         total:   cases.length,
         passed:  passCount,
         failed:  failCount,
+        skipped: skipCount,
         config,
         servicesSource,
         cases,
@@ -363,25 +481,65 @@ export async function runAllTracesHeadless(config, services, { pauseMs = 0, serv
 
     window._testResults = results;
     hideStatusBadge();
-    showResultsDrawer(results);
 
     console.log('💾 Results saved to window._testResults');
     return results;
 }
 
-// ── Results drawer ────────────────────────────────────────────────────────────
+// ── Drawer helpers ─────────────────────────────────────────────────────────────
 
-export function showResultsDrawer(results, replayFn) {
-    document.getElementById('test-results-drawer')?.remove();
+function _td(text, cssText) {
+    const td = document.createElement('td');
+    td.style.cssText = cssText;
+    td.textContent   = text;
+    return td;
+}
 
-    const { cases, passed, failed, total, runAt, flowId, config } = results;
-    replayFn = replayFn ?? window._replayTrace;
+/** Restore chat bubbles, context viewer, replay bar, and diagram for a case. */
+function _restoreCase(c, config) {
+    const replayInput = document.getElementById('replay-input');
+    if (replayInput) {
+        replayInput.value = JSON.stringify(c.expected);
+        const replayBar = document.getElementById('replay-bar');
+        if (replayBar) replayBar.classList.add('visible');
+        const replayBtn = document.getElementById('replay-go-btn');
+        if (replayBtn) replayBtn.onclick = () => window._replayTrace(replayInput.value, config);
+    }
+    const messages = document.getElementById('messages');
+    if (messages && c.bubbles?.length) {
+        messages.innerHTML = '';
+        c.bubbles.forEach(b => {
+            const d     = document.createElement('div');
+            d.className = `msg ${b.side}`;
+            d.innerText = b.text;
+            messages.appendChild(d);
+        });
+        messages.scrollTop = messages.scrollHeight;
+    }
+    const profile      = document.getElementById('profile-view');
+    const stateDisplay = document.getElementById('state-id');
+    if (profile)      profile.innerText      = JSON.stringify(c.finalContext, null, 2);
+    if (stateDisplay) stateDisplay.innerText = `State: ${c.finalStateId}`;
+    if (window.renderDiagram) {
+        window.renderDiagram(
+            config ?? window._config,
+            c.finalStateId,
+            new Set(c.visitedEdges ?? [])
+        ).catch(() => {});
+    }
+}
 
-    const isMobile   = window.innerWidth <= 700;
-    const HEADER_H   = isMobile ? 52 : 36;   // px — height of the title bar
-    let   collapsed  = false;
+/**
+ * Create the drawer shell: header, sub-header, table, positioning,
+ * collapse/expand, and drag. Appends to document.body.
+ * Returns live DOM references needed by callers.
+ */
+function _createDrawerShell(config, summaryText, runAt) {
+    const isMobile = window.innerWidth <= 700;
+    const HEADER_H = isMobile ? 52 : 36;
+    let collapsed  = false;
 
-    // ── Drawer shell ──────────────────────────────────────────────────────────
+    // ── Drawer container ──────────────────────────────────────────────────────
     const drawer = document.createElement('div');
     drawer.id = 'test-results-drawer';
     drawer.style.cssText = `
@@ -419,18 +577,14 @@ export function showResultsDrawer(results, replayFn) {
         box-sizing: border-box;
     `;
 
-    const passColor  = failed === 0 ? '#98c379' : '#e06c75';
-
     const titleSpan = document.createElement('span');
     titleSpan.style.cssText = `color:#61dafb; font-weight:bold; flex:1; font-size:${isMobile ? '14px' : '11px'};`;
-    titleSpan.innerText = `🧪 ${flowId}`;
+    titleSpan.innerText = `🧪 ${config.id}`;
 
     const summarySpan = document.createElement('span');
-    summarySpan.style.cssText = `color:${passColor}; font-weight:bold; font-size:${isMobile ? '14px' : '11px'};`;
-    summarySpan.innerText = `${passed}/${total} passed`;
+    summarySpan.style.cssText = `color:#888; font-weight:bold; font-size:${isMobile ? '14px' : '11px'};`;
+    summarySpan.innerText = summaryText;
 
-    // Collapse indicator — tapping the header toggles collapsed state.
-    // No close button: the drawer persists until a new test run replaces it.
     const collapseArrow = document.createElement('span');
     collapseArrow.style.cssText = `color:#888; font-size:${isMobile ? '14px' : '11px'}; padding:0 2px; pointer-events:none;`;
     collapseArrow.textContent = '▲';
@@ -464,100 +618,15 @@ export function showResultsDrawer(results, replayFn) {
         <thead>
             <tr style="background:#2c313a; color:#61dafb; text-align:left; position:sticky; top:0;">
                 <th style="padding:${isMobile ? '8px' : '5px'} 8px; width:28px;">#</th>
-                <th style="padding:${isMobile ? '8px' : '5px'} 8px; width:36px;"></th>
+                <th style="padding:${isMobile ? '8px' : '5px'} 8px; width:20px;"></th>
                 <th style="padding:${isMobile ? '8px' : '5px'} 8px;">Trace</th>
                 <th style="padding:${isMobile ? '8px' : '5px'} 8px; width:90px;">Final state</th>
+                <th style="padding:${isMobile ? '8px' : '5px'} 8px; width:52px;"></th>
             </tr>
         </thead>
     `;
 
-    const tbody     = document.createElement('tbody');
-    let selectedRow = null;
-
-    // ── Row click handler (extracted so we can call it programmatically) ───────
-    const selectRow = (c, tr, diffRow) => {
-        if (selectedRow) { selectedRow.style.background = ''; selectedRow.style.outline = ''; }
-        selectedRow = tr;
-        tr.style.background = '#2d3a4a';
-        tr.style.outline    = '1px solid #0084ff';
-        if (diffRow) diffRow.style.display = diffRow.style.display === 'none' ? '' : 'none';
-
-        // Populate replay bar and wire ▶ to use saved config
-        const replayInput = document.getElementById('replay-input');
-        if (replayInput) {
-            replayInput.value = JSON.stringify(c.expected);
-            // Show the replay bar (it is hidden by default)
-            const replayBar = document.getElementById('replay-bar');
-            if (replayBar) replayBar.classList.add('visible');
-            // ▶ button is the first child of replay-bar (order: ▶, ✕, input)
-            const replayBtn = document.getElementById('replay-go-btn');
-            if (replayBtn) replayBtn.onclick = () => window._replayTrace(replayInput.value, config);
-        }
-
-        // Restore chat bubbles
-        const messages = document.getElementById('messages');
-        if (messages && c.bubbles?.length) {
-            messages.innerHTML = '';
-            c.bubbles.forEach(b => {
-                const d     = document.createElement('div');
-                d.className = `msg ${b.side}`;
-                d.innerText = b.text;
-                messages.appendChild(d);
-            });
-            messages.scrollTop = messages.scrollHeight;
-        }
-
-        // Restore context viewer
-        const profile      = document.getElementById('profile-view');
-        const stateDisplay = document.getElementById('state-id');
-        if (profile)      profile.innerText      = JSON.stringify(c.finalContext, null, 2);
-        if (stateDisplay) stateDisplay.innerText = `State: ${c.finalStateId}`;
-
-        // Re-render diagram with captured visited edges and saved config
-        if (window.renderDiagram) {
-            window.renderDiagram(
-                config ?? window._config,
-                c.finalStateId,
-                new Set(c.visitedEdges ?? [])
-            ).catch(() => {});
-        }
-    };
-
-    let firstTr = null, firstCase = null;
-
-    cases.forEach((c) => {
-        const tr = document.createElement('tr');
-        tr.style.cssText = `cursor:pointer; border-bottom:1px solid #2c313a; transition:background 0.1s;`;
-        tr.innerHTML = `
-            <td style="padding:${isMobile ? '8px' : '5px'} 8px; color:#666;">${c.path}</td>
-            <td style="padding:${isMobile ? '8px' : '5px'} 8px; font-size:${isMobile ? '16px' : '13px'};">${c.passed ? '✅' : '❌'}</td>
-            <td style="padding:${isMobile ? '8px' : '5px'} 8px; color:#abb2bf; max-width:160px; overflow:hidden;
-                text-overflow:ellipsis; white-space:nowrap;"
-                title="${c.expected.join(' → ')}">${c.expected.join(' → ')}</td>
-            <td style="padding:${isMobile ? '8px' : '5px'} 8px; color:${c.passed ? '#98c379' : '#e06c75'};">${c.finalStateId}</td>
-        `;
-
-        let diffRow = null;
-        if (!c.passed) {
-            diffRow = document.createElement('tr');
-            diffRow.style.cssText = `display:none; background:#2c1e1e;`;
-            diffRow.innerHTML = `
-                <td colspan="4" style="padding:5px 12px; color:#e06c75; font-size:10px; line-height:1.6;">
-                    ${c.diffs.map(d => `⚠ ${d}`).join('<br>')}
-                </td>
-            `;
-        }
-
-        tr.onmouseenter = () => { if (tr !== selectedRow) tr.style.background = '#2c313a'; };
-        tr.onmouseleave = () => { if (tr !== selectedRow) tr.style.background = ''; };
-        tr.onclick = () => selectRow(c, tr, diffRow);
-
-        if (!firstTr) { firstTr = tr; firstCase = c; }
-
-        tbody.appendChild(tr);
-        if (diffRow) tbody.appendChild(diffRow);
-    });
-
+    const tbody = document.createElement('tbody');
     table.appendChild(tbody);
     tableWrap.appendChild(table);
 
@@ -566,11 +635,7 @@ export function showResultsDrawer(results, replayFn) {
     drawer.appendChild(tableWrap);
     document.body.appendChild(drawer);
 
-    // ── Pin drawer to diagram area (Option A) ────────────────────────────────
-    // Portrait: full width (covers the right pane overlay).
-    // Landscape: constrained to the diagram area only — right edge tracks the
-    // left edge of the right pane so the drawer never covers the chat pane.
-    // Called on initial render and on every resize/rotation.
+    // ── Pin drawer to diagram area ────────────────────────────────────────────
     let _rpObserver = null;
     function _fitTodiagramPane() {
         const landscape = window.innerWidth > window.innerHeight;
@@ -578,7 +643,6 @@ export function showResultsDrawer(results, replayFn) {
         const dp = document.getElementById('diagram-pane');
 
         if (!landscape) {
-            // Portrait: drawer is full-width (right pane is an overlay on top)
             drawer.style.left     = '0';
             drawer.style.right    = '0';
             drawer.style.width    = '';
@@ -587,18 +651,15 @@ export function showResultsDrawer(results, replayFn) {
             return;
         }
 
-        // Landscape (both mobile and desktop): drawer fills the visible diagram area,
-        // i.e. from left:0 to the current left edge of the right pane.
         if (dp) dp.style.paddingBottom = '';
         const rp = document.getElementById('right-pane');
         if (!rp) return;
         const rpRect  = rp.getBoundingClientRect();
-        const diagW   = rpRect.left; // px of visible diagram area
+        const diagW   = rpRect.left;
 
         drawer.style.left     = '0';
         drawer.style.right    = (window.innerWidth - rpRect.left) + 'px';
         drawer.style.width    = '';
-        // Desktop only: enforce a minimum readable width even if diagram pane is narrow
         drawer.style.minWidth = mobileLay ? '' : Math.max(diagW, 360) + 'px';
     }
     _fitTodiagramPane();
@@ -608,10 +669,8 @@ export function showResultsDrawer(results, replayFn) {
         _rpObserver.observe(rp_el);
     }
     window.addEventListener('resize', _fitTodiagramPane);
-    // Also update when the right pane slides (mobile overlay drag)
     window._onPanOffsetChange = _fitTodiagramPane;
 
-    // Clean up observer when drawer is removed
     const _origRemove = drawer.remove.bind(drawer);
     drawer.remove = () => {
         _rpObserver?.disconnect();
@@ -621,46 +680,14 @@ export function showResultsDrawer(results, replayFn) {
     };
 
     // ── Collapse / expand ─────────────────────────────────────────────────────
-    //
-    // Both mobile and desktop use bottom-positioning (not translateY) so the
-    // drawer always stays anchored above the toolbar.
-    // Mobile gets an additional touch-drag handle on the header so the user
-    // can drag the drawer to any height between HEADER_H and ~90vh.
-    //
- 
     function _toolbarClearance() {
         const toolbar = document.getElementById('toolbar');
         return toolbar ? toolbar.offsetHeight : 0;
     }
 
-    function _logDrawerState(label) {
-        const r   = drawer.getBoundingClientRect();
-        const cs  = getComputedStyle(drawer);
-        console.log(`[drawer] ${label}`, {
-            collapsed,
-            'inline.bottom':   drawer.style.bottom,
-            'inline.top':      drawer.style.top    || '—',
-            'inline.left':     drawer.style.left   || '—',
-            'inline.right':    drawer.style.right  || '—',
-            'inline.height':   drawer.style.height || '—',
-            'inline.transform':drawer.style.transform || '—',
-            'computed.height': cs.height,
-            'scrollHeight':    drawer.scrollHeight,
-            'rect.top':        Math.round(r.top),
-            'rect.bottom':     Math.round(r.bottom),
-            'rect.width':      Math.round(r.width),
-            subHeaderDisplay:  subHeader.style.display || '(visible)',
-            tableWrapDisplay:  tableWrap.style.display || '(visible)',
-        });
-    }
-
     function applyCollapsed() {
         collapseArrow.textContent = collapsed ? '▼' : '▲';
-        _logDrawerState(`applyCollapsed(collapsed=${collapsed}) START`);
         if (isMobile) {
-            // On mobile use transform so the header always peeks at the very
-            // bottom of the viewport when collapsed. Body sections stay rendered
-            // so 100% always reflects the full drawer height.
             drawer.style.bottom    = '0';
             drawer.style.transform = collapsed
                 ? `translateY(calc(100% - ${HEADER_H}px))`
@@ -669,40 +696,27 @@ export function showResultsDrawer(results, replayFn) {
             if (collapsed) {
                 const fullH   = drawer.scrollHeight;
                 const headerH = header.offsetHeight;
-                // Lock height BEFORE hiding children — display:none would otherwise
-                // shrink the drawer, making the negative bottom push it off-screen.
-                // No clearance offset: collapsed header sits flush at viewport bottom.
                 drawer.style.height    = fullH + 'px';
                 drawer.style.bottom    = (headerH - fullH) + 'px';
                 drawer.style.transform = '';
                 subHeader.style.display = 'none';
                 tableWrap.style.display = 'none';
             } else {
-                // Release the height lock, restore full-open position.
                 subHeader.style.display = '';
                 tableWrap.style.display = '';
                 drawer.style.height    = '';
                 drawer.style.bottom    = '0';
                 drawer.style.transform = '';
             }
-            _logDrawerState(`applyCollapsed(collapsed=${collapsed}) END`);
         }
     }
 
-    // Need one rAF after append so offsetHeight is populated
-    requestAnimationFrame(() => {
-        _logDrawerState('initial rAF before applyCollapsed');
-        applyCollapsed();
-        // Auto-select first row
-        if (firstTr && firstCase) selectRow(firstCase, firstTr, null);
-    });
+    requestAnimationFrame(() => applyCollapsed());
 
-    // ── Header tap/drag: toggle collapse on tap, resize on drag ─────────────
-    // Shared between mobile and desktop (desktop also gets mouse drag below).
-    // A "tap" is a touch/click with < 6px movement. A drag suppresses the
-    // click event so the two don't fight each other.
-
+    // ── Header tap/drag ───────────────────────────────────────────────────────
     let _headerDragOccurred = false;
+    let _touchDragStartY    = 0;
+    let _touchDragStartMaxH = 0;
 
     header.addEventListener('touchstart', (e) => {
         if (e.target.tagName === 'BUTTON') return;
@@ -713,22 +727,15 @@ export function showResultsDrawer(results, replayFn) {
         e.stopPropagation();
     }, { passive: true });
 
-    let _touchDragStartY    = 0;
-    let _touchDragStartMaxH = 0;
-
     header.addEventListener('touchmove', (e) => {
-        const dy = _touchDragStartY - e.touches[0].clientY; // up = positive = taller
+        const dy = _touchDragStartY - e.touches[0].clientY;
         if (Math.abs(dy) < 6) return;
-
         _headerDragOccurred = true;
-
-        // Expand the drawer when dragging up from collapsed
         if (collapsed) {
             collapsed = false;
             drawer.style.transition = 'none';
             applyCollapsed();
         }
-
         const maxAllowed = window.innerHeight * 0.9 - header.offsetHeight - _toolbarClearance();
         const minAllowed = 40;
         const newH = Math.max(minAllowed, Math.min(maxAllowed, _touchDragStartMaxH + dy));
@@ -738,7 +745,6 @@ export function showResultsDrawer(results, replayFn) {
 
     header.addEventListener('touchend', (e) => {
         drawer.style.transition = '';
-        // Snap fully collapsed if dragged to nearly nothing
         if (!collapsed && parseInt(tableWrap.style.maxHeight) < 30) {
             collapsed = true;
             applyCollapsed();
@@ -746,22 +752,18 @@ export function showResultsDrawer(results, replayFn) {
         e.stopPropagation();
     }, { passive: true });
 
-    // Tap (no drag): toggle collapsed state.
-    // Suppressed when a drag just occurred so they don't fight.
     header.onclick = (e) => {
         if (e.target.tagName === 'BUTTON') return;
         if (_headerDragOccurred) { _headerDragOccurred = false; return; }
         collapsed = !collapsed;
         applyCollapsed();
-        // Refit diagram: immediately for desktop (no transition), after
-        // transitionend for mobile (300ms transform transition).
         requestAnimationFrame(() => window._fitDiagramAboveDrawer?.(drawer));
         drawer.addEventListener('transitionend',
             () => window._fitDiagramAboveDrawer?.(drawer),
             { once: true });
     };
 
-    // ── Desktop drag to move ───────────────────────────────────────────────────
+    // ── Desktop drag to move ──────────────────────────────────────────────────
     if (!isMobile) {
         let dragging = false, dragOffX = 0, dragOffY = 0;
         let _pendingDrag = false, _pendingX = 0, _pendingY = 0, _pendingRect = null;
@@ -781,13 +783,11 @@ export function showResultsDrawer(results, replayFn) {
                 const dx = Math.abs(e.clientX - _pendingX);
                 const dy = Math.abs(e.clientY - _pendingY);
                 if (dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD) {
-                    // Commit to drag mode now
                     _pendingDrag = false;
                     dragging = true;
                     const rect = _pendingRect;
                     dragOffX = _pendingX - rect.left;
                     dragOffY = _pendingY - rect.top;
-                    // Switch from bottom-anchored to top/left free positioning
                     drawer.style.top    = `${rect.top}px`;
                     drawer.style.left   = `${rect.left}px`;
                     drawer.style.right  = 'auto';
@@ -806,19 +806,102 @@ export function showResultsDrawer(results, replayFn) {
             if (!dragging) return;
             dragging = false;
             header.style.cursor = 'grab';
-            // Restore bottom-anchored layout after drag (clears top/left free-float).
-            // Keeps the current vertical position by converting rect.top to bottom.
             const rect = drawer.getBoundingClientRect();
             drawer.style.top  = '';
             drawer.style.left = '';
-            _fitTodiagramPane();  // restores left:0 + right:Xpx
+            _fitTodiagramPane();
             const snapBottom = window.innerHeight - rect.bottom;
-            // Clamp: never above fully-open (bottom:0) or below header-peek position
-            const minBottom = _toolbarClearance() + header.offsetHeight - drawer.scrollHeight;
+            const minBottom  = _toolbarClearance() + header.offsetHeight - drawer.scrollHeight;
             drawer.style.bottom = Math.min(0, Math.max(minBottom, snapBottom)) + 'px';
-            _logDrawerState('mouseup snap-back END');
         });
     }
+
+    return { drawer, titleSpan, summarySpan, subHeader, tableWrap, tbody, isMobile, HEADER_H };
+}
+
+// ── Results drawer ────────────────────────────────────────────────────────────
+// Used when loading saved results from file (Load Results button).
+
+export function showResultsDrawer(results, replayFn) {
+    document.getElementById('test-results-drawer')?.remove();
+
+    const { cases, passed, failed, total, runAt, flowId, config } = results;
+    replayFn = replayFn ?? window._replayTrace;
+
+    const passColor = failed === 0 ? '#98c379' : '#e06c75';
+    const summary   = `${passed}/${total} passed`;
+    const skipCount = cases.filter(c => c.skipped).length;
+    const summaryWithSkip = skipCount ? `${summary} · ${skipCount} skipped` : summary;
+
+    const { summarySpan, tbody, isMobile } =
+        _createDrawerShell({ id: flowId }, summaryWithSkip, runAt);
+    summarySpan.style.color = passColor;
+
+    const p  = isMobile ? '8px' : '5px';
+    const fs = isMobile ? '13px' : '11px';
+
+    let selectedRow = null;
+
+    const selectRow = (c, tr, diffRow) => {
+        if (selectedRow) { selectedRow.style.background = ''; selectedRow.style.outline = ''; }
+        selectedRow = tr;
+        tr.style.background = '#2d3a4a';
+        tr.style.outline    = '1px solid #0084ff';
+        if (diffRow) diffRow.style.display = diffRow.style.display === 'none' ? '' : 'none';
+        _restoreCase(c, config);
+    };
+
+    let firstTr = null, firstCase = null;
+
+    cases.forEach((c) => {
+        const statusIcon = c.skipped ? '⏭' : (c.passed ? '✅' : '❌');
+        const stateColor = c.skipped ? '#e5c07b' : (c.passed ? '#98c379' : '#e06c75');
+
+        const tr = document.createElement('tr');
+        tr.style.cssText = `cursor:pointer; border-bottom:1px solid #2c313a; transition:background 0.1s;`;
+
+        const numCell    = _td(String(c.path), `padding:${p} 8px; color:#666; width:28px;`);
+        const statusCell = _td(statusIcon, `padding:${p} 8px; font-size:${isMobile ? '16px' : '13px'}; width:20px;`);
+        const traceCell  = _td(c.expected.join(' → '), `padding:${p} 8px; color:#abb2bf; max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:${fs};`);
+        traceCell.title  = c.expected.join(' → ');
+        const stateCell  = _td(c.finalStateId, `padding:${p} 8px; color:${stateColor}; font-size:${fs};`);
+        const actionCell = _td('', `padding:${p} 4px; width:52px;`);
+
+        if (!c.passed || c.skipped) {
+            const btn = document.createElement('button');
+            btn.textContent = '▶';
+            btn.title = 'Re-run in foreground (logs to console)';
+            btn.style.cssText = `background:#2a3a3a; border:1px solid #666; color:#61dafb; font-size:10px; padding:2px 6px; border-radius:3px; cursor:pointer;`;
+            btn.onclick = (e) => { e.stopPropagation(); window._replayTrace?.(JSON.stringify(c.expected), config); };
+            actionCell.appendChild(btn);
+        }
+
+        tr.append(numCell, statusCell, traceCell, stateCell, actionCell);
+
+        let diffRow = null;
+        if (!c.passed && !c.skipped) {
+            diffRow = document.createElement('tr');
+            diffRow.style.cssText = `display:none; background:#2c1e1e;`;
+            diffRow.innerHTML = `
+                <td colspan="5" style="padding:5px 12px; color:#e06c75; font-size:10px; line-height:1.6;">
+                    ${c.diffs.map(d => `⚠ ${d}`).join('<br>')}
+                </td>
+            `;
+        }
+
+        tr.onmouseenter = () => { if (tr !== selectedRow) tr.style.background = '#2c313a'; };
+        tr.onmouseleave = () => { if (tr !== selectedRow) tr.style.background = ''; };
+        tr.onclick = () => selectRow(c, tr, diffRow);
+
+        if (!firstTr) { firstTr = tr; firstCase = c; }
+
+        tbody.appendChild(tr);
+        if (diffRow) tbody.appendChild(diffRow);
+    });
+
+    requestAnimationFrame(() => {
+        if (firstTr && firstCase) selectRow(firstCase, firstTr, null);
+    });
 }
 
 // ── Status badge ──────────────────────────────────────────────────────────────
