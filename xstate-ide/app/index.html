@@ -111,12 +111,12 @@
 
                 <!-- Toolbar — large touch-friendly buttons -->
                 <div id="toolbar">
-                    <button id="test-btn" title="Auto-generate all paths and run as tests">🧪<br>Test</button>
-                    <button onclick="window._restartRuntime()" class="restart-btn" title="Restart conversation">🔄<br>Restart</button>
+                    <button id="test-btn"        title="Auto-generate all paths and run as tests">🧪<br>Test</button>
+                    <button id="restart-btn"    onclick="window._restartRuntime()" class="restart-btn" title="Restart conversation">🔄<br>Restart</button>
                     <button id="load-results-btn" onclick="document.getElementById('load-results').click()" title="Load a previously saved test results JSON">📋<br>Load<br>Results</button>
-                    <button onclick="window.downloadPair()" title="Save state machine and services as a ZIP file">💾<br>Save<br>Flow</button>
-                    <button id="load-flow-btn" onclick="document.getElementById('upload').click()" title="Load state machine (.json), services (.js), or both as a ZIP">📂<br>Load<br>Flow</button>
-                    <button onclick="window.downloadProductionBundle()" title="Pack and download standalone production bundle (no IDE)">📦<br>Pack<br>Prod</button>
+                    <button id="save-flow-btn"  onclick="window.downloadPair()" title="Save state machine and services as a ZIP file">💾<br>Save<br>Flow</button>
+                    <button id="load-flow-btn"  onclick="document.getElementById('upload').click()" title="Load state machine (.json), services (.js), or both as a ZIP">📂<br>Load<br>Flow</button>
+                    <button id="pack-prod-btn"  onclick="window.downloadProductionBundle()" title="Pack and download standalone production bundle (no IDE)">📦<br>Pack<br>Prod</button>
                     <input type="file" id="upload"       style="display:none" accept=".zip,.json,.js" multiple
                            onchange="window.loadPair(this.files); this.value='';">
                     <input type="file" id="load-results" style="display:none" accept=".json"
@@ -367,6 +367,9 @@
             // Send button: left when pane is compressed, right when fully open
             const pc = document.getElementById('pane-content');
             if (pc) pc.classList.toggle('pane-narrow', _panOffset > 0);
+
+            // Notify results drawer (if visible) so it can track the pane edge
+            window._onPanOffsetChange?.();
         }
 
         // Position #pane-tab above #profile-toggle (with a gap).
@@ -399,17 +402,22 @@
 
         // On resize/rotation: reset pane offset if layout mode changed (mobile ↔ desktop),
         // or re-clamp if still mobile (viewport dimensions changed).
-        let _lastWasMobile = isMobileLayout();
+        let _lastWasMobile  = isMobileLayout();
+        let _lastInnerWidth = window.innerWidth;
         window.addEventListener('resize', () => {
             const nowMobile = isMobileLayout();
             if (_lastWasMobile !== nowMobile) {
                 // Mode switched (e.g. portrait→landscape crosses 700px): reset fully open
                 _applyOffset(0, false);
             } else if (nowMobile) {
-                // Same mobile mode, viewport resized: re-clamp to new maxOffset
-                _applyOffset(_panOffset, false);
+                // Same mobile mode, viewport resized (e.g. rotation on phone).
+                // Preserve the visible right-pane pixel width so the diagram grows/shrinks
+                // into the new space rather than the pane gobbling up the new width.
+                const visiblePaneW = 0.99 * _lastInnerWidth - _panOffset;
+                _applyOffset(0.99 * window.innerWidth - visiblePaneW, false);
             }
-            _lastWasMobile = nowMobile;
+            _lastWasMobile  = nowMobile;
+            _lastInnerWidth = window.innerWidth;
             _positionPaneTab();
             _positionGhostTab();
         });
@@ -600,8 +608,10 @@
             }
         };
 
-        // Re-render when orientation changes (TD ↔ LR)
+        // Re-render when orientation changes (TD ↔ LR).
+        // Also reset pan/zoom so the re-rendered diagram is centered in the new viewport.
         screen.orientation?.addEventListener('change', () => {
+            window.diagramReset();
             if (_lastRenderArgs) {
                 const { config, current, visitedEdges } = _lastRenderArgs;
                 window.renderDiagram(config, current, visitedEdges).catch(() => {});

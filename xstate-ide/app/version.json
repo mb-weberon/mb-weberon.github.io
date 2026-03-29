@@ -1,9 +1,39 @@
 {
   "major": 0,
   "minor": 12,
-  "patch": 25,
+  "patch": 31,
   "label": "",
   "history": [
+    {
+      "version": "0.12.31",
+      "date": "2026-03-28",
+      "note": "Fix: on rotation in mobile mode, preserve visible right-pane pixel width rather than keeping _panOffset constant — diagram pane grows/shrinks into new orientation; results drawer tracks accordingly via _onPanOffsetChange"
+    },
+    {
+      "version": "0.12.30",
+      "date": "2026-03-28",
+      "note": "Fix: mobile landscape results drawer tracks right-pane slide position in real time via _onPanOffsetChange hook in _applyOffset; drawer fills diagram visible area (left:0 to rpRect.left) in all landscape orientations; portrait stays full-width; desktop landscape retains min-width:360px floor"
+    },
+    {
+      "version": "0.12.29",
+      "date": "2026-03-28",
+      "note": "Fix: on rotation, diagramReset() clears stale pan/zoom so diagram re-centers in new viewport; results drawer full-width in mobile landscape (right pane is overlay); desktop landscape drawer gets min-width = max(diagram-pane-width, 360px)"
+    },
+    {
+      "version": "0.12.28",
+      "date": "2026-03-27",
+      "note": "Fix: desktop results drawer — mouse drag uses 5px threshold before committing to drag mode; pure clicks no longer set _headerDragOccurred so header onclick fires correctly; snap-back only runs after a real drag"
+    },
+    {
+      "version": "0.12.27",
+      "date": "2026-03-28",
+      "note": "UX: results drawer is persistent — close button removed, replaced with ▲/▼ collapse arrow; drawer stays in DOM until a new test run replaces it; tap header to expand/collapse"
+    },
+    {
+      "version": "0.12.26",
+      "date": "2026-03-28",
+      "note": "UX: toolbar buttons driven by smide-machine meta.toolbar per state — _setSmideState() replaces scattered _setFlowLoaded/_setResultsReady; results_ready (load from file) shows Load Results not Save Results; missing IDs added to restart/save-flow/pack-prod buttons; save-results-btn virtual ID in results_unsaved state"
+    },
     {
       "version": "0.12.25",
       "date": "2026-03-28",

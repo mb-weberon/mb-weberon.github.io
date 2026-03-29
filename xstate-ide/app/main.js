@@ -53,6 +53,58 @@ async function boot() {
     // "Load Flow" or "Load Results" before the IDE becomes interactive.
     let config = null;
 
+    // ── smide-machine — source of truth for toolbar button state ─────────────
+    // Each state declares meta.toolbar: an array of enabled button IDs.
+    // "save-results-btn" is a virtual ID meaning the load-results-btn should
+    // show as "💾 Save Results" instead of "📋 Load Results".
+    const smideMachine = await fetch(BASE + 'test/smide-machine.json').then(r => r.json());
+    const ALL_TOOLBAR_BTNS = ['test-btn', 'restart-btn', 'load-results-btn', 'save-flow-btn', 'load-flow-btn', 'pack-prod-btn'];
+    let _smideState = 'no_flow';
+
+    function _setSmideState(stateId) {
+        _smideState = stateId;
+        const meta    = smideMachine.states[stateId]?.meta ?? {};
+        const toolbar = meta.toolbar ?? [];
+        const saveMode = toolbar.includes('save-results-btn');
+
+        ALL_TOOLBAR_BTNS.forEach(id => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            // load-results-btn is enabled for both load-mode and save-mode
+            const enabled = toolbar.includes(id) || (id === 'load-results-btn' && saveMode);
+            el.disabled      = !enabled;
+            el.style.opacity = enabled ? '' : '0.4';
+            el.style.cursor  = enabled ? '' : 'not-allowed';
+        });
+
+        // Load Results ↔ Save Results label
+        const lrBtn = document.getElementById('load-results-btn');
+        if (lrBtn) {
+            if (saveMode) {
+                lrBtn.innerHTML = '💾<br>Save<br>Results';
+                lrBtn.title     = 'Save test results as JSON';
+                lrBtn.onclick   = () => {
+                    window.downloadTestResults?.();
+                    _setSmideState('results_saved');
+                };
+            } else {
+                lrBtn.innerHTML = '📋<br>Load<br>Results';
+                lrBtn.title     = 'Load a previously saved test results JSON';
+                lrBtn.onclick   = () => document.getElementById('load-results').click();
+            }
+        }
+
+        // Copy Trace button (inside profile viewer, not toolbar)
+        const copyBtn = document.getElementById('copy-btn');
+        if (copyBtn) {
+            const hasFlow = !['no_flow', 'booting', 'prompt_restore', 'restoring_flow', 'load_error', 'render_ui'].includes(stateId);
+            copyBtn.disabled      = !hasFlow;
+            copyBtn.style.opacity = hasFlow ? '' : '0.4';
+        }
+
+        console.log('🗂️  smide state:', stateId, '| toolbar:', toolbar.join(', ') || '(none)');
+    }
+
     // ── Pre-load generate-traces.js so its exports are ready when needed ──────
     const tracesModule = await import('./generate-traces.js');
     window._showResultsDrawer  = tracesModule.showResultsDrawer;
@@ -206,18 +258,8 @@ async function boot() {
     // pane-narrow is toggled by _applyOffset in index.html whenever _panOffset > 0.
     // No ResizeObserver needed — the slide offset is the canonical signal.
 
-    // Disable buttons that require a loaded flow
-    function _setFlowLoaded(loaded) {
-        const ids = ['test-btn', 'restart-btn', 'save-flow-btn', 'pack-prod-btn', 'copy-btn'];
-        ids.forEach(id => {
-            const el = document.getElementById(id);
-            if (!el) return;
-            el.disabled = !loaded;
-            el.style.opacity = loaded ? '' : '0.4';
-            el.style.cursor  = loaded ? '' : 'not-allowed';
-        });
-    }
-    _setFlowLoaded(false);
+    // Apply initial toolbar state — no flow loaded yet.
+    _setSmideState('no_flow');
 
     // ── IDE rendering ─────────────────────────────────────────────────────────
     function renderIDE(snap) {
@@ -303,7 +345,7 @@ async function boot() {
             }).observe(_messagesEl);
         }
 
-        _setFlowLoaded(true);
+        _setSmideState('flow_idle');
     }
 
     // ── Restart ───────────────────────────────────────────────────────────────
@@ -510,58 +552,8 @@ async function boot() {
 
     const testBtn        = document.getElementById('test-btn');
     const loadResultsBtn = document.getElementById('load-results-btn');
-    const loadFlowBtn    = document.getElementById('load-flow-btn');
     const progressEl     = document.getElementById('test-progress');
     let _testRunning     = false;
-    let _resultsSaved    = true;  // true = no unsaved results; flips false after a run
-
-    // Flip Load Results ↔ Save Results, and lock/unlock Load Flow.
-    // "Unsaved results" state: results exist but have not been downloaded.
-    // In this state Load Flow is disabled to prevent loading a different flow
-    // that would make the results meaningless / unrestorable.
-    function _setResultsReady(ready) {
-        if (!loadResultsBtn) return;
-        if (ready) {
-            _resultsSaved = false;
-            loadResultsBtn.innerHTML = '💾<br>Save<br>Results';
-            loadResultsBtn.title     = 'Save test results as JSON';
-            loadResultsBtn.onclick   = () => {
-                window.downloadTestResults?.();
-                // Mark as saved so Load Flow + Test re-enable
-                _resultsSaved = true;
-                _setResultsReady(false);
-            };
-            // Disable Load Flow and Test while unsaved results exist
-            if (loadFlowBtn) {
-                loadFlowBtn.disabled = true;
-                loadFlowBtn.title    = 'Save Results before loading a new flow';
-                loadFlowBtn.style.opacity = '0.4';
-            }
-            if (testBtn) {
-                testBtn.disabled = true;
-                testBtn.title    = 'Save Results before running tests again';
-                testBtn.style.opacity = '0.4';
-            }
-        } else {
-            _resultsSaved = true;
-            loadResultsBtn.innerHTML = '📋<br>Load<br>Results';
-            loadResultsBtn.title     = 'Load a previously saved test results JSON';
-            loadResultsBtn.onclick   = () => document.getElementById('load-results').click();
-            // Re-enable Load Flow and Test
-            if (loadFlowBtn) {
-                loadFlowBtn.disabled = false;
-                loadFlowBtn.title    = 'Load state machine (.json), services (.js), or both as a ZIP';
-                loadFlowBtn.style.opacity = '';
-            }
-            if (testBtn) {
-                testBtn.disabled = false;
-                testBtn.title    = 'Auto-generate all paths and run as tests';
-                testBtn.style.opacity = '';
-            }
-        }
-    }
-
-    window._setResultsReady = _setResultsReady;
 
     function _setTestRunning(running, hadResults) {
         _testRunning = running;
@@ -569,12 +561,13 @@ async function boot() {
             testBtn.innerHTML = '⏹<br>Stop';
             testBtn.title     = 'Stop the running tests';
             testBtn.classList.add('test-btn-stop');
+            _setSmideState('tests_running');
         } else {
             testBtn.innerHTML = '🧪<br>Test';
             testBtn.title     = 'Auto-generate all paths and run as tests';
             testBtn.classList.remove('test-btn-stop');
             if (progressEl) progressEl.textContent = '';
-            _setResultsReady(!!hadResults);
+            _setSmideState(hadResults ? 'results_unsaved' : 'flow_idle');
         }
     }
 
@@ -613,8 +606,6 @@ async function boot() {
                 console.warn('⚠️  No flow loaded — use Load Flow first');
                 return;
             }
-            // Reset Save/Load button back to Load while a new run starts
-            _setResultsReady(false);
             _setTestRunning(true);
             _startProgressPolling();
             window.runAllTraces().then(() => {
@@ -891,6 +882,8 @@ async function boot() {
 
     // Expose so generate-traces.js can call it after snap-collapse
     window._fitDiagramAboveDrawer = _fitDiagramAboveDrawer;
+    // Expose so generate-traces.js can drive toolbar state
+    window._setSmideState = _setSmideState;
 
     window._onDrawerAdded = (drawer) => {
         _setupDrawer(drawer);

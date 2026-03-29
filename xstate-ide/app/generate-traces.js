@@ -415,19 +415,15 @@ export function showResultsDrawer(results, replayFn) {
     summarySpan.style.cssText = `color:${passColor}; font-weight:bold; font-size:${isMobile ? '14px' : '11px'};`;
     summarySpan.innerText = `${passed}/${total} passed`;
 
-    const closeBtn = document.createElement('button');
-    closeBtn.innerText = '✕';
-    closeBtn.title = 'Close';
-    closeBtn.style.cssText = `background:none; border:none; color:#888; font-size:${isMobile ? '18px' : '12px'}; cursor:pointer; padding:0 4px;`;
-    closeBtn.onclick = (e) => {
-        e.stopPropagation();
-        drawer.remove();
-        reserveBottomSpace(0);
-    };
+    // Collapse indicator — tapping the header toggles collapsed state.
+    // No close button: the drawer persists until a new test run replaces it.
+    const collapseArrow = document.createElement('span');
+    collapseArrow.style.cssText = `color:#888; font-size:${isMobile ? '14px' : '11px'}; padding:0 2px; pointer-events:none;`;
+    collapseArrow.textContent = '▲';
 
     header.appendChild(titleSpan);
     header.appendChild(summarySpan);
-    header.appendChild(closeBtn);
+    header.appendChild(collapseArrow);
 
     // ── Sub-header ────────────────────────────────────────────────────────────
     const subHeader = document.createElement('div');
@@ -564,23 +560,32 @@ export function showResultsDrawer(results, replayFn) {
     let _rpObserver = null;
     function _fitTodiagramPane() {
         const landscape = window.innerWidth > window.innerHeight;
+        const mobileLay = document.body.classList.contains('force-mobile-layout') || window.innerWidth <= 700;
         const dp = document.getElementById('diagram-pane');
+
         if (!landscape) {
-            // Portrait: full-width drawer, reserve bottom space in diagram pane
-            drawer.style.left  = '0';
-            drawer.style.right = '0';
-            drawer.style.width = '';
+            // Portrait: drawer is full-width (right pane is an overlay on top)
+            drawer.style.left     = '0';
+            drawer.style.right    = '0';
+            drawer.style.width    = '';
+            drawer.style.minWidth = '';
             if (dp) dp.style.paddingBottom = `${HEADER_H}px`;
             return;
         }
-        // Landscape: constrain to diagram area only
+
+        // Landscape (both mobile and desktop): drawer fills the visible diagram area,
+        // i.e. from left:0 to the current left edge of the right pane.
         if (dp) dp.style.paddingBottom = '';
         const rp = document.getElementById('right-pane');
         if (!rp) return;
-        const rpRect = rp.getBoundingClientRect();
-        drawer.style.left  = '0';
-        drawer.style.right = (window.innerWidth - rpRect.left) + 'px';
-        drawer.style.width = '';
+        const rpRect  = rp.getBoundingClientRect();
+        const diagW   = rpRect.left; // px of visible diagram area
+
+        drawer.style.left     = '0';
+        drawer.style.right    = (window.innerWidth - rpRect.left) + 'px';
+        drawer.style.width    = '';
+        // Desktop only: enforce a minimum readable width even if diagram pane is narrow
+        drawer.style.minWidth = mobileLay ? '' : Math.max(diagW, 360) + 'px';
     }
     _fitTodiagramPane();
     const rp_el = document.getElementById('right-pane');
@@ -589,20 +594,18 @@ export function showResultsDrawer(results, replayFn) {
         _rpObserver.observe(rp_el);
     }
     window.addEventListener('resize', _fitTodiagramPane);
+    // Also update when the right pane slides (mobile overlay drag)
+    window._onPanOffsetChange = _fitTodiagramPane;
 
     // Clean up observer when drawer is removed
     const _origRemove = drawer.remove.bind(drawer);
     drawer.remove = () => {
         _rpObserver?.disconnect();
         window.removeEventListener('resize', _fitTodiagramPane);
+        if (window._onPanOffsetChange === _fitTodiagramPane) window._onPanOffsetChange = null;
         _origRemove();
     };
 
-    // ── Reserve bottom space in diagram pane ──────────────────────────────────
-    function reserveBottomSpace(px) {
-        const dp = document.getElementById('diagram-pane');
-        if (dp) dp.style.paddingBottom = px ? `${px}px` : '';
-    }
     // ── Collapse / expand ─────────────────────────────────────────────────────
     //
     // Both mobile and desktop use bottom-positioning (not translateY) so the
@@ -616,7 +619,30 @@ export function showResultsDrawer(results, replayFn) {
         return toolbar ? toolbar.offsetHeight : 0;
     }
 
+    function _logDrawerState(label) {
+        const r   = drawer.getBoundingClientRect();
+        const cs  = getComputedStyle(drawer);
+        console.log(`[drawer] ${label}`, {
+            collapsed,
+            'inline.bottom':   drawer.style.bottom,
+            'inline.top':      drawer.style.top    || '—',
+            'inline.left':     drawer.style.left   || '—',
+            'inline.right':    drawer.style.right  || '—',
+            'inline.height':   drawer.style.height || '—',
+            'inline.transform':drawer.style.transform || '—',
+            'computed.height': cs.height,
+            'scrollHeight':    drawer.scrollHeight,
+            'rect.top':        Math.round(r.top),
+            'rect.bottom':     Math.round(r.bottom),
+            'rect.width':      Math.round(r.width),
+            subHeaderDisplay:  subHeader.style.display || '(visible)',
+            tableWrapDisplay:  tableWrap.style.display || '(visible)',
+        });
+    }
+
     function applyCollapsed() {
+        collapseArrow.textContent = collapsed ? '▼' : '▲';
+        _logDrawerState(`applyCollapsed(collapsed=${collapsed}) START`);
         if (isMobile) {
             // On mobile use transform so the header always peeks at the very
             // bottom of the viewport when collapsed. Body sections stay rendered
@@ -627,22 +653,31 @@ export function showResultsDrawer(results, replayFn) {
                 : 'translateY(0)';
         } else {
             if (collapsed) {
-                const fullH     = drawer.scrollHeight;
-                const headerH   = header.offsetHeight;
-                const clearance = _toolbarClearance();
-                drawer.style.bottom    = (clearance + headerH - fullH) + 'px';
+                const fullH   = drawer.scrollHeight;
+                const headerH = header.offsetHeight;
+                // Lock height BEFORE hiding children — display:none would otherwise
+                // shrink the drawer, making the negative bottom push it off-screen.
+                // No clearance offset: collapsed header sits flush at viewport bottom.
+                drawer.style.height    = fullH + 'px';
+                drawer.style.bottom    = (headerH - fullH) + 'px';
                 drawer.style.transform = '';
+                subHeader.style.display = 'none';
+                tableWrap.style.display = 'none';
             } else {
+                // Release the height lock, restore full-open position.
+                subHeader.style.display = '';
+                tableWrap.style.display = '';
+                drawer.style.height    = '';
                 drawer.style.bottom    = '0';
                 drawer.style.transform = '';
             }
-            subHeader.style.display = collapsed ? 'none' : '';
-            tableWrap.style.display = collapsed ? 'none' : '';
+            _logDrawerState(`applyCollapsed(collapsed=${collapsed}) END`);
         }
     }
 
     // Need one rAF after append so offsetHeight is populated
     requestAnimationFrame(() => {
+        _logDrawerState('initial rAF before applyCollapsed');
         applyCollapsed();
         // Auto-select first row
         if (firstTr && firstCase) selectRow(firstCase, firstTr, null);
@@ -656,7 +691,7 @@ export function showResultsDrawer(results, replayFn) {
     let _headerDragOccurred = false;
 
     header.addEventListener('touchstart', (e) => {
-        if (e.target === closeBtn) return;
+        if (e.target.tagName === 'BUTTON') return;
         _headerDragOccurred = false;
         _touchDragStartY    = e.touches[0].clientY;
         _touchDragStartMaxH = tableWrap.offsetHeight || parseInt(tableWrap.style.maxHeight) || 0;
@@ -700,7 +735,7 @@ export function showResultsDrawer(results, replayFn) {
     // Tap (no drag): toggle collapsed state.
     // Suppressed when a drag just occurred so they don't fight.
     header.onclick = (e) => {
-        if (e.target === closeBtn) return;
+        if (e.target.tagName === 'BUTTON') return;
         if (_headerDragOccurred) { _headerDragOccurred = false; return; }
         collapsed = !collapsed;
         applyCollapsed();
@@ -715,34 +750,59 @@ export function showResultsDrawer(results, replayFn) {
     // ── Desktop drag to move ───────────────────────────────────────────────────
     if (!isMobile) {
         let dragging = false, dragOffX = 0, dragOffY = 0;
+        let _pendingDrag = false, _pendingX = 0, _pendingY = 0, _pendingRect = null;
+        const DRAG_THRESHOLD = 5;
 
         header.addEventListener('mousedown', (e) => {
-            if (e.target === closeBtn) return;
-            dragging = true;
-            // Snapshot position now (before clearing bottom/right) so offsets are correct
-            const rect = drawer.getBoundingClientRect();
-            dragOffX   = e.clientX - rect.left;
-            dragOffY   = e.clientY - rect.top;
-            // Switch from bottom-anchored to top/left free positioning
-            drawer.style.top    = `${rect.top}px`;
-            drawer.style.left   = `${rect.left}px`;
-            drawer.style.right  = 'auto';
-            drawer.style.bottom = 'auto';
-            header.style.cursor = 'grabbing';
+            if (e.target.tagName === 'BUTTON') return;
+            _pendingDrag = true;
+            _pendingX = e.clientX;
+            _pendingY = e.clientY;
+            _pendingRect = drawer.getBoundingClientRect();
             e.preventDefault();
         });
 
         document.addEventListener('mousemove', (e) => {
+            if (_pendingDrag) {
+                const dx = Math.abs(e.clientX - _pendingX);
+                const dy = Math.abs(e.clientY - _pendingY);
+                if (dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD) {
+                    // Commit to drag mode now
+                    _pendingDrag = false;
+                    dragging = true;
+                    const rect = _pendingRect;
+                    dragOffX = _pendingX - rect.left;
+                    dragOffY = _pendingY - rect.top;
+                    // Switch from bottom-anchored to top/left free positioning
+                    drawer.style.top    = `${rect.top}px`;
+                    drawer.style.left   = `${rect.left}px`;
+                    drawer.style.right  = 'auto';
+                    drawer.style.bottom = 'auto';
+                    header.style.cursor = 'grabbing';
+                    _headerDragOccurred = true;
+                }
+            }
             if (!dragging) return;
-            _headerDragOccurred = true;
             drawer.style.left = `${e.clientX - dragOffX}px`;
             drawer.style.top  = `${e.clientY - dragOffY}px`;
         });
 
         document.addEventListener('mouseup', () => {
+            _pendingDrag = false;
             if (!dragging) return;
             dragging = false;
             header.style.cursor = 'grab';
+            // Restore bottom-anchored layout after drag (clears top/left free-float).
+            // Keeps the current vertical position by converting rect.top to bottom.
+            const rect = drawer.getBoundingClientRect();
+            drawer.style.top  = '';
+            drawer.style.left = '';
+            _fitTodiagramPane();  // restores left:0 + right:Xpx
+            const snapBottom = window.innerHeight - rect.bottom;
+            // Clamp: never above fully-open (bottom:0) or below header-peek position
+            const minBottom = _toolbarClearance() + header.offsetHeight - drawer.scrollHeight;
+            drawer.style.bottom = Math.min(0, Math.max(minBottom, snapBottom)) + 'px';
+            _logDrawerState('mouseup snap-back END');
         });
     }
 }
@@ -800,7 +860,7 @@ export function loadTestResults(file) {
                 window._restartRuntime(results.config);
             }
             showResultsDrawer(results, window._replayTrace);
-            window._setResultsReady?.(true);   // flip button to Save Results (results_ready state)
+            window._setSmideState?.('results_ready');  // results loaded from file — Load Results stays, Load Flow enabled
             console.log(`✅ Loaded ${results.cases?.length} test cases from file`);
         } catch (err) {
             const m = `Invalid results JSON: ${err.message}`;

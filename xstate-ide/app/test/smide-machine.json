@@ -10,7 +10,8 @@
 
     "render_ui": {
       "meta": {
-        "text": "SM-IDE is ready."
+        "text": "SM-IDE is ready.",
+        "toolbar": []
       },
       "always": {
         "target": "booting"
@@ -19,7 +20,8 @@
 
     "booting": {
       "meta": {
-        "text": "Checking for a previously loaded flow."
+        "text": "Checking for a previously loaded flow.",
+        "toolbar": []
       },
       "invoke": {
         "src": "checkPersistedState",
@@ -40,7 +42,8 @@
 
     "prompt_restore": {
       "meta": {
-        "text": "A previous session was found. Restore it or start fresh?"
+        "text": "A previous session was found. Restore it or start fresh?",
+        "toolbar": []
       },
       "on": {
         "RESTORE": {
@@ -56,7 +59,8 @@
 
     "restoring_flow": {
       "meta": {
-        "text": "Restoring flow, session, and test results from storage."
+        "text": "Restoring flow, session, and test results from storage.",
+        "toolbar": []
       },
       "invoke": {
         "src": "restorePersistedState",
@@ -84,7 +88,8 @@
 
     "load_error": {
       "meta": {
-        "text": "Load failed. Check the browser console for details."
+        "text": "Load failed. Check the browser console for details.",
+        "toolbar": ["load-flow-btn"]
       },
       "on": {
         "DISMISS": {
@@ -96,7 +101,8 @@
 
     "no_flow": {
       "meta": {
-        "text": "No flow loaded. Use Load Flow or Load Results to begin."
+        "text": "No flow loaded. Use Load Flow or Load Results to begin.",
+        "toolbar": ["load-flow-btn", "load-results-btn"]
       },
       "on": {
         "LOAD_FLOW": {
@@ -116,7 +122,8 @@
 
     "flow_idle": {
       "meta": {
-        "text": "Flow loaded. Chat at initial state. Ready to converse or run tests."
+        "text": "Flow loaded. Chat at initial state. Ready to converse or run tests.",
+        "toolbar": ["test-btn", "restart-btn", "save-flow-btn", "load-flow-btn", "load-results-btn", "pack-prod-btn"]
       },
       "on": {
         "LOAD_FLOW": {
@@ -148,7 +155,8 @@
 
     "session_active": {
       "meta": {
-        "text": "Conversation in progress. Trace being recorded."
+        "text": "Conversation in progress. Trace being recorded.",
+        "toolbar": ["test-btn", "restart-btn", "save-flow-btn", "load-flow-btn", "load-results-btn", "pack-prod-btn"]
       },
       "on": {
         "LOAD_FLOW": {
@@ -184,7 +192,8 @@
 
     "tests_running": {
       "meta": {
-        "text": "Test suite running. All paths exercised automatically. Click Stop to interrupt."
+        "text": "Test suite running. All paths exercised automatically. Click Stop to interrupt.",
+        "toolbar": ["test-btn"]
       },
       "on": {
         "TESTS_COMPLETE": {
@@ -200,7 +209,8 @@
 
     "results_unsaved": {
       "meta": {
-        "text": "Tests done. Save Results before loading a new flow — Load Flow is locked."
+        "text": "Tests done. Save Results before loading a new flow — Load Flow is locked.",
+        "toolbar": ["test-btn", "restart-btn", "save-results-btn", "save-flow-btn", "pack-prod-btn"]
       },
       "on": {
         "SAVE_RESULTS": {
@@ -220,7 +230,8 @@
 
     "results_saved": {
       "meta": {
-        "text": "Results saved to disk. Load Flow re-enabled."
+        "text": "Results saved to disk. Load Flow re-enabled.",
+        "toolbar": ["test-btn", "restart-btn", "save-flow-btn", "load-flow-btn", "load-results-btn", "pack-prod-btn"]
       },
       "on": {
         "LOAD_FLOW": {
@@ -252,7 +263,8 @@
 
     "results_ready": {
       "meta": {
-        "text": "Results loaded or restored from storage. Drawer shown. Flow active and re-loadable."
+        "text": "Results loaded or restored from storage. Drawer shown. Flow active and re-loadable.",
+        "toolbar": ["test-btn", "restart-btn", "save-flow-btn", "load-flow-btn", "load-results-btn", "pack-prod-btn"]
       },
       "on": {
         "LOAD_FLOW": {
