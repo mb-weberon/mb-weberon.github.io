@@ -1419,6 +1419,45 @@ async function _traceRAG(query, signal) {
   }
   lines.push('');
 
+  // ── Stage 7: Related questions ────────────────────────────────────────────
+  const hasQuestions = metaDocs.some(d => d.question);
+  lines.push('\u25a0 STAGE 7 \u2500 RELATED QUESTIONS');
+  if (!hasQuestions) {
+    lines.push('  skipped  index has no question fields (built with build-index.js)');
+  } else if (!answer || answer.startsWith('(LLM')) {
+    lines.push('  skipped  no answer to search against');
+  } else {
+    const relatedCount = RAGConfig.get('questions.relatedCount') ?? 5;
+    const fetchK       = relatedCount * 6;
+    const t7 = Date.now();
+    try {
+      const rawResults = await search(answer, fetchK);
+      const seenChunk  = new Set();
+      const candidates = [];
+      for (const doc of rawResults) {
+        if (doc.question && !seenChunk.has(doc.chunkId)) {
+          seenChunk.add(doc.chunkId);
+          candidates.push(doc);
+        }
+      }
+      const diverse = (typeof window.selectDiverse === 'function')
+        ? window.selectDiverse(candidates, relatedCount)
+        : candidates.slice(0, relatedCount);
+      lines.push('  config         relatedCount=' + relatedCount + '  fetch=' + fetchK);
+      lines.push('  search results ' + rawResults.length + ' docs fetched  (' + (Date.now()-t7) + 'ms)');
+      lines.push('  after dedup    ' + candidates.length + ' unique chunkIds with question field');
+      lines.push('  after diverse  ' + diverse.length + ' selected');
+      lines.push('');
+      diverse.forEach((d, i) => {
+        const q = (d.question || '').slice(0, 80) + ((d.question || '').length > 80 ? '\u2026' : '');
+        lines.push('  [' + (i+1) + '] ' + d.score.toFixed(4) + '  chunkId:' + d.chunkId + '  "' + q + '"');
+      });
+    } catch(e) {
+      lines.push('  ERROR: ' + e.message);
+    }
+  }
+  lines.push('');
+
   lines.push(sep2);
   lines.push('total  ' + (Date.now()-t0) + 'ms');
 

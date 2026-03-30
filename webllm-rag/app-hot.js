@@ -129,6 +129,7 @@
   window.renderQuestions         = renderQuestions;
   window.loadInitialQuestions    = loadInitialQuestions;
   window.updateQuestionsFromChat = updateQuestionsFromChat;
+  window.selectDiverse           = selectDiverse;
   window.toggleQuestionsDrawer   = function () {
     document.getElementById('questions-panel')?.classList.toggle('open');
     document.getElementById('questions-backdrop')?.classList.toggle('open');
