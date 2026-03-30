@@ -908,31 +908,64 @@ async function search(query, k = 5) {
 // Async terminal:    .llm()  .llm("question")  .llm(prompt="...", "question")
 // ---------------------------------------------------------------------------
 class Collection {
-  constructor(docs, query = null) {
-    this._docs  = Array.isArray(docs) ? docs : [];
-    this._query = query;
+  constructor(docs, query = null, searchK = null, stages = null) {
+    this._docs    = Array.isArray(docs) ? docs : [];
+    this._query   = query;
+    this._searchK = searchK;
+    this._stages  = stages || [{ op: 'root', count: this._docs.length }];
+  }
+
+  _next(docs, query, stage) {
+    return new Collection(
+      docs,
+      query ?? this._query,
+      this._searchK,
+      [...this._stages, stage]
+    );
   }
 
   filter(field, pattern) {
+    const before = this._docs.length;
     const test = pattern instanceof RegExp
       ? s => pattern.test(s)
       : s => s.toLowerCase().includes(String(pattern).toLowerCase());
-    return new Collection(
-      this._docs.filter(d => test(String(d[field] ?? ''))),
-      this._query
-    );
+    const filtered = this._docs.filter(d => test(String(d[field] ?? '')));
+    const patStr = pattern instanceof RegExp ? pattern.toString() : '"' + pattern + '"';
+    return this._next(filtered, null, {
+      op:      'filter',
+      field,
+      pattern: patStr,
+      before,
+      after:   filtered.length,
+      dropped: before - filtered.length,
+    });
   }
 
   unique(field) {
+    const before = this._docs.length;
     const seen = new Set();
-    return new Collection(
-      this._docs.filter(d => { const v = d[field]; return seen.has(v) ? false : (seen.add(v), true); }),
-      this._query
-    );
+    const filtered = this._docs.filter(d => {
+      const v = d[field]; return seen.has(v) ? false : (seen.add(v), true);
+    });
+    return this._next(filtered, null, {
+      op:      'unique',
+      field,
+      before,
+      after:   filtered.length,
+      dropped: before - filtered.length,
+    });
   }
 
   slice(n) {
-    return new Collection(this._docs.slice(0, n), this._query);
+    const before = this._docs.length;
+    const sliced = this._docs.slice(0, n);
+    return this._next(sliced, null, {
+      op:      'slice',
+      n,
+      before,
+      after:   sliced.length,
+      dropped: before - sliced.length,
+    });
   }
 
   get count() { return this._docs.length; }
@@ -945,10 +978,11 @@ class Collection {
     return this._docs.map(d => typeof d === 'string' ? d : (d.title || d.url || String(d))).join(sep);
   }
 
-  // k defaults to min(50, docs.length) — generous for display, trimmed by llm() budget
   async search(q, k) {
-    if (!q) return new Collection(this._docs, this._query);
-    k = k ?? Math.min(this._docs.length, 50);
+    if (!q) return this._next(this._docs, this._query, { op: 'search', skipped: true, reason: 'empty query' });
+    k = k ?? this._searchK ?? Math.min(this._docs.length, 50);
+    const before = this._docs.length;
+    const t0     = Date.now();
 
     if (embedder && embMatrix) {
       try {
@@ -958,9 +992,23 @@ class Collection {
           const slice = embMatrix.subarray(doc.id * DIMS, (doc.id + 1) * DIMS);
           const sim   = cosineSimilarity(queryVec, slice);
           const boost = doc.type === 'contact' ? RAGConfig.get('retrieval.contactBoost') : 0;
-          return { ...doc, score: sim + boost };
+          return { ...doc, score: sim + boost, _rawSim: sim, _boost: boost };
         }).sort((a, b) => b.score - a.score);
-        return new Collection(scored.slice(0, k), q);
+        const results = scored.slice(0, k);
+        return this._next(results, q, {
+          op:      'search',
+          method:  'semantic',
+          model:   'all-MiniLM-L6-v2',
+          query:   q,
+          k,
+          before,
+          after:   results.length,
+          elapsed: Date.now() - t0,
+          topScore:    results[0]?.score?.toFixed(4) ?? 'n/a',
+          bottomScore: results[results.length-1]?.score?.toFixed(4) ?? 'n/a',
+          contactBoost: RAGConfig.get('retrieval.contactBoost'),
+          results,
+        });
       } catch(e) {
         console.warn('Collection.search semantic failed, keyword fallback:', e.message);
       }
@@ -979,27 +1027,40 @@ class Collection {
       });
       return { ...doc, score };
     }).sort((a, b) => b.score - a.score);
-    return new Collection(scored.slice(0, k), q);
+    const results = scored.slice(0, k);
+    return this._next(results, q, {
+      op:      'search',
+      method:  'keyword',
+      query:   q,
+      k,
+      before,
+      after:   results.length,
+      elapsed: Date.now() - t0,
+      topScore:    results[0]?.score?.toFixed(4) ?? 'n/a',
+      bottomScore: results[results.length-1]?.score?.toFixed(4) ?? 'n/a',
+      results,
+    });
   }
 
   async chunks() {
+    const t0  = Date.now();
     await ensureTextLoaded();
-    return new Collection(
-      this._docs.map(d => ({ ...d, _text: getText(d.id) })),
-      this._query
-    );
+    const docs = this._docs.map(d => ({ ...d, _text: getText(d.id) }));
+    const totalChars = docs.reduce((s, d) => s + (d._text?.length || 0), 0);
+    return this._next(docs, null, {
+      op:         'chunks',
+      count:      docs.length,
+      totalChars,
+      elapsed:    Date.now() - t0,
+    });
   }
 
-  // Sends all docs up to the character budget (passageCharLimit × maxSources).
-  // No arbitrary doc-count cap — the budget is controlled by settings.
-  // _query defaults to a generic instruction when no .search() was in the chain.
   async llm(argsStr, signal) {
     const { prompt, userInput } = _parseLlmArgs(argsStr);
     const systemPrompt = prompt ?? RAGConfig.get('llm.systemPrompt');
     const query        = userInput ?? this._query ?? 'Summarize the key information.';
-
-    const charBudget = RAGConfig.get('retrieval.passageCharLimit') * getMaxSources();
-    const passageLen = RAGConfig.get('retrieval.passageCharLimit');
+    const charBudget   = RAGConfig.get('retrieval.passageCharLimit') * getMaxSources();
+    const passageLen   = RAGConfig.get('retrieval.passageCharLimit');
 
     await ensureTextLoaded();
     const seenUrls = new Set();
@@ -1017,6 +1078,173 @@ class Collection {
     const passages = sources.map((d, i) => `[${i+1}] ${d._resolvedText}`).join('\n\n');
     const { answer } = await _callLLM(systemPrompt, query, passages, signal);
     return { answer, sources };
+  }
+
+  async trace(signal) {
+    const sep  = '\u2500'.repeat(48);
+    const sep2 = '\u2550'.repeat(48);
+    const lines = [];
+    const t0   = Date.now();
+
+    lines.push('TRACE');
+    lines.push(sep2);
+    lines.push('');
+
+    // ── Replay each recorded stage ────────────────────────────────────────
+    for (const stage of this._stages) {
+
+      if (stage.op === 'root') {
+        lines.push('\u25a0 metaDocs');
+        lines.push('  total     ' + stage.count + ' chunks');
+        lines.push('');
+        continue;
+      }
+
+      if (stage.op === 'filter') {
+        lines.push('\u25a0 .filter("' + stage.field + '", ' + stage.pattern + ')');
+        lines.push('  before    ' + stage.before + ' chunks');
+        lines.push('  after     ' + stage.after  + ' chunks  (' + stage.dropped + ' dropped)');
+        lines.push('');
+        continue;
+      }
+
+      if (stage.op === 'unique') {
+        lines.push('\u25a0 .unique("' + stage.field + '")');
+        lines.push('  before    ' + stage.before + ' chunks');
+        lines.push('  after     ' + stage.after  + ' chunks  (' + stage.dropped + ' duplicate ' + stage.field + 's dropped)');
+        lines.push('');
+        continue;
+      }
+
+      if (stage.op === 'slice') {
+        lines.push('\u25a0 .slice(' + stage.n + ')');
+        lines.push('  before    ' + stage.before + ' chunks');
+        lines.push('  after     ' + stage.after  + ' chunks  (' + stage.dropped + ' dropped)');
+        lines.push('');
+        continue;
+      }
+
+      if (stage.op === 'search') {
+        if (stage.skipped) {
+          lines.push('\u25a0 .search()  SKIPPED (' + stage.reason + ')');
+          lines.push('');
+          continue;
+        }
+        lines.push('\u25a0 .search("' + stage.query + '")');
+        lines.push('  method    ' + stage.method + (stage.model ? ' (' + stage.model + ')' : ''));
+        lines.push('  before    ' + stage.before + ' chunks');
+        lines.push('  k         ' + stage.k + '  (candidate limit)');
+        lines.push('  after     ' + stage.after  + ' chunks returned');
+        lines.push('  elapsed   ' + stage.elapsed + 'ms');
+        lines.push('  scores    ' + stage.topScore + ' (top) \u2192 ' + stage.bottomScore + ' (bottom)');
+        if (stage.contactBoost) lines.push('  boost     +' + stage.contactBoost + ' applied to contact chunks');
+        lines.push('');
+        lines.push('  #   score    boost  type     chunkId  url');
+        lines.push('  ' + '\u2500'.repeat(60));
+        (stage.results || []).slice(0, 12).forEach((d, i) => {
+          const dupeFlag  = (stage.results || []).slice(0, i).some(p => p.url === d.url) ? ' \u29d6dup' : '';
+          const boostStr  = (d._boost > 0) ? '+' + d._boost.toFixed(2) : '     ';
+          const urlShort  = d.url.length > 35 ? '\u2026' + d.url.slice(-33) : d.url;
+          const rawSim    = d._rawSim != null ? d._rawSim.toFixed(4) : (d.score != null ? d.score.toFixed(4) : ' n/a ');
+          lines.push(
+            '  ' + String(i+1).padStart(2) + '  ' +
+            rawSim + '  ' + boostStr + '  ' +
+            (d.type || '').padEnd(7) + '  ' +
+            String(d.chunkId ?? d.id ?? '').padEnd(7) + '  ' +
+            urlShort + dupeFlag
+          );
+        });
+        if ((stage.results || []).length > 12) lines.push('  ... +' + ((stage.results || []).length - 12) + ' more');
+        lines.push('');
+        continue;
+      }
+
+      if (stage.op === 'chunks') {
+        lines.push('\u25a0 .chunks()');
+        lines.push('  loaded    ' + stage.count + ' texts');
+        lines.push('  total     ' + stage.totalChars.toLocaleString() + ' chars across all chunks');
+        lines.push('  elapsed   ' + stage.elapsed + 'ms');
+        lines.push('');
+        continue;
+      }
+    }
+
+    // ── .trace() terminal — passage assembly + LLM ───────────────────────
+    const passageLen = RAGConfig.get('retrieval.passageCharLimit');
+    const charBudget = passageLen * getMaxSources();
+    const query      = this._query ?? '(no query \u2014 .search() not in chain)';
+
+    await ensureTextLoaded();
+    const seenUrls = new Set();
+    const sources  = [];
+    let usedChars  = 0;
+    for (const doc of this._docs) {
+      if (seenUrls.has(doc.url)) continue;
+      const text = (doc._text || getText(doc.id)).substring(0, passageLen);
+      if (usedChars + text.length > charBudget && sources.length > 0) break;
+      seenUrls.add(doc.url);
+      sources.push({ ...doc, _resolvedText: text });
+      usedChars += text.length;
+    }
+
+    lines.push('\u25a0 .trace()  \u2500 passage assembly');
+    lines.push('  available  ' + this._docs.length + ' chunks  (' + [...new Set(this._docs.map(d => d.url))].length + ' unique URLs)');
+    lines.push('  limit      ' + passageLen + ' chars/passage \u00d7 ' + getMaxSources() + ' sources = ' + charBudget + ' budget');
+    if (!sources.length) {
+      lines.push('  \u26a0 no passages \u2014 collection empty or .chunks() not called');
+      if (!this._query) lines.push('  \u26a0 no query set \u2014 add .search("q") before .trace() to rank by relevance');
+    } else {
+      lines.push('  sent       ' + sources.length + ' passages  (' + (this._docs.length - sources.length) + ' skipped by budget)');
+      lines.push('');
+      sources.forEach((s, i) => {
+        const full    = s._text || getText(s.id);
+        const trimmed = s._resolvedText;
+        const pct     = Math.round(trimmed.length / Math.max(full.length, 1) * 100);
+        const flag    = full.length > passageLen ? '\u2702 truncated' : '\u2713 full';
+        lines.push('  [' + (i+1) + '] ' + flag + '  ' + trimmed.length + '/' + full.length + ' chars (' + pct + '%)  chunkId:' + (s.chunkId ?? s.id));
+        lines.push('      "' + trimmed.replace(/\s+/g, ' ').slice(0, 80) + (trimmed.length > 80 ? '\u2026' : '') + '"');
+      });
+      lines.push('');
+      lines.push('  used       ' + usedChars + ' / ' + charBudget + ' chars (' + Math.round(usedChars / charBudget * 100) + '%)');
+    }
+    lines.push('');
+
+    const systemPrompt = RAGConfig.get('llm.systemPrompt');
+    lines.push('\u25a0 .trace()  \u2500 generate');
+    lines.push('  query      "' + query + '"');
+    lines.push('  prompt     ' + systemPrompt.length + ' chars  "' + systemPrompt.replace(/\n/g, ' ').slice(0, 60) + (systemPrompt.length > 60 ? '\u2026' : '') + '"');
+    const histN    = RAGConfig.get('llm.historyExchanges');
+    const histMsgs = messages.filter(m => !m.isWelcome && (m.role === 'user' || m.role === 'assistant')).slice(-(histN * 2 + 1), -1);
+    lines.push('  history    ' + Math.floor(histMsgs.length / 2) + ' of ' + histN + ' exchange(s)');
+    lines.push('  model      ' + (engineState.model || 'not loaded'));
+    lines.push('  temp       ' + RAGConfig.get('llm.temperature') + '  maxTokens:' + RAGConfig.get('llm.maxTokens') + '  rep_penalty:' + RAGConfig.get('llm.repetitionPenalty'));
+    lines.push('');
+
+    let answer = '(LLM not available)';
+    if (llmEngine) {
+      const t6 = Date.now();
+      try {
+        const passages = sources.map((d, i) => '[' + (i+1) + '] ' + d._resolvedText).join('\n\n');
+        const result   = await _callLLM(systemPrompt, query, passages, signal);
+        answer = result.answer;
+        lines.push('  elapsed    ' + (Date.now() - t6) + 'ms');
+        lines.push('  tokens     ~' + Math.round(answer.split(/\s+/).length * 1.3) + ' (estimate)');
+      } catch(e) {
+        if (e.name === 'AbortError') throw e;
+        answer = '(LLM error: ' + e.message + ')';
+        lines.push('  ERROR: ' + e.message);
+      }
+    } else {
+      lines.push('  SKIPPED (no LLM loaded)');
+    }
+    lines.push('');
+
+    lines.push(sep2);
+    lines.push('ANSWER  (' + (Date.now() - t0) + 'ms total)');
+    lines.push(sep);
+    lines.push(answer);
+
+    return { answer: lines.join('\n'), sources };
   }
 }
 
@@ -1121,6 +1349,7 @@ function _getRootCollection(name) {
     case 'pages':     return new Collection(metaDocs).unique('url');
     case 'topics':    return new Collection(metaDocs.filter(d => d.title && d.title !== 'Untitled')).unique('title');
     case 'questions': return new Collection(metaDocs.filter(d => d.question));
+    case 'rag':       return new Collection(metaDocs, null, getMaxSources() * RAGConfig.get('retrieval.candidatesMultiplier'));
     default:          return new Collection(metaDocs);
   }
 }
@@ -1251,219 +1480,6 @@ ${searchResult}
 \`${p} {{topics.slice(5).join(", ")}}\``, sources: [] };
 }
 
-// ---------------------------------------------------------------------------
-// _traceRAG — full RAG pipeline trace for // trace("query")
-// Shows every stage: embed, retrieve (raw + scored), dedup, passage assembly,
-// system prompt, and the final LLM answer.
-// ---------------------------------------------------------------------------
-async function _traceRAG(query, signal) {
-  await ensureTextLoaded();
-  const sep  = '\u2500'.repeat(48);
-  const sep2 = '\u2550'.repeat(48);
-  const lines = [];
-  const t0 = Date.now();
-
-  const ragEnabled   = RAGConfig.get('retrieval.ragEnabled') !== false;
-  const maxSources   = getMaxSources();
-  const candMult     = RAGConfig.get('retrieval.candidatesMultiplier');
-  const passLimit    = RAGConfig.get('retrieval.passageCharLimit');
-  const contactBoost = RAGConfig.get('retrieval.contactBoost');
-  const k            = maxSources * candMult;
-
-  lines.push('TRACE  "' + query + '"');
-  lines.push(sep2);
-  lines.push('');
-
-  // ── Stage 0: Config snapshot ──────────────────────────────────────────────
-  lines.push('\u25a0 CONFIG');
-  lines.push('  ragEnabled        ' + ragEnabled);
-  lines.push('  maxSources        ' + maxSources);
-  lines.push('  candidatesMult    ' + candMult  + '  (fetch ' + k + ' chunks)');
-  lines.push('  passageCharLimit  ' + passLimit + '  (budget: ' + (passLimit * maxSources) + ' chars total)');
-  lines.push('  contactBoost      ' + contactBoost);
-  lines.push('  embedder          ' + (embedder ? 'loaded (semantic)' : 'not loaded (keyword fallback)'));
-  lines.push('  llm               ' + (llmEngine ? (engineState.model || 'loaded') : 'not loaded (template fallback)'));
-  lines.push('');
-
-  if (!ragEnabled) {
-    lines.push('\u26a0 RAG disabled \u2014 query will go directly to LLM with no context.');
-    lines.push('');
-  }
-
-  // ── Stage 1: Embed query ──────────────────────────────────────────────────
-  let queryVec = null;
-  if (embedder && embMatrix && ragEnabled) {
-    const t1 = Date.now();
-    try {
-      const output = await embedder(query, { pooling: 'mean', normalize: true });
-      queryVec = new Float32Array(output.data);
-      lines.push('\u25a0 STAGE 1 \u2500 EMBED  (' + (Date.now()-t1) + 'ms)');
-      lines.push('  model   all-MiniLM-L6-v2');
-      lines.push('  dims    ' + queryVec.length);
-      // Show a few representative values
-      const sample = Array.from(queryVec.slice(0, 6)).map(v => v.toFixed(4)).join('  ');
-      lines.push('  vec[0:6]  [' + sample + '  ...]');
-    } catch(e) {
-      lines.push('\u25a0 STAGE 1 \u2500 EMBED  FAILED: ' + e.message);
-    }
-    lines.push('');
-  }
-
-  // ── Stage 2: Retrieve candidates ─────────────────────────────────────────
-  let rawCandidates = [];
-  if (ragEnabled) {
-    const t2 = Date.now();
-    rawCandidates = await search(query, k);
-    lines.push('\u25a0 STAGE 2 \u2500 RETRIEVE  (' + (Date.now()-t2) + 'ms)');
-    lines.push('  requested  ' + k + ' candidates  (maxSources ' + maxSources + ' \u00d7 mult ' + candMult + ')');
-    lines.push('  returned   ' + rawCandidates.length + ' chunks');
-    lines.push('');
-    lines.push('  #   score    boost  chunkId  url');
-    lines.push('  ' + '\u2500'.repeat(56));
-
-    const scoreWidth = String(rawCandidates[0]?.score?.toFixed(4) || '').length;
-    rawCandidates.forEach((c, i) => {
-      const rawSim  = c.type === 'contact' ? (c.score - contactBoost) : c.score;
-      const boostStr = c.type === 'contact' ? '+' + contactBoost.toFixed(2) : '     ';
-      const dupeFlag = rawCandidates.slice(0, i).some(p => p.url === c.url) ? ' \u29d6dup' : '     ';
-      const urlShort = c.url.length > 40 ? '\u2026' + c.url.slice(-38) : c.url;
-      lines.push(
-        '  ' + String(i+1).padStart(2) + '  ' +
-        rawSim.toFixed(4) + '  ' + boostStr + '  ' +
-        String(c.chunkId || c.id).padEnd(7) + '  ' +
-        urlShort + dupeFlag
-      );
-    });
-    lines.push('');
-  }
-
-  // ── Stage 3: Dedup ────────────────────────────────────────────────────────
-  let uniqueSources = [];
-  if (ragEnabled) {
-    const seenUrls = new Set();
-    rawCandidates.forEach(s => {
-      if (!seenUrls.has(s.url) && uniqueSources.length < maxSources) {
-        seenUrls.add(s.url);
-        uniqueSources.push(s);
-      }
-    });
-    const dropped = rawCandidates.length - uniqueSources.length;
-    lines.push('\u25a0 STAGE 3 \u2500 DEDUP');
-    lines.push('  kept     ' + uniqueSources.length + ' unique URLs');
-    lines.push('  dropped  ' + dropped + ' duplicate-URL chunks');
-    uniqueSources.forEach((s, i) => {
-      const urlShort = s.url.length > 45 ? '\u2026' + s.url.slice(-43) : s.url;
-      lines.push('  [' + (i+1) + '] ' + s.score.toFixed(4) + '  ' + urlShort);
-    });
-    lines.push('');
-  }
-
-  // ── Stage 4: Passage assembly ─────────────────────────────────────────────
-  let passages = '';
-  if (ragEnabled && uniqueSources.length) {
-    lines.push('\u25a0 STAGE 4 \u2500 PASSAGES  (limit ' + passLimit + ' chars each)');
-    const passageList = uniqueSources.map((s, i) => {
-      const text    = getText(s.id);
-      const trimmed = text.substring(0, passLimit);
-      const pct     = Math.round((trimmed.length / Math.max(text.length, 1)) * 100);
-      lines.push('  [' + (i+1) + '] chunkId:' + (s.chunkId || s.id) + '  ' +
-                 trimmed.length + '/' + text.length + ' chars (' + pct + '%)' +
-                 (text.length > passLimit ? ' \u2702 truncated' : ' \u2713 full'));
-      lines.push('      "' + trimmed.replace(/\s+/g, ' ').slice(0, 80) + (trimmed.length > 80 ? '\u2026' : '') + '"');
-      return '[' + (i+1) + '] ' + trimmed;
-    });
-    passages = passageList.join('\n\n');
-    const totalChars = passages.length;
-    const budget     = passLimit * maxSources;
-    lines.push('');
-    lines.push('  total  ' + totalChars + ' chars / ' + budget + ' budget (' + Math.round(totalChars/budget*100) + '%)');
-    lines.push('');
-  }
-
-  // ── Stage 5: System prompt ────────────────────────────────────────────────
-  const systemPrompt = RAGConfig.get('llm.systemPrompt');
-  lines.push('\u25a0 STAGE 5 \u2500 SYSTEM PROMPT  (' + systemPrompt.length + ' chars)');
-  lines.push('  "' + systemPrompt.replace(/\n/g, ' ').slice(0, 100) + (systemPrompt.length > 100 ? '\u2026' : '') + '"');
-  lines.push('');
-
-  // History
-  const historyExchanges = RAGConfig.get('llm.historyExchanges');
-  const historyMsgs = messages
-    .filter(m => !m.isWelcome && (m.role === 'user' || m.role === 'assistant'))
-    .slice(-(historyExchanges * 2 + 1), -1);
-  lines.push('  history  ' + Math.floor(historyMsgs.length / 2) + ' of ' + historyExchanges + ' exchange(s) included');
-  lines.push('');
-
-  // ── Stage 6: LLM call ────────────────────────────────────────────────────
-  let answer = '(LLM not available)';
-  if (llmEngine) {
-    lines.push('\u25a0 STAGE 6 \u2500 GENERATE');
-    lines.push('  model        ' + (engineState.model || 'unknown'));
-    lines.push('  temperature  ' + RAGConfig.get('llm.temperature'));
-    lines.push('  maxTokens    ' + RAGConfig.get('llm.maxTokens'));
-    lines.push('  rep_penalty  ' + RAGConfig.get('llm.repetitionPenalty'));
-    lines.push('');
-    const t6 = Date.now();
-    try {
-      const result = await _callLLM(systemPrompt, query, passages, signal);
-      answer = result.answer;
-      lines.push('  elapsed  ' + (Date.now()-t6) + 'ms');
-      lines.push('  tokens   ~' + Math.round(answer.split(/\s+/).length * 1.3) + ' (word-count estimate)');
-    } catch(e) {
-      if (e.name === 'AbortError') throw e;
-      answer = '(LLM error: ' + e.message + ')';
-      lines.push('  ERROR: ' + e.message);
-    }
-  } else {
-    lines.push('\u25a0 STAGE 6 \u2500 GENERATE  SKIPPED (no LLM)');
-  }
-  lines.push('');
-
-  // ── Stage 7: Related questions ────────────────────────────────────────────
-  const hasQuestions = metaDocs.some(d => d.question);
-  lines.push('\u25a0 STAGE 7 \u2500 RELATED QUESTIONS');
-  if (!hasQuestions) {
-    lines.push('  skipped  index has no question fields (built with build-index.js)');
-  } else if (!answer || answer.startsWith('(LLM')) {
-    lines.push('  skipped  no answer to search against');
-  } else {
-    const relatedCount = RAGConfig.get('questions.relatedCount') ?? 5;
-    const fetchK       = relatedCount * 6;
-    const t7 = Date.now();
-    try {
-      const rawResults = await search(answer, fetchK);
-      const seenChunk  = new Set();
-      const candidates = [];
-      for (const doc of rawResults) {
-        if (doc.question && !seenChunk.has(doc.chunkId)) {
-          seenChunk.add(doc.chunkId);
-          candidates.push(doc);
-        }
-      }
-      const diverse = (typeof window.selectDiverse === 'function')
-        ? window.selectDiverse(candidates, relatedCount)
-        : candidates.slice(0, relatedCount);
-      lines.push('  config         relatedCount=' + relatedCount + '  fetch=' + fetchK);
-      lines.push('  search results ' + rawResults.length + ' docs fetched  (' + (Date.now()-t7) + 'ms)');
-      lines.push('  after dedup    ' + candidates.length + ' unique chunkIds with question field');
-      lines.push('  after diverse  ' + diverse.length + ' selected');
-      lines.push('');
-      diverse.forEach((d, i) => {
-        const q = (d.question || '').slice(0, 80) + ((d.question || '').length > 80 ? '\u2026' : '');
-        lines.push('  [' + (i+1) + '] ' + d.score.toFixed(4) + '  chunkId:' + d.chunkId + '  "' + q + '"');
-      });
-    } catch(e) {
-      lines.push('  ERROR: ' + e.message);
-    }
-  }
-  lines.push('');
-
-  lines.push(sep2);
-  lines.push('total  ' + (Date.now()-t0) + 'ms');
-
-  return { answer, traceLines: lines, sources: uniqueSources };
-}
-
 async function executePipeline(expr, signal) {
   // {{ }} template expressions — evaluate and return directly
   if (expr.includes('{{')) {
@@ -1485,14 +1501,32 @@ async function executePipeline(expr, signal) {
     return await _callLLM(systemPrompt, question, [], signal);
   }
 
-  // trace("query") — run the full RAG pipeline and show every stage
+  // trace("query") — sugar for rag.search("q").trace()
   const traceM = expr.trim().match(/^trace\(["'](.+)["']\)\s*$/s);
   if (traceM) {
-    return await _traceRAG(traceM[1], signal);
+    const q   = traceM[1];
+    const k   = getMaxSources() * RAGConfig.get('retrieval.candidatesMultiplier');
+    const col = await (new Collection(metaDocs, q, k)).search(q);
+    const deduped  = col.unique('url').slice(getMaxSources());
+    const chunked  = await deduped.chunks();
+    return await chunked.trace(signal);
   }
 
-  const rootM = expr.trim().match(/^(metaDocs|pages|topics|questions)([\s\S]*)$/);
+  const rootM = expr.trim().match(/^(metaDocs|pages|topics|questions|rag)([\s\S]*)$/);
   if (!rootM) return null;
+
+  // rag("q") shorthand — expand to full default pipeline
+  if (rootM[1] === 'rag') {
+    const callM = (rootM[2] || '').match(/^\(["'](.+)["']\)\s*$/s);
+    if (callM) {
+      const q        = callM[1];
+      const k        = getMaxSources() * RAGConfig.get('retrieval.candidatesMultiplier');
+      const col      = await (new Collection(metaDocs, q, k)).search(q);
+      const deduped  = col.unique('url').slice(getMaxSources());
+      const chunked  = await deduped.chunks();
+      return await chunked.llm('', signal);  // _query already set by .search(q)
+    }
+  }
 
   let value = _getRootCollection(rootM[1]);
   let rest  = rootM[2] || '';
@@ -1572,6 +1606,8 @@ async function executePipeline(expr, signal) {
       value = await value.chunks();
     } else if (method === 'llm') {
       return await value.llm(argsStr || '', signal);
+    } else if (method === 'trace') {
+      return await value.trace(signal);
     } else if (method === 'duplicates') {
       // Show all URLs with more than one chunk, ranked by count desc
       const docs  = value._docs;
@@ -1905,7 +1941,15 @@ window.ask = async function() {
   const autoTrace = !isPipelineCmd && RAGConfig.get('debug.traceEnabled') === true;
 
   try {
-    const result = autoTrace ? await _traceRAG(query, signal) : await chat(query, signal);
+    let result;
+    if (autoTrace) {
+      const k       = getMaxSources() * RAGConfig.get('retrieval.candidatesMultiplier');
+      const col     = await (new Collection(metaDocs, query, k)).search(query);
+      const chunked = await col.unique('url').slice(getMaxSources()).chunks();
+      result = await chunked.trace(signal);
+    } else {
+      result = await chat(query, signal);
+    }
     answer     = result.answer;
     sources    = result.sources || [];
     traceLines = result.traceLines || null;
@@ -2470,6 +2514,7 @@ function _pcSets() {
     { label: 'topics',     insert: 'topics',    cursorBack: 0 },
     { label: 'llm("")',    insert: 'llm("")',   cursorBack: 2 },
     { label: 'trace("")',  insert: 'trace("")', cursorBack: 2 },
+    { label: 'rag',         insert: 'rag',        cursorBack: 0 },
   ];
 
   // Insert strings have NO leading dot — dot is part of commitPart or added by caller
@@ -2485,6 +2530,7 @@ function _pcSets() {
     { label: '.groupBy()', insert: 'groupBy("")',         cursorBack: 1 },
     { label: '.text',       insert: 'text',               cursorBack: 0 },
     { label: '.duplicates',  insert: 'duplicates',         cursorBack: 0 },
+    { label: '.trace',       insert: 'trace',              cursorBack: 0 },
   ];
 
   const AFTER_CHUNKS = [
@@ -2569,11 +2615,21 @@ function _getPipelineCompletions(expr) {
   }
 
   // Ends with a no-arg terminal property
-  if (/\.(count|text|duplicates)$/.test(expr)) return { completions: [], commitPart: expr };
+  if (/\.(count|text|duplicates|trace)$/.test(expr)) return { completions: [], commitPart: expr };
 
   // Exact root name
   if (/^(metaDocs|pages|topics|questions)$/.test(expr)) {
     return { completions: dot(TRANSFORMS), commitPart: expr };
+  }
+  if (expr === 'rag') {
+    // rag supports both call form rag("q") and chain form rag.search(...)
+    return {
+      completions: [
+        { label: 'rag("")',       insert: 'rag("")',       cursorBack: 2 },
+        ...dot(TRANSFORMS),
+      ],
+      commitPart: '',
+    };
   }
   if (expr === 'llm') return { completions: [], commitPart: expr };
 
