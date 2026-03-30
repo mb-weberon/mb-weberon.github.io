@@ -1419,13 +1419,10 @@ async function _traceRAG(query, signal) {
   }
   lines.push('');
 
-  // ── Answer ────────────────────────────────────────────────────────────────
   lines.push(sep2);
-  lines.push('ANSWER  (' + (Date.now()-t0) + 'ms total)');
-  lines.push(sep);
-  lines.push(answer);
+  lines.push('total  ' + (Date.now()-t0) + 'ms');
 
-  return { answer: lines.join('\n'), sources: uniqueSources };
+  return { answer, traceLines: lines, sources: uniqueSources };
 }
 
 async function executePipeline(expr, signal) {
@@ -1862,14 +1859,17 @@ window.ask = async function() {
 
   let answer = null;
   let sources = [];
+  let traceLines = null;
   let chatSucceeded = false;
   const _sysP   = RAGConfig.get('ui.systemCommandPrefix') || '//';
   const isPipelineCmd = new RegExp('^' + _sysP.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*').test(query);
+  const autoTrace = !isPipelineCmd && RAGConfig.get('debug.traceEnabled') === true;
 
   try {
-    const result = await chat(query, signal);
-    answer  = result.answer;
-    sources = result.sources;
+    const result = autoTrace ? await _traceRAG(query, signal) : await chat(query, signal);
+    answer     = result.answer;
+    sources    = result.sources || [];
+    traceLines = result.traceLines || null;
     chatSucceeded = true;
   } catch (e) {
     if (e.name === 'AbortError' || signal.aborted) {
@@ -1887,13 +1887,20 @@ window.ask = async function() {
 
   // Pipeline commands may return falsy-but-valid answers (e.g. "0" from a count).
   // Only suppress truly empty answers ('' signals intentional no-output, e.g. // help).
-  const shouldRender = isPipelineCmd ? answer !== '' : !!answer;
+  const isTraced = !!traceLines;
+  const effectivePipelineCmd = isPipelineCmd && !isTraced;
+  const shouldRender = effectivePipelineCmd ? answer !== '' : !!answer;
   if (shouldRender) {
-    messages.push({ role: 'assistant', content: answer, sources, isPipelineCmd, pipelineQuery: isPipelineCmd ? query : undefined });
+    messages.push({
+      role: 'assistant', content: answer, sources,
+      isPipelineCmd: effectivePipelineCmd,
+      pipelineQuery: effectivePipelineCmd ? query : undefined,
+      isTraced, traceLines,
+    });
     saveMessages();
     renderMessages();
   }
-  if (chatSucceeded && !isPipelineCmd) updateQuestionsFromChat(answer, messages.length - 1);
+  if (chatSucceeded && !effectivePipelineCmd) updateQuestionsFromChat(answer, messages.length - 1);
 
   // Restore send button
   input.disabled    = false;
@@ -1968,6 +1975,47 @@ function renderMessages() {
             </div>
             <div class="msg-pipeline-body">${body}</div>
             ${sourcesHtml}
+          </div>
+        </div>
+      `;
+    }
+
+    if (m.role === 'assistant' && m.isTraced) {
+      let ac = m.content
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+      if (m.sources && m.sources.length) {
+        ac = ac.replace(/\[(\d+)\]/g, (match, num) => {
+          const src = m.sources[parseInt(num) - 1];
+          if (!src) return match;
+          const title = src.title || src.url.split('/').pop() || `Source ${num}`;
+          return `<a href="${escHtml(src.url)}" target="_blank" class="text-blue-600 hover:text-blue-800 font-semibold underline" title="${escHtml(title)}">[${num}]</a>`;
+        });
+      }
+      ac = linkify(ac);
+      ac = ac.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+      let traceSourceChips = '';
+      if (m.sources && m.sources.length) {
+        const chips = m.sources.map(s => {
+          let title = s.title;
+          if (!title || title === 'undefined') {
+            title = s.url.split('/').pop()?.replace(/-/g,' ').replace(/\.html?$/,'').replace(/\?.*/,'') || 'Source';
+          }
+          return `<a href="${escHtml(s.url)}" target="_blank" class="msg-source-chip">${escHtml(title)}</a>`;
+        }).join('');
+        traceSourceChips = `<div class="msg-source-chips">${chips}</div>`;
+      }
+      const traceText = (m.traceLines || []).join('\n');
+      return `
+        <div class="flex justify-start">
+          <div class="bg-white border shadow-sm max-w-[85%] sm:max-w-xl p-3 sm:p-4 rounded-2xl text-sm sm:text-base text-left">
+            ${ac.replace(/\n/g, '<br>')}
+            ${traceSourceChips}
+            <details class="msg-trace-details">
+              <summary class="msg-trace-summary">Pipeline trace</summary>
+              <pre class="msg-trace-pre">${escHtml(traceText)}</pre>
+            </details>
           </div>
         </div>
       `;
@@ -2344,6 +2392,30 @@ window.messageRelated = messageRelated;
 window.renderMessages  = renderMessages;
 
 // ---------------------------------------------------------------------------
+// Trace mode toggle
+// ---------------------------------------------------------------------------
+function _syncTraceBtnVisual(enabled) {
+  const btn = document.getElementById('trace-toggle-btn');
+  if (!btn) return;
+  if (enabled) {
+    btn.classList.add('trace-btn-active');
+    btn.title = 'Trace mode ON — click to disable';
+  } else {
+    btn.classList.remove('trace-btn-active');
+    btn.title = 'Trace mode OFF — click to enable';
+  }
+}
+
+window.toggleTraceMode = function() {
+  const next = RAGConfig.get('debug.traceEnabled') !== true;
+  RAGConfig.set('debug.traceEnabled', next);
+  _syncTraceBtnVisual(next);
+  if (typeof showNotification === 'function') {
+    showNotification(next ? '🔍 Trace mode ON' : 'Trace mode OFF');
+  }
+};
+
+// ---------------------------------------------------------------------------
 // Pipeline autocomplete strip
 // ---------------------------------------------------------------------------
 function _pcSets() {
@@ -2572,6 +2644,9 @@ document.addEventListener('DOMContentLoaded', function() {
   if (sendBtn) {
     sendBtn.onclick = window.ask;
   }
+
+  // Sync trace button visual from persisted config
+  _syncTraceBtnVisual(RAGConfig.get('debug.traceEnabled') === true);
 
   if (input) {
     input.addEventListener('input', _onPipelineInput);

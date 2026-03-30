@@ -66,6 +66,15 @@ function populatePanel() {
   _slider('sp-explore-count',           (s.questions || {}).exploreCount ?? 20);
   _slider('sp-related-count',           (s.questions || {}).relatedCount ?? 5);
 
+  const traceEnabledEl = document.getElementById('sp-trace-enabled');
+  if (traceEnabledEl) {
+    traceEnabledEl.checked = (s.debug || {}).traceEnabled === true;
+    const traceTrack = document.getElementById('sp-trace-toggle-track');
+    const traceThumb = document.getElementById('sp-trace-toggle-thumb');
+    if (traceTrack) traceTrack.style.background = traceEnabledEl.checked ? '#7c3aed' : '#d1d5db';
+    if (traceThumb) traceThumb.style.transform   = traceEnabledEl.checked ? 'translateX(18px)' : 'translateX(0)';
+  }
+
   // Models tab
   renderModelCards();
 
@@ -106,6 +115,17 @@ function initSliders() {
     ragThumb.style.transform   = ragCheckbox.checked ? 'translateX(18px)' : 'translateX(0)';
   }
   if (ragCheckbox) ragCheckbox.addEventListener('change', updateRagToggleVisual);
+
+  // Trace toggle visual wiring
+  const traceCheckbox = document.getElementById('sp-trace-enabled');
+  const traceTrack    = document.getElementById('sp-trace-toggle-track');
+  const traceThumb    = document.getElementById('sp-trace-toggle-thumb');
+  function updateTraceToggleVisual() {
+    if (!traceCheckbox || !traceTrack || !traceThumb) return;
+    traceTrack.style.background = traceCheckbox.checked ? '#7c3aed' : '#d1d5db';
+    traceThumb.style.transform  = traceCheckbox.checked ? 'translateX(18px)' : 'translateX(0)';
+  }
+  if (traceCheckbox) traceCheckbox.addEventListener('change', updateTraceToggleVisual);
 }
 
 // ---------------------------------------------------------------------------
@@ -136,7 +156,14 @@ function saveSettings() {
   current.questions.exploreCount = parseInt(document.getElementById('sp-explore-count').value);
   current.questions.relatedCount = parseInt(document.getElementById('sp-related-count').value);
 
+  if (!current.debug) current.debug = {};
+  const traceEl = document.getElementById('sp-trace-enabled');
+  current.debug.traceEnabled = traceEl ? traceEl.checked : false;
+
   RAGConfig.applySettings(current);
+
+  // Sync header trace button
+  if (typeof _syncTraceBtnVisual === 'function') _syncTraceBtnVisual(current.debug.traceEnabled);
 
   // Models — collect from cards
   const cards = document.querySelectorAll('.sp-model-card');

@@ -349,6 +349,31 @@
     .msg-pipeline-cmd-chip:hover { background: #45475a; color: #cba6f7; border-color: #cba6f7; }
     .msg-pipeline-cmd-chip:active { background: #585b70; }
 
+    /* Trace mode header button */
+    #trace-toggle-btn.trace-btn-active {
+      color: #7c3aed; font-weight: 700;
+    }
+
+    /* Collapsible trace panel inside assistant bubbles */
+    .msg-trace-details {
+      margin-top: 8px; border-top: 1px solid #e5e7eb; padding-top: 6px;
+    }
+    .msg-trace-summary {
+      font-size: 11px; color: #9ca3af; cursor: pointer;
+      user-select: none; list-style: none; display: flex; align-items: center; gap: 4px;
+    }
+    .msg-trace-summary::-webkit-details-marker { display: none; }
+    .msg-trace-summary::before { content: '▶'; font-size: 9px; }
+    details[open] > .msg-trace-summary::before { content: '▼'; }
+    .msg-trace-pre {
+      margin-top: 8px;
+      font-family: ui-monospace, 'Cascadia Code', 'Fira Code', Consolas, monospace;
+      font-size: 11px; line-height: 1.55; color: #374151;
+      white-space: pre-wrap; word-break: break-word;
+      background: #f3f4f6; border-radius: 6px; padding: 10px;
+      max-height: 400px; overflow-y: auto;
+    }
+
     .questions-group-hdr {
       font-size: 10px; font-weight: 700; color: #9ca3af;
       text-transform: uppercase; letter-spacing: 0.06em;
@@ -423,6 +448,7 @@
           <div id="engine-status" class="text-xs"></div>
           <button onclick="refreshIndex()" class="text-xs text-gray-400 hover:text-blue-500 active:text-blue-600" title="Refresh index">↻</button>
           <button onclick="downloadChat()" class="text-xs text-gray-400 hover:text-blue-500 active:text-blue-600" title="Download chat as JSON">⬇️</button>
+          <button id="trace-toggle-btn" onclick="toggleTraceMode()" class="text-xs text-gray-400 hover:text-purple-500 active:text-purple-600 px-1 font-mono" title="Trace mode OFF — click to enable">TRACE</button>
           <button id="settings-gear-btn" class="text-gray-400 hover:text-gray-700 active:text-gray-900 text-base px-1" title="Settings">⚙️</button>
           <button onclick="clearChat()" class="text-xs text-gray-400 hover:text-red-500 active:text-red-500" title="Clear chat">🗑</button>
           <button id="questions-toggle-btn" onclick="toggleQuestionsDrawer()" class="text-gray-400 hover:text-blue-500 active:text-blue-500 text-base px-1" title="Suggested questions">💬</button>
@@ -637,6 +663,26 @@
           <span id="sp-related-count-val" class="sp-slider-val"></span>
         </div>
         <p class="sp-slider-tip">Questions shown below each response. Default: 5</p>
+
+        <div class="sp-section-title">Debug</div>
+        <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 12px; background:#f9fafb; border:1px solid #e5e7eb; border-radius:8px; margin-bottom:14px;">
+          <div>
+            <div style="font-size:12px; font-weight:700; color:#374151;">Enable pipeline trace</div>
+            <div style="font-size:11px; color:#6b7280; margin-top:2px;">Automatically trace every query — shows embed, retrieve, dedup, passages, prompt and generate stages. Collapsed by default under each response.</div>
+          </div>
+          <label style="position:relative; display:inline-block; width:40px; height:22px; flex-shrink:0; margin-left:12px; cursor:pointer;">
+            <input type="checkbox" id="sp-trace-enabled" style="opacity:0; width:0; height:0; position:absolute;">
+            <span id="sp-trace-toggle-track" style="
+              position:absolute; cursor:pointer; inset:0;
+              background:#d1d5db; border-radius:11px; transition:background 0.2s;
+            "></span>
+            <span id="sp-trace-toggle-thumb" style="
+              position:absolute; height:16px; width:16px; left:3px; top:3px;
+              background:white; border-radius:50%; transition:transform 0.2s;
+              box-shadow:0 1px 3px rgba(0,0,0,0.2);
+            "></span>
+          </label>
+        </div>
       </div>
 
       <!-- Models tab -->

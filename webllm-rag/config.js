@@ -58,6 +58,9 @@ const DEFAULT_SETTINGS = {
     exploreCount: 20,
     relatedCount: 5,
   },
+  debug: {
+    traceEnabled: false,
+  },
 };
 
 const DEFAULT_MODELS = [
