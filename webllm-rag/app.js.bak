@@ -1127,25 +1127,10 @@ function _getRootCollection(name) {
 
 function _formatCollectionResult(col) {
   if (!col._docs.length) return 'No results.';
-  const docs = col._docs;
-  // Check if all docs share the same URL — if so, show each chunk individually
-  const urls = new Set(docs.map(d => d.url));
-  if (urls.size === 1) {
-    // All same page — show each chunk with identifying fields, no dedup
-    const sep = '\u2500'.repeat(40);
-    return docs.map((d, i) => {
-      const id    = d.chunkId != null ? '  chunkId: ' + d.chunkId : '';
-      const q     = d.question ? '  Q: ' + d.question : '';
-      const type  = d.type ? '  type: ' + d.type : '';
-      const extra = [id, type, q].filter(Boolean).join('');
-      return '[' + (i+1) + '] ' + (d.title || d.url || '') + extra;
-    }).join('\n' + sep + '\n');
-  }
-  // Multiple URLs — deduplicate and show one per page
   const seen = new Set();
-  return docs
+  return col._docs
     .filter(d => { if (seen.has(d.url)) return false; seen.add(d.url); return true; })
-    .map((d, i) => '[' + (i+1) + '] ' + (d.title || d.url || '') + (d.url ? '\n    ' + d.url : ''))
+    .map((d, i) => `[${i+1}] **${d.title || d.url || ''}**${d.url ? `\n${d.url}` : ''}`)
     .join('\n\n');
 }
 
@@ -1251,193 +1236,10 @@ ${searchResult}
 \`${p} {{topics.slice(5).join(", ")}}\``, sources: [] };
 }
 
-// ---------------------------------------------------------------------------
-// _traceRAG — full RAG pipeline trace for // trace("query")
-// Shows every stage: embed, retrieve (raw + scored), dedup, passage assembly,
-// system prompt, and the final LLM answer.
-// ---------------------------------------------------------------------------
-async function _traceRAG(query, signal) {
-  await ensureTextLoaded();
-  const sep  = '\u2500'.repeat(48);
-  const sep2 = '\u2550'.repeat(48);
-  const lines = [];
-  const t0 = Date.now();
-
-  const ragEnabled   = RAGConfig.get('retrieval.ragEnabled') !== false;
-  const maxSources   = getMaxSources();
-  const candMult     = RAGConfig.get('retrieval.candidatesMultiplier');
-  const passLimit    = RAGConfig.get('retrieval.passageCharLimit');
-  const contactBoost = RAGConfig.get('retrieval.contactBoost');
-  const k            = maxSources * candMult;
-
-  lines.push('TRACE  "' + query + '"');
-  lines.push(sep2);
-  lines.push('');
-
-  // ── Stage 0: Config snapshot ──────────────────────────────────────────────
-  lines.push('\u25a0 CONFIG');
-  lines.push('  ragEnabled        ' + ragEnabled);
-  lines.push('  maxSources        ' + maxSources);
-  lines.push('  candidatesMult    ' + candMult  + '  (fetch ' + k + ' chunks)');
-  lines.push('  passageCharLimit  ' + passLimit + '  (budget: ' + (passLimit * maxSources) + ' chars total)');
-  lines.push('  contactBoost      ' + contactBoost);
-  lines.push('  embedder          ' + (embedder ? 'loaded (semantic)' : 'not loaded (keyword fallback)'));
-  lines.push('  llm               ' + (llmEngine ? (engineState.model || 'loaded') : 'not loaded (template fallback)'));
-  lines.push('');
-
-  if (!ragEnabled) {
-    lines.push('\u26a0 RAG disabled \u2014 query will go directly to LLM with no context.');
-    lines.push('');
-  }
-
-  // ── Stage 1: Embed query ──────────────────────────────────────────────────
-  let queryVec = null;
-  if (embedder && embMatrix && ragEnabled) {
-    const t1 = Date.now();
-    try {
-      const output = await embedder(query, { pooling: 'mean', normalize: true });
-      queryVec = new Float32Array(output.data);
-      lines.push('\u25a0 STAGE 1 \u2500 EMBED  (' + (Date.now()-t1) + 'ms)');
-      lines.push('  model   all-MiniLM-L6-v2');
-      lines.push('  dims    ' + queryVec.length);
-      // Show a few representative values
-      const sample = Array.from(queryVec.slice(0, 6)).map(v => v.toFixed(4)).join('  ');
-      lines.push('  vec[0:6]  [' + sample + '  ...]');
-    } catch(e) {
-      lines.push('\u25a0 STAGE 1 \u2500 EMBED  FAILED: ' + e.message);
-    }
-    lines.push('');
-  }
-
-  // ── Stage 2: Retrieve candidates ─────────────────────────────────────────
-  let rawCandidates = [];
-  if (ragEnabled) {
-    const t2 = Date.now();
-    rawCandidates = await search(query, k);
-    lines.push('\u25a0 STAGE 2 \u2500 RETRIEVE  (' + (Date.now()-t2) + 'ms)');
-    lines.push('  requested  ' + k + ' candidates  (maxSources ' + maxSources + ' \u00d7 mult ' + candMult + ')');
-    lines.push('  returned   ' + rawCandidates.length + ' chunks');
-    lines.push('');
-    lines.push('  #   score    boost  chunkId  url');
-    lines.push('  ' + '\u2500'.repeat(56));
-
-    const scoreWidth = String(rawCandidates[0]?.score?.toFixed(4) || '').length;
-    rawCandidates.forEach((c, i) => {
-      const rawSim  = c.type === 'contact' ? (c.score - contactBoost) : c.score;
-      const boostStr = c.type === 'contact' ? '+' + contactBoost.toFixed(2) : '     ';
-      const dupeFlag = rawCandidates.slice(0, i).some(p => p.url === c.url) ? ' \u29d6dup' : '     ';
-      const urlShort = c.url.length > 40 ? '\u2026' + c.url.slice(-38) : c.url;
-      lines.push(
-        '  ' + String(i+1).padStart(2) + '  ' +
-        rawSim.toFixed(4) + '  ' + boostStr + '  ' +
-        String(c.chunkId || c.id).padEnd(7) + '  ' +
-        urlShort + dupeFlag
-      );
-    });
-    lines.push('');
-  }
-
-  // ── Stage 3: Dedup ────────────────────────────────────────────────────────
-  let uniqueSources = [];
-  if (ragEnabled) {
-    const seenUrls = new Set();
-    rawCandidates.forEach(s => {
-      if (!seenUrls.has(s.url) && uniqueSources.length < maxSources) {
-        seenUrls.add(s.url);
-        uniqueSources.push(s);
-      }
-    });
-    const dropped = rawCandidates.length - uniqueSources.length;
-    lines.push('\u25a0 STAGE 3 \u2500 DEDUP');
-    lines.push('  kept     ' + uniqueSources.length + ' unique URLs');
-    lines.push('  dropped  ' + dropped + ' duplicate-URL chunks');
-    uniqueSources.forEach((s, i) => {
-      const urlShort = s.url.length > 45 ? '\u2026' + s.url.slice(-43) : s.url;
-      lines.push('  [' + (i+1) + '] ' + s.score.toFixed(4) + '  ' + urlShort);
-    });
-    lines.push('');
-  }
-
-  // ── Stage 4: Passage assembly ─────────────────────────────────────────────
-  let passages = '';
-  if (ragEnabled && uniqueSources.length) {
-    lines.push('\u25a0 STAGE 4 \u2500 PASSAGES  (limit ' + passLimit + ' chars each)');
-    const passageList = uniqueSources.map((s, i) => {
-      const text    = getText(s.id);
-      const trimmed = text.substring(0, passLimit);
-      const pct     = Math.round((trimmed.length / Math.max(text.length, 1)) * 100);
-      lines.push('  [' + (i+1) + '] chunkId:' + (s.chunkId || s.id) + '  ' +
-                 trimmed.length + '/' + text.length + ' chars (' + pct + '%)' +
-                 (text.length > passLimit ? ' \u2702 truncated' : ' \u2713 full'));
-      lines.push('      "' + trimmed.replace(/\s+/g, ' ').slice(0, 80) + (trimmed.length > 80 ? '\u2026' : '') + '"');
-      return '[' + (i+1) + '] ' + trimmed;
-    });
-    passages = passageList.join('\n\n');
-    const totalChars = passages.length;
-    const budget     = passLimit * maxSources;
-    lines.push('');
-    lines.push('  total  ' + totalChars + ' chars / ' + budget + ' budget (' + Math.round(totalChars/budget*100) + '%)');
-    lines.push('');
-  }
-
-  // ── Stage 5: System prompt ────────────────────────────────────────────────
-  const systemPrompt = RAGConfig.get('llm.systemPrompt');
-  lines.push('\u25a0 STAGE 5 \u2500 SYSTEM PROMPT  (' + systemPrompt.length + ' chars)');
-  lines.push('  "' + systemPrompt.replace(/\n/g, ' ').slice(0, 100) + (systemPrompt.length > 100 ? '\u2026' : '') + '"');
-  lines.push('');
-
-  // History
-  const historyExchanges = RAGConfig.get('llm.historyExchanges');
-  const historyMsgs = messages
-    .filter(m => !m.isWelcome && (m.role === 'user' || m.role === 'assistant'))
-    .slice(-(historyExchanges * 2 + 1), -1);
-  lines.push('  history  ' + Math.floor(historyMsgs.length / 2) + ' of ' + historyExchanges + ' exchange(s) included');
-  lines.push('');
-
-  // ── Stage 6: LLM call ────────────────────────────────────────────────────
-  let answer = '(LLM not available)';
-  if (llmEngine) {
-    lines.push('\u25a0 STAGE 6 \u2500 GENERATE');
-    lines.push('  model        ' + (engineState.model || 'unknown'));
-    lines.push('  temperature  ' + RAGConfig.get('llm.temperature'));
-    lines.push('  maxTokens    ' + RAGConfig.get('llm.maxTokens'));
-    lines.push('  rep_penalty  ' + RAGConfig.get('llm.repetitionPenalty'));
-    lines.push('');
-    const t6 = Date.now();
-    try {
-      const result = await _callLLM(systemPrompt, query, passages, signal);
-      answer = result.answer;
-      lines.push('  elapsed  ' + (Date.now()-t6) + 'ms');
-      lines.push('  tokens   ~' + Math.round(answer.split(/\s+/).length * 1.3) + ' (word-count estimate)');
-    } catch(e) {
-      if (e.name === 'AbortError') throw e;
-      answer = '(LLM error: ' + e.message + ')';
-      lines.push('  ERROR: ' + e.message);
-    }
-  } else {
-    lines.push('\u25a0 STAGE 6 \u2500 GENERATE  SKIPPED (no LLM)');
-  }
-  lines.push('');
-
-  // ── Answer ────────────────────────────────────────────────────────────────
-  lines.push(sep2);
-  lines.push('ANSWER  (' + (Date.now()-t0) + 'ms total)');
-  lines.push(sep);
-  lines.push(answer);
-
-  return { answer: lines.join('\n'), sources: uniqueSources };
-}
-
 async function executePipeline(expr, signal) {
   // {{ }} template expressions — evaluate and return directly
   if (expr.includes('{{')) {
-    try {
-      const rendered = renderWelcomeTemplate(expr);
-      return { answer: rendered, sources: [] };
-    } catch (e) {
-      console.error('Pipeline template error:', e);
-      return { answer: '⚠ Template error: ' + e.message, sources: [] };
-    }
+    return { answer: renderWelcomeTemplate(expr), sources: [] };
   }
 
   // Bare llm(...) root — ask LLM directly with no RAG passages
@@ -1447,12 +1249,6 @@ async function executePipeline(expr, signal) {
     const systemPrompt = prompt ?? RAGConfig.get('llm.systemPrompt');
     const question = userInput ?? 'Summarize the key information.';
     return await _callLLM(systemPrompt, question, [], signal);
-  }
-
-  // trace("query") — run the full RAG pipeline and show every stage
-  const traceM = expr.trim().match(/^trace\(["'](.+)["']\)\s*$/s);
-  if (traceM) {
-    return await _traceRAG(traceM[1], signal);
   }
 
   const rootM = expr.trim().match(/^(metaDocs|pages|topics|questions)([\s\S]*)$/);
@@ -1474,35 +1270,7 @@ async function executePipeline(expr, signal) {
       value = await value.search(q);  // k defaults to min(50, docs.length)
     } else if (method === 'filter') {
       const [fPart = '', pPart = ''] = _splitArgs(argsStr || '');
-      const field = fPart.replace(/^["']|["']$/g, '');
-      const pat   = pPart.replace(/^["']|["']$/g, '');
-
-      // filter("") or filter() — show all available fields with unique value counts
-      if (!field) {
-        const docs = value._docs;
-        if (!docs.length) return { answer: 'No documents in current collection.', sources: [] };
-        const fields = [...new Set(docs.flatMap(d => Object.keys(d).filter(k => !k.startsWith('_') && typeof d[k] === 'string')))].sort();
-        const _pfx = RAGConfig.get('ui.systemCommandPrefix') || '//';
-        const rootExpr = rootM[1] + (rootM[2] || '').replace(/\.filter\([^)]*\)[\s\S]*$/, '');
-        const lines = fields.map(f => {
-          const vals = [...new Set(docs.map(d => d[f]).filter(Boolean))];
-          return `  \`${_pfx} ${rootExpr}.filter("${f}","")\`  — ${vals.length} unique value${vals.length !== 1 ? 's' : ''}`;
-        });
-        return { answer: `Available fields on ${rootM[1]}:\n\n${lines.join('\n')}`, sources: [] };
-      }
-
-      // filter("field","") — show all unique values for that field as clickable commands
-      if (!pat) {
-        const docs = value._docs;
-        const vals = [...new Set(docs.map(d => d[field]).filter(Boolean))].sort();
-        if (!vals.length) return { answer: `No values found for field "${field}".`, sources: [] };
-        const _pfx = RAGConfig.get('ui.systemCommandPrefix') || '//';
-        const rootExpr = rootM[1] + (rootM[2] || '').replace(/\.filter\([^)]*\)[\s\S]*$/, '');
-        const lines = vals.map(v => `  \`${_pfx} ${rootExpr}.filter("${field}","${v}")\``);
-        return { answer: `Unique values for "${field}" (${vals.length}):\n\n${lines.join('\n')}`, sources: [] };
-      }
-
-      value = value.filter(field, _parsePattern(pPart));
+      value = value.filter(fPart.replace(/^["']|["']$/g, ''), _parsePattern(pPart));
     } else if (method === 'unique') {
       const fM = (argsStr || '').match(/^["']?(\w+)["']?$/);
       value = value.unique(fM ? fM[1] : 'url');
@@ -1516,132 +1284,10 @@ async function executePipeline(expr, signal) {
     } else if (method === 'join') {
       const sM = (argsStr || '').match(/^["'](.*)["']$/s);
       return { answer: value.join(sM ? sM[1] : ', '), sources: [] };
-    } else if (method === 'text') {
-      // Show raw text content of each chunk with identifying info
-      await ensureTextLoaded();
-      const docs = value._docs;
-      if (!docs.length) return { answer: 'No results.', sources: [] };
-      const sep = '─'.repeat(40);
-      const lines = docs.map((d, i) => {
-        const text    = getText(d.id).trim();
-        const chunkId = d.chunkId != null ? '  chunkId:' + d.chunkId : '';
-        const type    = d.type    ? '  type:' + d.type : '';
-        const q       = d.question ? '\n  Q: ' + d.question : '';
-        const header  = '[' + (i+1) + '] ' + (d.title || d.url || '') + chunkId + type + q;
-        const preview = text ? '\n' + text : '\n(no text)';
-        return header + preview;
-      });
-      return { answer: lines.join('\n' + sep + '\n'), sources: [] };
     } else if (method === 'chunks') {
       value = await value.chunks();
     } else if (method === 'llm') {
       return await value.llm(argsStr || '', signal);
-    } else if (method === 'duplicates') {
-      // Show all URLs with more than one chunk, ranked by count desc
-      const docs  = value._docs;
-      const _pfx  = RAGConfig.get('ui.systemCommandPrefix') || '//';
-      const rootExpr = rootM[1];
-      if (!docs.length) return { answer: 'No documents in current collection.', sources: [] };
-      const freq = {};
-      docs.forEach(d => { freq[d.url] = (freq[d.url] || 0) + 1; });
-      const dupes = Object.entries(freq)
-        .filter(([, n]) => n > 1)
-        .sort((a, b) => b[1] - a[1]);
-      if (!dupes.length) {
-        return { answer: '✓ No duplicates — every URL appears exactly once across ' + docs.length + ' chunks.', sources: [] };
-      }
-      const maxCount   = dupes[0][1];
-      const extraTotal = dupes.reduce((s, [, n]) => s + (n - 1), 0);
-      const summary    = dupes.length + ' URL' + (dupes.length !== 1 ? 's' : '') +
-                         ' have duplicate chunks (' + extraTotal + ' extra chunk' +
-                         (extraTotal !== 1 ? 's' : '') + ' out of ' + docs.length + ' total)';
-      // Strip common prefix
-      const vals = dupes.map(([v]) => v);
-      const commonPrefix = vals.length > 1 ? (() => {
-        let pfx = vals[0];
-        for (const v of vals) { while (!v.startsWith(pfx)) pfx = pfx.slice(0, -1); }
-        const cutAt = pfx.lastIndexOf('/');
-        return cutAt > 0 ? pfx.slice(0, cutAt + 1) : '';
-      })() : '';
-      const maxLen = Math.max(...dupes.map(([v]) => {
-        const d = v.startsWith(commonPrefix) ? v.slice(commonPrefix.length) || '/' : v;
-        return d.length;
-      }));
-      const lines = dupes.map(([url, n]) => {
-        const display = url.startsWith(commonPrefix) ? url.slice(commonPrefix.length) || '/' : url;
-        const bar     = '█'.repeat(Math.round((n / maxCount) * 12));
-        const pct     = ((n / docs.length) * 100).toFixed(2);
-        const padded  = display.padEnd(maxLen);
-        const chip    = '`' + _pfx + ' ' + rootExpr + '.filter("url","' + url + '").text`';
-        return '  ' + padded + '  ' + String(n).padStart(String(maxCount).length) + ' chunks  ' + bar + '  ' + pct + '%  \u2192 ' + chip;
-      });
-      const prefixNote = commonPrefix ? '\n  (prefix stripped: ' + commonPrefix + ')' : '';
-      return {
-        answer: summary + prefixNote + '\n' + lines.join('\n'),
-        sources: []
-      };
-    } else if (method === 'groupBy') {
-      const fM  = (argsStr || '').match(/^["']?(\w+)["']?$/);
-      const field = fM ? fM[1] : '';
-      const docs  = value._docs;
-      const _pfx  = RAGConfig.get('ui.systemCommandPrefix') || '//';
-      const rootExpr = rootM[1] + (rootM[2] || '').replace(/\.groupBy\([^)]*\)[\s\S]*$/, '');
-
-      // groupBy() — no field: list all groupable fields sorted by cardinality asc
-      if (!field) {
-        if (!docs.length) return { answer: 'No documents in current collection.', sources: [] };
-        const fields = [...new Set(docs.flatMap(d =>
-          Object.keys(d).filter(k => !k.startsWith('_') && typeof d[k] === 'string')
-        ))].sort();
-        const ranked = fields
-          .map(f => ({ f, n: new Set(docs.map(d => d[f]).filter(Boolean)).size }))
-          .sort((a, b) => a.n - b.n);
-        const pad = Math.max(...ranked.map(r => r.f.length));
-        const lines = ranked.map(r => {
-          const label = r.f.padEnd(pad);
-          const bar   = r.n === docs.length ? ' (unique per chunk)' : '';
-          return '  `' + _pfx + ' ' + rootExpr + '.groupBy("' + r.f + '")' + '`' +
-                 '  — ' + r.n + ' unique value' + (r.n !== 1 ? 's' : '') + bar;
-        });
-        return { answer: 'Available fields to group by (' + rootM[1] + ', ' + docs.length + ' chunks):\n\n' + lines.join('\n'), sources: [] };
-      }
-
-      // groupBy("field") — group and count, sort by count desc
-      const freq = {};
-      docs.forEach(d => {
-        const v = d[field] || '(empty)';
-        freq[v] = (freq[v] || 0) + 1;
-      });
-      const entries = Object.entries(freq).sort((a, b) => b[1] - a[1]);
-      const maxCount = entries[0]?.[1] || 1;
-      const vals     = entries.map(([v]) => v);
-      // Strip common prefix (e.g. https://example.com) to show only the distinctive path
-      const commonPrefix = vals.length > 1 ? (() => {
-        let pfx = vals[0];
-        for (const v of vals) { while (!v.startsWith(pfx)) pfx = pfx.slice(0, -1); }
-        // Only strip up to the last / of the prefix so we don't cut mid-segment
-        const cutAt = pfx.lastIndexOf('/');
-        return cutAt > 0 ? pfx.slice(0, cutAt + 1) : '';
-      })() : '';
-      const maxLen   = Math.max(...vals.map(v => (v.startsWith(commonPrefix) ? v.slice(commonPrefix.length) : v).length));
-      const lines = entries.map(([v, n]) => {
-        const display = v.startsWith(commonPrefix) ? v.slice(commonPrefix.length) || '/' : v;
-        const bar     = '█'.repeat(Math.round((n / maxCount) * 12));
-        const pct     = ((n / docs.length) * 100).toFixed(1);
-        const valPad  = display.padEnd(maxLen);
-        return '  ' + valPad + '  ' + String(n).padStart(String(maxCount).length) + '  ' + bar + '  ' + pct + '%';
-      });
-      const prefixNote = commonPrefix ? '  (prefix stripped: ' + commonPrefix + ')' : '';
-      const dupes = entries.filter(([, n]) => n > 1);
-      const dupeLine = dupes.length
-        ? '\n\u26a0 ' + dupes.length + ' value' + (dupes.length !== 1 ? 's' : '') + ' have multiple chunks (' +
-          dupes.reduce((s, [, n]) => s + n, 0) + ' chunks total)'
-        : '\n\u2713 No duplicates \u2014 every value appears exactly once';
-      return {
-        answer: 'groupBy("' + field + '")  \u2014  ' + entries.length + ' groups, ' + docs.length + ' chunks' + prefixNote + ':\n\n' +
-                lines.join('\n') + dupeLine,
-        sources: []
-      };
     }
   }
 
@@ -1707,16 +1353,13 @@ async function chat(query, signal = null) {
     // Explicit help command or empty expression → open reference panel, no chat message
     if (!expr || expr === 'help') {
       _openReferencePanel();
-      return { answer: `📖 Reference panel opened.\n\nValid roots: pages, metaDocs, questions, topics, llm("...")\nExample: // pages.count\n\nSee the Reference tab in the questions panel for full syntax.`, sources: [] };
+      return { answer: '', sources: [] };
     }
     const result = await executePipeline(expr, signal);
     if (result) return result;
-    // Unrecognized expression — show error in terminal card
-    console.warn('[pipeline] unrecognized expression:', expr);
-    return {
-      answer: `⚠ Unknown expression: "${expr}"\n\nValid roots: pages, metaDocs, questions, topics, llm("\u2026"), trace("\u2026")\nExample: // pages.count\n         // trace("what are closing costs?")\n\nType // help to open the reference panel.`,
-      sources: []
-    };
+    // Unrecognized expression — open reference panel instead of flooding chat
+    _openReferencePanel();
+    return { answer: '', sources: [] };
   }
 
   // --- Normal RAG path ---
@@ -1810,10 +1453,7 @@ window.stopGeneration = function() {
 window.ask = async function() {
   const input   = document.getElementById('input');
   const sendBtn = document.getElementById('send-btn');
-  const rawInput = input.value.trim();
-  const _sysP0   = RAGConfig.get('ui.systemCommandPrefix') || '//';
-  const _isPipe0  = new RegExp('^' + _sysP0.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*').test(rawInput);
-  const query    = _isPipe0 ? rawInput : renderWelcomeTemplate(rawInput);
+  const query   = renderWelcomeTemplate(input.value.trim());
   if (!query) return;
 
   input.value     = '';
@@ -1885,11 +1525,8 @@ window.ask = async function() {
   // Remove typing indicator
   typing.remove();
 
-  // Pipeline commands may return falsy-but-valid answers (e.g. "0" from a count).
-  // Only suppress truly empty answers ('' signals intentional no-output, e.g. // help).
-  const shouldRender = isPipelineCmd ? answer !== '' : !!answer;
-  if (shouldRender) {
-    messages.push({ role: 'assistant', content: answer, sources, isPipelineCmd, pipelineQuery: isPipelineCmd ? query : undefined });
+  if (answer) {
+    messages.push({ role: 'assistant', content: answer, sources, isPipelineCmd });
     saveMessages();
     renderMessages();
   }
@@ -1938,13 +1575,11 @@ function renderMessages() {
       const _pfx  = RAGConfig.get('ui.systemCommandPrefix') || '//';
       const _pfxH = escHtml(_pfx);
       const _pfxRe = _pfxH.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      // Wrap `// cmd` backtick spans into clickable chips; remaining backtick spans into inline code
-      let body = escHtml(content)
-        .replace(
-          new RegExp('`(' + _pfxRe + '[^`]+)`', 'g'),
-          (match, cmd) => `<button class="msg-pipeline-cmd-chip" data-cmd="${cmd.trim()}">${match}</button>`
-        )
-        .replace(/`([^`]+)`/g, '<code style="background:#313244;padding:1px 5px;border-radius:3px;font-size:11.5px">$1</code>');
+      // Wrap `// cmd` backtick spans into clickable chips (fill input on click, don't submit)
+      let body = escHtml(content).replace(
+        new RegExp('`(' + _pfxRe + '[^`]+)`', 'g'),
+        (match, cmd) => `<button class="msg-pipeline-cmd-chip" data-cmd="${cmd.trim()}">${match}</button>`
+      );
       let sourcesHtml = '';
       if (m.sources && m.sources.length) {
         const chips = m.sources.map(s => {
@@ -1960,11 +1595,11 @@ function renderMessages() {
       return `
         <div class="flex justify-start">
           <div class="msg-pipeline-card">
-            <div class="msg-pipeline-titlebar" ${m.pipelineQuery ? `data-user-msg="${escHtml(m.pipelineQuery)}" title="Click to edit command" style="cursor:pointer"` : ''}>
+            <div class="msg-pipeline-titlebar">
               <span class="msg-pipeline-dot msg-pipeline-dot-r"></span>
               <span class="msg-pipeline-dot msg-pipeline-dot-y"></span>
               <span class="msg-pipeline-dot msg-pipeline-dot-g"></span>
-              <span class="msg-pipeline-label">${m.pipelineQuery ? escHtml(m.pipelineQuery) : 'pipeline'}</span>
+              <span class="msg-pipeline-label">pipeline</span>
             </div>
             <div class="msg-pipeline-body">${body}</div>
             ${sourcesHtml}
@@ -2015,17 +1650,15 @@ function renderMessages() {
       }
     }
 
-    const isUser = m.role === 'user';
     return `
-      <div class="${isUser ? 'flex justify-end' : 'flex justify-start'}">
+      <div class="${m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}">
         <div class="${
-          isUser
-            ? 'bg-blue-500 text-white cursor-pointer select-none'
+          m.role === 'user'
+            ? 'bg-blue-500 text-white'
             : m.isWelcome
             ? 'bg-blue-50 border border-blue-100 text-gray-700'
             : 'bg-white border shadow-sm'
-        } max-w-[85%] sm:max-w-xl p-3 sm:p-4 rounded-2xl text-sm sm:text-base text-left"
-        ${isUser ? `title="Click to edit" data-user-msg="${escHtml(m.content)}"` : ''}>
+        } max-w-[85%] sm:max-w-xl p-3 sm:p-4 rounded-2xl text-sm sm:text-base text-left">
           ${content.replace(/\n/g, '<br>')}
         </div>
       </div>
@@ -2358,22 +1991,18 @@ function _pcSets() {
     { label: 'questions',  insert: 'questions', cursorBack: 0 },
     { label: 'topics',     insert: 'topics',    cursorBack: 0 },
     { label: 'llm("")',    insert: 'llm("")',   cursorBack: 2 },
-    { label: 'trace("")',  insert: 'trace("")', cursorBack: 2 },
   ];
 
   // Insert strings have NO leading dot — dot is part of commitPart or added by caller
   const TRANSFORMS = [
     { label: '.search()',  insert: 'search("")',         cursorBack: 2 },
-    { label: '.filter()',  insert: 'filter("")',          cursorBack: 1 },
+    { label: '.filter()',  insert: 'filter("url", "")',  cursorBack: 2 },
     { label: '.unique()',  insert: 'unique("url")',      cursorBack: 5 },
     { label: '.slice()',   insert: 'slice(10)',           cursorBack: 2 },
     { label: '.chunks()',  insert: 'chunks()',            cursorBack: 0 },
     { label: '.count',     insert: 'count',               cursorBack: 0 },
     { label: '.pluck()',   insert: 'pluck("title")',     cursorBack: 8 },
     { label: '.join()',    insert: 'join(", ")',          cursorBack: 4 },
-    { label: '.groupBy()', insert: 'groupBy("")',         cursorBack: 1 },
-    { label: '.text',       insert: 'text',               cursorBack: 0 },
-    { label: '.duplicates',  insert: 'duplicates',         cursorBack: 0 },
   ];
 
   const AFTER_CHUNKS = [
@@ -2385,17 +2014,15 @@ function _pcSets() {
   ];
 
   // For .filter(): picking a field closes with value placeholder inside second quotes
-  const FILTER_FIELDS  = fields.map(f => ({ label: `"${f}"`, insert: `"${f}", "")`, cursorBack: 2 }));
+  const FILTER_FIELDS = fields.map(f => ({ label: `"${f}"`, insert: `"${f}", "")`, cursorBack: 2 }));
   // For .unique(): picking a field closes the call
-  const UNIQUE_FIELDS  = fields.map(f => ({ label: `"${f}"`, insert: `"${f}")`,     cursorBack: 0 }));
-  // For .groupBy(): picking a field closes the call
-  const GROUPBY_FIELDS = fields.map(f => ({ label: `"${f}"`, insert: `"${f}")`,     cursorBack: 0 }));
+  const UNIQUE_FIELDS = fields.map(f => ({ label: `"${f}"`, insert: `"${f}")`, cursorBack: 0 }));
 
-  return { ROOT, TRANSFORMS, AFTER_CHUNKS, FILTER_FIELDS, UNIQUE_FIELDS, GROUPBY_FIELDS };
+  return { ROOT, TRANSFORMS, AFTER_CHUNKS, FILTER_FIELDS, UNIQUE_FIELDS };
 }
 
 function _getPipelineCompletions(expr) {
-  const { ROOT, TRANSFORMS, AFTER_CHUNKS, FILTER_FIELDS, UNIQUE_FIELDS, GROUPBY_FIELDS } = _pcSets();
+  const { ROOT, TRANSFORMS, AFTER_CHUNKS, FILTER_FIELDS, UNIQUE_FIELDS } = _pcSets();
   // Prepend dot to inserts for cases where commitPart doesn't end with dot
   const dot = arr => arr.map(c => ({ ...c, insert: '.' + c.insert }));
 
@@ -2419,13 +2046,6 @@ function _getPipelineCompletions(expr) {
       const partial = inside.replace(/^"?/, '');
       return {
         completions: UNIQUE_FIELDS.filter(f => !partial || f.label.slice(1).startsWith(partial)),
-        commitPart: beforeParen,
-      };
-    }
-    if (meth === 'groupBy') {
-      const partial = inside.replace(/^"?/, '');
-      return {
-        completions: GROUPBY_FIELDS.filter(f => !partial || f.label.slice(1).startsWith(partial)),
         commitPart: beforeParen,
       };
     }
@@ -2457,8 +2077,8 @@ function _getPipelineCompletions(expr) {
     return { completions: dot(hasChunks ? AFTER_CHUNKS : TRANSFORMS), commitPart: expr };
   }
 
-  // Ends with a no-arg terminal property
-  if (/\.(count|text|duplicates)$/.test(expr)) return { completions: [], commitPart: expr };
+  // Ends with .count (terminal property)
+  if (/\.count$/.test(expr)) return { completions: [], commitPart: expr };
 
   // Exact root name
   if (/^(metaDocs|pages|topics|questions)$/.test(expr)) {
@@ -2532,15 +2152,6 @@ document.addEventListener('DOMContentLoaded', function() {
     if (cmdChip) {
       input.value = cmdChip.dataset.cmd;
       input.focus();
-      return;
-    }
-    // User message bubble — click to copy back into input for editing
-    const userBubble = e.target.closest('[data-user-msg]');
-    if (userBubble && !_abortController) {
-      input.value = userBubble.dataset.userMsg;
-      input.focus();
-      input.setSelectionRange(input.value.length, input.value.length);
-      _onPipelineInput();
       return;
     }
     const chip = e.target.closest('[data-question]');
