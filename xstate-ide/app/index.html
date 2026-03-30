@@ -94,9 +94,41 @@
                     <div id="profile-viewer-inner">
                         <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
                             <strong>CONTEXT (REAL-TIME)</strong>
-                            <button id="copy-btn" onclick="window.copyTrace()"
-                                    style="font-size:10px; padding:2px 6px; background:#444;">📋 Copy Trace</button>
+                            <div style="display:flex; gap:4px;">
+                                <button onclick="window.openCtxEdit()"
+                                        title="Override initial context values"
+                                        style="font-size:10px; padding:2px 6px; background:#444;">⚙ Initial</button>
+                                <button id="copy-btn" onclick="window.copyTrace()"
+                                        style="font-size:10px; padding:2px 6px; background:#444;">📋 Copy Trace</button>
+                            </div>
                         </div>
+
+                        <!-- Initial context override panel (hidden by default) -->
+                        <div id="ctx-edit-panel" style="display:none; margin-bottom:8px;">
+                            <div style="font-size:10px; color:#aaa; margin-bottom:4px;">
+                                Edit initial context — applies on restart. Internal fields (_trace, trace) excluded.
+                            </div>
+                            <textarea id="ctx-edit-area" spellcheck="false" style="
+                                width:100%; box-sizing:border-box;
+                                height:120px; resize:vertical;
+                                background:#1a1d23; color:#61dafb;
+                                border:1px solid #444; border-radius:4px;
+                                font-family:'Courier New',monospace; font-size:11px;
+                                padding:6px; outline:none;
+                            "></textarea>
+                            <div id="ctx-edit-error" style="font-size:10px; color:#f66; min-height:14px; margin:2px 0;"></div>
+                            <div style="display:flex; gap:6px;">
+                                <button onclick="window.applyCtxEdit()" style="
+                                    flex:1; background:#0084ff; color:#fff;
+                                    border:none; border-radius:4px;
+                                    padding:4px 8px; font-size:11px; cursor:pointer;">Apply &amp; Restart</button>
+                                <button onclick="window.cancelCtxEdit()" style="
+                                    background:#444; color:#ccc;
+                                    border:none; border-radius:4px;
+                                    padding:4px 8px; font-size:11px; cursor:pointer;">Cancel</button>
+                            </div>
+                        </div>
+
                         <pre id="profile-view">{}</pre>
                         <div id="state-id" style="font-size:10px; color:#888; margin-top:4px;">State: loading…</div>
                     </div>

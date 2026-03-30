@@ -29,9 +29,10 @@ export class Runtime {
         this.actor        = null;
         this.choices      = [];
         this.lastId       = null;
-        this.onSnapshot   = null;   // (snap) => void
-        this.onReplayStep = null;   // (item: string) => void
-        this.onReplayDone = null;   // () => void  — fires when replay() finishes
+        this.onSnapshot      = null;   // (snap) => void
+        this.onReplayStep    = null;   // (item: string) => void
+        this.onReplayDone    = null;   // () => void  — fires when replay() finishes
+        this.contextOverrides = {};    // applied on top of config.context at start()
         if (!headless) this.setupKeyboard();
     }
 
@@ -42,6 +43,11 @@ export class Runtime {
         this.lastId = null;
 
         const config = JSON.parse(JSON.stringify(this.config));
+
+        // Apply any user-supplied initial context overrides.
+        if (this.contextOverrides && Object.keys(this.contextOverrides).length > 0) {
+            Object.assign(config.context, this.contextOverrides);
+        }
 
         // Ensure every invoke gets the full context as input if no input is defined.
         // XState 5 does not auto-forward context — it must be explicit.

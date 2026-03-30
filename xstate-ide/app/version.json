@@ -1,9 +1,39 @@
 {
   "major": 0,
   "minor": 12,
-  "patch": 34,
+  "patch": 40,
   "label": "",
   "history": [
+    {
+      "version": "0.12.40",
+      "date": "2026-03-29",
+      "note": "Refactor: SAMPLE_INPUTS per-services — getAllTraces(config, sampleInputs={}) accepts an optional map; services files can now export SAMPLE_INPUTS keyed by state id and it takes precedence over the built-in fallback in generate-traces.js; runAllTracesHeadless passes services.SAMPLE_INPUTS ?? {} automatically"
+    },
+    {
+      "version": "0.12.39",
+      "date": "2026-03-29",
+      "note": "Fix: previously-skipped rows are now clickable after a failed re-run — updateRow() creates diffRow and wires tr.onclick when status=fail and no click handler exists yet (skipped rows never had one); diff messages are visible on row click"
+    },
+    {
+      "version": "0.12.38",
+      "date": "2026-03-29",
+      "note": "Fix: re-run row update — reverted _replayTrace to simple form (no callback param); re-run buttons now hook rt.onReplayDone directly via setTimeout(100ms), guaranteed to fire after _replayTrace's own setTimeout(50ms) has already started replay(); eliminates the race where onReplayDone was assigned in the same tick as replay() was called"
+    },
+    {
+      "version": "0.12.37",
+      "date": "2026-03-29",
+      "note": "Fix: re-run of originally-skipped rows now shows diff messages on failure — diffRow created on the fly and inserted after tr when a skipped row's re-run fails; clicking the row expands it to show diffs; diffRow removed if re-run passes"
+    },
+    {
+      "version": "0.12.36",
+      "date": "2026-03-29",
+      "note": "Fix: re-run button (▶) in results drawer now updates the row — _replayTrace accepts optional onDone(runtime) callback; after foreground replay completes, compareTraces runs and the row status/state/diffs update in-place for both the live test drawer and the load-results drawer"
+    },
+    {
+      "version": "0.12.35",
+      "date": "2026-03-29",
+      "note": "Feature: initial context editability — ⚙ Initial button in CONTEXT & STATE panel opens JSON editor; overrides are applied on top of machine config.context at Runtime.start(); overrides persist to localStorage alongside the flow and are restored on session restore; internal _trace/trace fields excluded from editor"
+    },
     {
       "version": "0.12.34",
       "date": "2026-03-29",

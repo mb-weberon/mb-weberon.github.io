@@ -19,8 +19,10 @@ import { Runtime } from './Runtime.js';
  *   downloadTestResults()     — save last results as JSON
  *   loadTestResults(file)     — load a saved results JSON into the drawer
  *
- * For text-input states (meta.input === 'text') add a sample value in
- * SAMPLE_INPUTS keyed by state id.
+ * For text-input states (meta.input === 'text') add a sample value keyed by
+ * state id. Preferred location: export SAMPLE_INPUTS from the *-services.js
+ * file (takes precedence). The built-in SAMPLE_INPUTS in this file is the
+ * fallback for configs whose services file hasn't been updated yet.
  */
 
 const SAMPLE_INPUTS = {
@@ -37,7 +39,7 @@ const SAMPLE_INPUTS = {
 
 // ── Path enumeration ──────────────────────────────────────────────────────────
 
-export function getAllTraces(config) {
+export function getAllTraces(config, sampleInputs = {}) {
     const paths = [];
 
     function walk(stateId, trace, visited) {
@@ -87,7 +89,7 @@ export function getAllTraces(config) {
                 if (!branch?.target) return;
 
                 if (eventType === 'SUBMIT') {
-                    const sample = SAMPLE_INPUTS[stateId] ?? 'sample-input';
+                    const sample = sampleInputs[stateId] ?? SAMPLE_INPUTS[stateId] ?? 'sample-input';
                     walk(branch.target, [...trace, sample], nextVisited);
                 } else {
                     walk(branch.target, [...trace, eventType], nextVisited);
@@ -291,7 +293,7 @@ export async function runAllTracesHeadless(config, services, { pauseMs = 0, serv
     const diagPane = document.getElementById('diagram-pane');
     if (diagPane) diagPane.style.paddingBottom = '';
 
-    const traces = getAllTraces(config);
+    const traces = getAllTraces(config, services.SAMPLE_INPUTS ?? {});
     const total  = traces.length;
     const cases  = [];
     const runAt  = new Date().toISOString();
@@ -321,7 +323,7 @@ export async function runAllTracesHeadless(config, services, { pauseMs = 0, serv
     });
 
     function updateRow(i, status, c = null) {
-        const { statusCell, stateCell, actionCell, expected: exp } = rowRefs[i];
+        const { tr, statusCell, stateCell, actionCell, expected: exp } = rowRefs[i];
         const icons  = { pending: '⬜', running: '⏳', pass: '✅', fail: '❌', skipped: '⏭' };
         const colors = { pending: '#555', running: '#61dafb', pass: '#98c379', fail: '#e06c75', skipped: '#e5c07b' };
         statusCell.textContent = icons[status] ?? '?';
@@ -330,6 +332,20 @@ export async function runAllTracesHeadless(config, services, { pauseMs = 0, serv
             stateCell.style.color = colors[status];
         }
         actionCell.innerHTML = '';
+        // If this is a re-run result for a previously-skipped row (no onclick yet),
+        // wire up the click handler and diffRow now.
+        if (status === 'fail' && c?.diffs?.length && !tr.onclick) {
+            const p  = isMobile ? '8px' : '5px';
+            const fs = isMobile ? '13px' : '11px';
+            const diffRow = document.createElement('tr');
+            diffRow.style.cssText = `display:none; background:#2c1e1e;`;
+            diffRow.innerHTML = `<td colspan="5" style="padding:${p} 12px; color:#e06c75; font-size:${fs}; line-height:1.6;">${c.diffs.map(d => `⚠ ${d}`).join('<br>')}</td>`;
+            tr.insertAdjacentElement('afterend', diffRow);
+            tr.style.cursor = 'pointer';
+            tr.onclick = () => {
+                diffRow.style.display = diffRow.style.display === 'none' ? '' : 'none';
+            };
+        }
         if (status === 'running') {
             const btn = document.createElement('button');
             btn.textContent = 'Skip';
@@ -342,7 +358,25 @@ export async function runAllTracesHeadless(config, services, { pauseMs = 0, serv
             btn.textContent = '▶';
             btn.title = 'Re-run in foreground (logs to console)';
             btn.style.cssText = `background:#2a3a3a; border:1px solid #666; color:#61dafb; font-size:10px; padding:2px 6px; border-radius:3px; cursor:pointer;`;
-            btn.onclick = (e) => { e.stopPropagation(); window._replayTrace?.(JSON.stringify(exp), config); };
+            btn.onclick = (e) => {
+                e.stopPropagation();
+                window._replayTrace?.(JSON.stringify(exp), config, 350);
+                // Hook onReplayDone at 100ms — after _replayTrace's own setTimeout(50)
+                // has already called replay(), so there is no race on the assignment.
+                setTimeout(() => {
+                    const rt = window.currentRuntime;
+                    if (!rt) return;
+                    const prev = rt.onReplayDone;
+                    rt.onReplayDone = () => {
+                        if (prev) prev();
+                        const snap         = rt.actor.getSnapshot();
+                        const finalStateId = typeof snap.value === 'string' ? snap.value : Object.keys(snap.value)[0];
+                        const actual       = normaliseActualTrace(rt.getTrace());
+                        const { passed, diffs } = compareTraces(exp, actual);
+                        updateRow(i, passed ? 'pass' : 'fail', { passed, skipped: false, diffs, finalStateId, finalContext: snap.context });
+                    };
+                }, 100);
+            };
             actionCell.appendChild(btn);
         }
     }
@@ -872,7 +906,37 @@ export function showResultsDrawer(results, replayFn) {
             btn.textContent = '▶';
             btn.title = 'Re-run in foreground (logs to console)';
             btn.style.cssText = `background:#2a3a3a; border:1px solid #666; color:#61dafb; font-size:10px; padding:2px 6px; border-radius:3px; cursor:pointer;`;
-            btn.onclick = (e) => { e.stopPropagation(); window._replayTrace?.(JSON.stringify(c.expected), config); };
+            btn.onclick = (e) => {
+                e.stopPropagation();
+                window._replayTrace?.(JSON.stringify(c.expected), config, 350);
+                setTimeout(() => {
+                    const rt = window.currentRuntime;
+                    if (!rt) return;
+                    const prev = rt.onReplayDone;
+                    rt.onReplayDone = () => {
+                        if (prev) prev();
+                        const snap         = rt.actor.getSnapshot();
+                        const finalStateId = typeof snap.value === 'string' ? snap.value : Object.keys(snap.value)[0];
+                        const actual       = normaliseActualTrace(rt.getTrace());
+                        const { passed, diffs } = compareTraces(c.expected, actual);
+                        statusCell.textContent = passed ? '✅' : '❌';
+                        stateCell.textContent  = finalStateId;
+                        stateCell.style.color  = passed ? '#98c379' : '#e06c75';
+                        if (passed) {
+                            actionCell.innerHTML = '';
+                            if (diffRow) { diffRow.remove(); diffRow = null; }
+                        } else {
+                            if (!diffRow) {
+                                diffRow = document.createElement('tr');
+                                diffRow.style.cssText = `display:none; background:#2c1e1e;`;
+                                diffRow.innerHTML = `<td colspan="5" style="padding:5px 12px; color:#e06c75; font-size:10px; line-height:1.6;"></td>`;
+                                tr.insertAdjacentElement('afterend', diffRow);
+                            }
+                            diffRow.querySelector('td').innerHTML = diffs.map(d => `⚠ ${d}`).join('<br>');
+                        }
+                    };
+                }, 100);
+            };
             actionCell.appendChild(btn);
         }
 

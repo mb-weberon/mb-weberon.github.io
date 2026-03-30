@@ -184,9 +184,9 @@ async function boot() {
     // ── Session persistence ───────────────────────────────────────────────────
     const PERSIST_KEY = 'xstate-ide:flow';
 
-    function _persistFlow(machineJson, servicesSource) {
+    function _persistFlow(machineJson, servicesSource, ctxOverrides) {
         try {
-            localStorage.setItem(PERSIST_KEY, JSON.stringify({ machineJson, servicesSource }));
+            localStorage.setItem(PERSIST_KEY, JSON.stringify({ machineJson, servicesSource, ctxOverrides: ctxOverrides ?? null }));
         } catch (e) {
             console.warn('⚠️  Could not persist flow to localStorage:', e.message);
         }
@@ -244,7 +244,8 @@ async function boot() {
             } else {
                 activeServices = {};
             }
-            _activateFlow(persisted.machineJson);
+            contextOverrides = persisted.ctxOverrides ?? null;
+            _activateFlow(persisted.machineJson, /* keepOverrides */ true);
         };
 
         document.getElementById('fresh-btn').onclick = () => {
@@ -308,10 +309,14 @@ async function boot() {
     // Also called by _restartRuntime when the config changes.
     // chatUI is kept in module scope so _restartRuntime can call chatUI.clear().
     let chatUI = null;
+    let contextOverrides = null;  // user-supplied initial context overrides; reset on new flow load
 
-    function _activateFlow(newConfig) {
+    function _activateFlow(newConfig, keepOverrides = false) {
         // Accept a fresh config object (not necessarily the same reference)
         if (!newConfig) return;
+
+        // Reset context overrides whenever a genuinely new flow is loaded.
+        if (!keepOverrides) contextOverrides = null;
 
         // Replace module-level config in-place so all closures over `config` see it
         config = newConfig;
@@ -328,6 +333,7 @@ async function boot() {
         _lastStateId = null;
 
         window.currentRuntime = new Runtime(config, activeServices, consoleLogger);
+        window.currentRuntime.contextOverrides = contextOverrides ?? {};
         chatUI = new ChatUI(window.currentRuntime, chatMount);
         chatUI.mount();
 
@@ -342,7 +348,7 @@ async function boot() {
         console.log('✅ Runtime started for flow:', config.id);
 
         // Persist flow so it can be restored on next page load
-        _persistFlow(config, window._loadedServicesSource ?? null);
+        _persistFlow(config, window._loadedServicesSource ?? null, contextOverrides);
 
         // Scroll-to-bottom observer on the messages element ChatUI created
         const _messagesEl = chatMount.querySelector('#messages');
@@ -373,8 +379,52 @@ async function boot() {
         visitedEdges.clear();
         _lastStateId = null;
         chatUI?.clear();
+        window.currentRuntime.contextOverrides = contextOverrides ?? {};
         window.currentRuntime.restart();
         // Replay bar intentionally NOT cleared — useful for comparison after restart.
+    };
+
+    // ── Initial context override ──────────────────────────────────────────────
+    // Opens the edit panel pre-filled with the effective initial context
+    // (machine defaults merged with any existing overrides, minus internal fields).
+    window.openCtxEdit = () => {
+        if (!config?.context) return;
+        const panel = document.getElementById('ctx-edit-panel');
+        const area  = document.getElementById('ctx-edit-area');
+        const err   = document.getElementById('ctx-edit-error');
+        if (!panel || !area) return;
+
+        const { _trace, trace, ...editable } = { ...config.context, ...(contextOverrides ?? {}) };
+        area.value = JSON.stringify(editable, null, 2);
+        err.textContent = '';
+        panel.style.display = 'block';
+        area.focus();
+    };
+
+    window.cancelCtxEdit = () => {
+        const panel = document.getElementById('ctx-edit-panel');
+        if (panel) panel.style.display = 'none';
+    };
+
+    window.applyCtxEdit = () => {
+        const area = document.getElementById('ctx-edit-area');
+        const err  = document.getElementById('ctx-edit-error');
+        if (!area) return;
+        let parsed;
+        try {
+            parsed = JSON.parse(area.value);
+        } catch (e) {
+            err.textContent = `Invalid JSON: ${e.message}`;
+            return;
+        }
+        if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+            err.textContent = 'Must be a JSON object';
+            return;
+        }
+        contextOverrides = parsed;
+        _persistFlow(config, window._loadedServicesSource ?? null, contextOverrides);
+        window.cancelCtxEdit();
+        window._restartRuntime();
     };
 
     // Replay: restart the runtime, then after one tick pass the trace string

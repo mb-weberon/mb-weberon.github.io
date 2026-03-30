@@ -435,14 +435,41 @@
     <p>
         The IDE walks the machine graph depth-first and emits one path per unique
         route to a final state (or per unique prefix if there is no final state).
-        For text-input states it uses sample values defined in
-        <code>generate-traces.js</code> under <code>SAMPLE_INPUTS</code>.
+        For text-input states (<code>meta.input: "text"</code>) it needs a sample
+        value to use as the submitted input for each such state.
     </p>
     <p>
         Guarded <code>invoke.onDone</code> branches are not enumerated — only the
         unguarded fallback is tested, because the outcome of a real service call
         cannot be known statically.
     </p>
+
+    <h3>Sample inputs for text states</h3>
+    <p>
+        Export a <code>SAMPLE_INPUTS</code> object from your services file, keyed
+        by state id. This takes precedence over any built-in fallback values:
+    </p>
+    <pre><span class="cm">// In your *-services.js</span>
+
+<span class="cm">// Keyed by the state id of each text-input state (meta.input === "text").</span>
+<span class="cm">// The test runner submits these values when walking that state's SUBMIT path.</span>
+<span class="kw">export const</span> SAMPLE_INPUTS = {
+  ask_email:           <span class="str">'test@example.com'</span>,
+  ask_phone:           <span class="str">'4155550123'</span>,
+  extend_quota_check:  <span class="str">'extend'</span>,   <span class="cm">// value that passes the noActiveExtensionExists guard</span>
+  upgrade_plan_check:  <span class="str">'Pro'</span>,
+  downgrade_plan_check:<span class="str">'Starter'</span>,
+};
+
+<span class="kw">export const</span> myServices = {
+  <span class="cm">// … async services and guards …</span>
+};</pre>
+    <div class="callout">
+        <code>SAMPLE_INPUTS</code> is a <strong>top-level named export</strong>,
+        separate from your services object. The value for each key must pass any
+        guard on the <code>SUBMIT</code> transition — otherwise the test runner
+        will abort that path as a validation failure.
+    </div>
 
     <!-- ── Loading results ── -->
     <h2>Loading Saved Results</h2>
