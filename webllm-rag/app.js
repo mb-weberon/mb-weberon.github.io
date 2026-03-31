@@ -1237,14 +1237,10 @@ class Collection {
     } else {
       lines.push('  SKIPPED (no LLM loaded)');
     }
+    lines.push('  total     ' + (Date.now() - t0) + 'ms');
     lines.push('');
 
-    lines.push(sep2);
-    lines.push('ANSWER  (' + (Date.now() - t0) + 'ms total)');
-    lines.push(sep);
-    lines.push(answer);
-
-    return { answer: lines.join('\n'), sources };
+    return { answer, sources, traceLines: lines };
   }
 }
 
@@ -1422,10 +1418,15 @@ async function _pipelineHelp(prefix) {
   return { answer: `**${p} pipeline reference**
 
 **Roots**
-  \`pages\`      — ${pageCount} unique pages
-  \`questions\`  — ${qCount} indexed questions
-  \`metaDocs\`   — all ${metaDocs.length} index entries (one per question)
-  \`topics\`     — unique page titles
+  \`rag\`         — pre-configured RAG root (candidatesMultiplier baked in)
+  \`pages\`       — ${pageCount} unique pages
+  \`questions\`   — ${qCount} indexed questions
+  \`metaDocs\`    — all ${metaDocs.length} index entries (one per question)
+  \`topics\`      — unique page titles
+
+**Shorthands**
+  \`rag("q")\`             — full default pipeline: search → unique → slice → chunks → llm
+  \`trace("q")\`           — same pipeline with detailed stage-by-stage trace output
 
 **Transforms**
   \`.search("q")\`            — semantic search (sets implicit LLM query)
@@ -1442,6 +1443,10 @@ async function _pipelineHelp(prefix) {
   \`.llm()\`                   — send to LLM (query from .search context, or "Summarize the key information.")
   \`.llm("question")\`         — explicit question
   \`.llm(prompt="...", "q")\`  — override system prompt + question
+  \`.trace\`                   — send to LLM with full pipeline stage report
+  \`.text\`                    — show raw chunk text (chunkId, type, question fields)
+  \`.duplicates()\`            — find URLs with >1 chunk; renders bar chart with filter chips
+  \`.groupBy("field")\`        — group collection by field with cardinality stats
 
 **LLM context budget:** ${budget} chars (passageCharLimit × maxSources — adjust in Settings → Retrieval)
 
@@ -1466,12 +1471,22 @@ ${fmtList(sellerBuyerPages)}
 ${searchResult}
 
 ---
-**LLM examples** (syntax only — run to execute)
+**LLM / RAG examples** (syntax only — run to execute)
 
+\`${p} rag("what are closing costs?")\`
+\`${p} trace("what are closing costs?")\`
 \`${p} metaDocs.search("buyer homes").chunks().llm()\`
 \`${p} pages.chunks().llm("summarize all pages")\`
 \`${p} pages.filter("url","seller").chunks().llm("what seller resources are available?")\`
 \`${p} pages.filter("url","seller").chunks().llm(prompt="Answer in bullet points","seller resources")\`
+\`${p} metaDocs.search("fees").unique("url").slice(5).chunks().trace\`
+
+---
+**Inspection examples**
+
+\`${p} metaDocs.duplicates()\`
+\`${p} metaDocs.groupBy("type")\`
+\`${p} metaDocs.search("mortgage").text\`
 
 ---
 **Template blocks** (mix with text)
@@ -1779,14 +1794,14 @@ async function chat(query, signal = null) {
     // Explicit help command or empty expression → open reference panel, no chat message
     if (!expr || expr === 'help') {
       _openReferencePanel();
-      return { answer: `📖 Reference panel opened.\n\nValid roots: pages, metaDocs, questions, topics, llm("...")\nExample: // pages.count\n\nSee the Reference tab in the questions panel for full syntax.`, sources: [] };
+      return { answer: `📖 Reference panel opened.\n\nValid roots: rag, pages, metaDocs, questions, topics, llm("...")\nShorthands: rag("q"), trace("q")\nExample: // rag("what are closing costs?")\n\nSee the Reference tab in the questions panel for full syntax.`, sources: [] };
     }
     const result = await executePipeline(expr, signal);
     if (result) return result;
     // Unrecognized expression — show error in terminal card
     console.warn('[pipeline] unrecognized expression:', expr);
     return {
-      answer: `⚠ Unknown expression: "${expr}"\n\nValid roots: pages, metaDocs, questions, topics, llm("\u2026"), trace("\u2026")\nExample: // pages.count\n         // trace("what are closing costs?")\n\nType // help to open the reference panel.`,
+      answer: `⚠ Unknown expression: "${expr}"\n\nValid roots: rag, pages, metaDocs, questions, topics\nShorthands: rag("q"), trace("q"), llm("q")\nExample: // rag("what are closing costs?")\n         // trace("what are closing costs?")\n\nType // help to open the reference panel.`,
       sources: []
     };
   }
@@ -1953,6 +1968,15 @@ window.ask = async function() {
     answer     = result.answer;
     sources    = result.sources || [];
     traceLines = result.traceLines || null;
+    // For // pipeline commands that produced a trace, fold trace into the terminal
+    // card body so the dark console card shows everything inline. For autoTrace
+    // (normal chat), keep traceLines separate so renderMessages can hide them
+    // in a collapsible <details> block.
+    if (isPipelineCmd && traceLines) {
+      const sep = '\u2550'.repeat(48);
+      answer = [...traceLines, '', sep, 'ANSWER', sep, answer].join('\n');
+      traceLines = null;
+    }
     chatSucceeded = true;
   } catch (e) {
     if (e.name === 'AbortError' || signal.aborted) {
@@ -2409,14 +2433,19 @@ function populatePipelineRef() {
 
   pane.innerHTML = `
     <div class="ref-section-hdr">Roots</div>
+    ${row('rag', 'pre-configured RAG root (candidatesMultiplier baked in)')}
     ${row('pages', `${pageCount} unique pages`)}
     ${row('questions', `${qCount} indexed questions`)}
     ${row('metaDocs', `all ${docCount} entries`)}
     ${row('topics', 'unique page titles')}
     ${row('llm("question")', 'ask LLM directly — no RAG')}
 
+    <div class="ref-section-hdr">Shorthands</div>
+    ${row('rag("q")', 'full default pipeline: search → unique → slice → chunks → llm')}
+    ${row('trace("q")', 'same pipeline with detailed trace output')}
+
     <div class="ref-section-hdr">Transforms</div>
-    ${row('.search("q")', 'semantic search')}
+    ${row('.search("q")', 'semantic search (sets implicit LLM query)')}
     ${row('.filter("field","text")', 'field contains text')}
     ${row('.filter("field",/regex/)', 'field matches regex')}
     ${row('.unique("field")', 'deduplicate by field')}
@@ -2427,11 +2456,17 @@ function populatePipelineRef() {
     ${row('.count', 'number of results')}
     ${row('.pluck("field")', 'list field values')}
     ${row('.join("sep")', 'join to string')}
-    ${row('.llm()', 'send to LLM')}
+    ${row('.llm()', 'send to LLM (query from .search context)')}
     ${row('.llm("question")', 'explicit question')}
     ${row('.llm(prompt="…","q")', 'override system prompt')}
+    ${row('.trace', 'send to LLM with full pipeline stage report')}
+    ${row('.text', 'show raw chunk text (chunkId, type, question)')}
+    ${row('.duplicates()', 'find URLs with >1 chunk (bar chart)')}
+    ${row('.groupBy("field")', 'group collection by field with counts')}
 
     <div class="ref-section-hdr">Examples — click to fill input</div>
+    ${chip('rag("what are closing costs?")')}
+    ${chip('trace("what are closing costs?")')}
     ${chip('pages.count')}
     ${chip('questions.count')}
     ${chip('pages.filter("url","buyer")')}
@@ -2441,6 +2476,8 @@ function populatePipelineRef() {
     ${chip('metaDocs.search("buyer homes").chunks().llm()')}
     ${chip('pages.chunks().llm("summarize all pages")')}
     ${chip('pages.filter("url","seller").chunks().llm("seller resources")')}
+    ${chip('metaDocs.duplicates()')}
+    ${chip('metaDocs.groupBy("type")')}
 
     <div class="ref-section-hdr">Template syntax</div>
     ${row('{{pages.count}}', 'embed count in text')}
