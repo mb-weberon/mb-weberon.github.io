@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SereNest Dialogflow – Conversation Flow</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: #0f1117;
+    color: #e2e8f0;
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 24px;
+    background: #1a1d2e;
+    border-bottom: 1px solid #2d3058;
+    flex-shrink: 0;
+    z-index: 10;
+  }
+  header .logo {
+    width: 36px; height: 36px;
+    background: linear-gradient(135deg,#6366f1,#a855f7);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+  }
+  header h1 { font-size: 18px; font-weight: 700; letter-spacing: -0.3px; }
+  header span { font-size: 13px; color: #64748b; margin-left: auto; }
+
+  .toolbar {
+    display: flex;
+    gap: 8px;
+    padding: 10px 24px;
+    background: #13151f;
+    border-bottom: 1px solid #1e2235;
+    flex-shrink: 0;
+  }
+  .btn {
+    padding: 6px 14px;
+    border: 1px solid #2d3058;
+    background: #1a1d2e;
+    color: #94a3b8;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all .15s;
+  }
+  .btn:hover { background: #252849; color: #e2e8f0; border-color: #6366f1; }
+  .btn.active { background: #6366f1; color: #fff; border-color: #6366f1; }
+
+  .legend {
+    display: flex; gap: 16px; align-items: center; margin-left: auto;
+  }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 3px; }
+
+  main {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+  }
+
+  #canvas-wrap {
+    width: 100%; height: 100%;
+    overflow: auto;
+    cursor: grab;
+    user-select: none;
+  }
+  #canvas-wrap.grabbing { cursor: grabbing; }
+
+  svg#flow {
+    display: block;
+  }
+
+  /* Node styles */
+  .node { cursor: pointer; }
+  .node rect, .node ellipse, .node polygon {
+    transition: filter .15s;
+  }
+  .node:hover rect, .node:hover ellipse, .node:hover polygon {
+    filter: brightness(1.25) drop-shadow(0 0 8px rgba(99,102,241,.6));
+  }
+  .node.selected rect, .node.selected ellipse, .node.selected polygon {
+    filter: brightness(1.3) drop-shadow(0 0 12px rgba(168,85,247,.9));
+    stroke-width: 2.5 !important;
+  }
+
+  /* Edge */
+  .edge path { transition: stroke .15s; }
+  .edge.highlighted path { stroke: #a855f7 !important; stroke-width: 2.5 !important; }
+  .edge.highlighted polygon { fill: #a855f7 !important; stroke: #a855f7 !important; }
+
+  /* Detail panel */
+  #detail {
+    position: absolute;
+    right: 0; top: 0; bottom: 0;
+    width: 320px;
+    background: #1a1d2e;
+    border-left: 1px solid #2d3058;
+    padding: 20px;
+    overflow-y: auto;
+    transform: translateX(100%);
+    transition: transform .25s cubic-bezier(.4,0,.2,1);
+    z-index: 20;
+  }
+  #detail.open { transform: translateX(0); }
+  #detail h2 { font-size: 14px; font-weight: 700; color: #a5b4fc; margin-bottom: 14px; word-break: break-word; }
+  .detail-section { margin-bottom: 16px; }
+  .detail-label { font-size: 10px; text-transform: uppercase; letter-spacing: .8px; color: #475569; margin-bottom: 6px; }
+  .detail-value {
+    font-size: 13px; color: #cbd5e1;
+    background: #0f1117; border-radius: 6px; padding: 8px 10px;
+    line-height: 1.5;
+  }
+  .tag {
+    display: inline-block; padding: 2px 8px; border-radius: 20px;
+    font-size: 11px; margin: 2px;
+  }
+  .tag-context { background: #1e3a5f; color: #7dd3fc; }
+  .tag-output  { background: #1e3f2c; color: #6ee7b7; }
+  .tag-qr      { background: #3b1f5e; color: #c4b5fd; }
+  .close-btn {
+    float: right; background: none; border: none; color: #475569;
+    cursor: pointer; font-size: 18px; line-height: 1; margin-top: -4px;
+  }
+  .close-btn:hover { color: #e2e8f0; }
+
+  /* Simulator */
+  #sim {
+    position: absolute;
+    left: 24px; bottom: 24px;
+    width: 300px;
+    background: #1a1d2e;
+    border: 1px solid #2d3058;
+    border-radius: 12px;
+    z-index: 20;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0,0,0,.6);
+  }
+  #sim.hidden { display: none; }
+  .sim-header {
+    display: flex; align-items: center; gap: 8px;
+    padding: 12px 14px;
+    background: linear-gradient(135deg,#6366f1,#a855f7);
+    font-size: 13px; font-weight: 600;
+  }
+  .sim-messages {
+    padding: 12px;
+    max-height: 280px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .msg {
+    max-width: 85%;
+    padding: 8px 11px;
+    border-radius: 10px;
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  .msg.bot {
+    background: #252849;
+    color: #cbd5e1;
+    align-self: flex-start;
+  }
+  .msg.user {
+    background: #6366f1;
+    color: #fff;
+    align-self: flex-end;
+  }
+  .msg.system {
+    background: #1e3a5f22;
+    color: #475569;
+    font-style: italic;
+    font-size: 11px;
+    align-self: center;
+    text-align: center;
+    border: 1px solid #1e2235;
+  }
+  .qr-area {
+    display: flex; flex-wrap: wrap; gap: 5px;
+    padding: 0 12px 10px;
+  }
+  .qr-btn {
+    padding: 5px 10px;
+    background: #252849;
+    border: 1px solid #3d4270;
+    border-radius: 16px;
+    color: #a5b4fc;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .qr-btn:hover { background: #6366f1; color: #fff; border-color: #6366f1; }
+  .sim-input-area {
+    display: flex; gap: 6px;
+    padding: 10px 12px;
+    border-top: 1px solid #1e2235;
+  }
+  .sim-input {
+    flex: 1;
+    background: #0f1117;
+    border: 1px solid #2d3058;
+    border-radius: 6px;
+    color: #e2e8f0;
+    font-size: 12px;
+    padding: 6px 10px;
+    outline: none;
+  }
+  .sim-input:focus { border-color: #6366f1; }
+  .sim-send {
+    background: #6366f1; border: none; border-radius: 6px;
+    color: #fff; padding: 6px 12px; cursor: pointer; font-size: 12px;
+    transition: background .15s;
+  }
+  .sim-send:hover { background: #4f46e5; }
+
+  #sim-toggle {
+    position: absolute;
+    left: 24px; bottom: 24px;
+    z-index: 21;
+  }
+  #sim-toggle.hidden { display: none; }
+
+  /* Mini-map hint */
+  .hint {
+    position: absolute; bottom: 12px; right: 12px;
+    font-size: 11px; color: #334155;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">🛡️</div>
+  <h1>SereNest Services – Conversation Flow</h1>
+  <span>Dialogflow · serenest_services_df</span>
+</header>
+
+<div class="toolbar">
+  <button class="btn" id="btn-zoom-in">＋ Zoom In</button>
+  <button class="btn" id="btn-zoom-out">－ Zoom Out</button>
+  <button class="btn" id="btn-reset">⟳ Reset View</button>
+  <button class="btn active" id="btn-sim">💬 Simulate</button>
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:#6366f1"></div>Welcome / Start</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#0ea5e9"></div>Bot Question</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#10b981"></div>Data Collection</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#f59e0b"></div>Fallback</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#ef4444"></div>End</div>
+  </div>
+</div>
+
+<main>
+  <div id="canvas-wrap">
+    <svg id="flow" xmlns="http://www.w3.org/2000/svg"></svg>
+  </div>
+
+  <div id="detail">
+    <button class="close-btn" id="detail-close">✕</button>
+    <h2 id="d-title">—</h2>
+    <div id="d-body"></div>
+  </div>
+
+  <div id="sim">
+    <div class="sim-header">🤖 SereNest Chat Simulator</div>
+    <div class="sim-messages" id="sim-msgs"></div>
+    <div class="qr-area" id="sim-qr"></div>
+    <div class="sim-input-area">
+      <input class="sim-input" id="sim-input" placeholder="Type a reply…" />
+      <button class="sim-send" id="sim-send">Send</button>
+    </div>
+  </div>
+
+  <div class="hint">Scroll to zoom · Drag to pan · Click nodes for details</div>
+</main>
+
+<script>
+// ─────────────────────────────────────────────
+// FLOW DATA  (derived from uploaded JSON files)
+// ─────────────────────────────────────────────
+const nodes = [
+  {
+    id: 'welcome',
+    label: 'Default\nWelcome Intent',
+    type: 'start',
+    x: 400, y: 60,
+    detail: {
+      action: 'input.welcome',
+      contexts_in: ['WELCOME event'],
+      contexts_out: ['welcome (1)', 'ref_1 (1)'],
+      bot_message: 'Welcome to SereNest. Are you looking for security & monitoring for your home or business?',
+      quick_replies: ['Home','Business','Other'],
+      usersays: ['hi','hello','hey','greetings','howdy','heya','hello there','long time no see']
+    }
+  },
+  {
+    id: 'security_history',
+    label: 'Security\nHistory?',
+    type: 'question',
+    x: 400, y: 200,
+    detail: {
+      action: '',
+      contexts_in: ['welcome','ref_1'],
+      contexts_out: ['ref_2 (1)','security_usage (1)'],
+      bot_message: 'Do you currently have or used any security & monitoring services before?',
+      quick_replies: ['Yes','No'],
+      usersays: ['Home','Business','Other']
+    }
+  },
+  {
+    id: 'install_address',
+    label: 'Installation\nAddress?',
+    type: 'question',
+    x: 400, y: 360,
+    detail: {
+      action: '',
+      contexts_in: ['ref_2','security_usage'],
+      contexts_out: ['ref_3 (1)','security_history (1)','followup (2)'],
+      bot_message: 'What is the address where you want a security system to be installed?',
+      quick_replies: [],
+      usersays: ['Yes','No']
+    }
+  },
+  {
+    id: 'install_address_fb',
+    label: 'Address\n(Fallback)',
+    type: 'fallback',
+    x: 680, y: 360,
+    detail: {
+      action: 'ans_security_history_que_install_address.fallback',
+      contexts_in: ['ref_3','security_history','followup'],
+      contexts_out: ['ref_3 (1)','security_history (1)','followup (1)'],
+      bot_message: 'Please provide the address where you want a security system to be installed',
+      quick_replies: []
+    }
+  },
+  {
+    id: 'customer_name',
+    label: 'Customer\nName?',
+    type: 'data',
+    x: 400, y: 520,
+    detail: {
+      action: '',
+      contexts_in: ['ref_3','security_history'],
+      contexts_out: ['ref_4 (1)','install_address (1)','followup (2)'],
+      bot_message: 'Whom do I have the pleasure of chatting with?',
+      quick_replies: [],
+      params: ['any (@sys.any)'],
+      usersays: ['location','addressmap','address']
+    }
+  },
+  {
+    id: 'customer_name_fb',
+    label: 'Name\n(Fallback)',
+    type: 'fallback',
+    x: 680, y: 520,
+    detail: {
+      action: 'ans_install_address_que_customer_name.fallback',
+      contexts_in: ['ref_4','install_address','followup'],
+      contexts_out: ['ref_4 (1)','install_address (1)','followup (1)'],
+      bot_message: 'Please provide your name',
+      quick_replies: []
+    }
+  },
+  {
+    id: 'customer_phone',
+    label: 'Phone\nNumber?',
+    type: 'data',
+    x: 400, y: 680,
+    detail: {
+      action: '',
+      contexts_in: ['ref_4','install_address'],
+      contexts_out: ['customer_name (1)','ref_5 (1)','followup (2)'],
+      bot_message: 'What is the best number to call you?',
+      quick_replies: [],
+      params: ['name_regex (@name_regex)','given-name (@sys.given-name)'],
+      usersays: ['James Bond','Joshua Ponnachan','Marie John','Abdulla Faqruddin']
+    }
+  },
+  {
+    id: 'customer_phone_fb',
+    label: 'Phone\n(Fallback)',
+    type: 'fallback',
+    x: 680, y: 680,
+    detail: {
+      action: 'ans_customer_name_que_customer_phone.fallback',
+      contexts_in: ['customer_name','ref_5','followup'],
+      contexts_out: ['ref_5 (1)','customer_name (1)','followup (1)'],
+      bot_message: 'Please provide your phone number',
+      quick_replies: []
+    }
+  },
+  {
+    id: 'customer_email',
+    label: 'Email\nAddress?',
+    type: 'data',
+    x: 400, y: 840,
+    detail: {
+      action: '',
+      contexts_in: ['ref_5','customer_name'],
+      contexts_out: ['ref_6 (1)','customer_phone (1)','followup (2)'],
+      bot_message: 'Best email to send you details of our security solution?',
+      quick_replies: [],
+      params: ['phone-number (@sys.phone-number)'],
+      usersays: ['0091 7349076985','7349076985','+91-7349076985','123-456-7890','925-452-7483','1234567890']
+    }
+  },
+  {
+    id: 'customer_email_fb',
+    label: 'Email\n(Fallback)',
+    type: 'fallback',
+    x: 680, y: 840,
+    detail: {
+      action: 'ans_customer_phone_que_customer_email.fallback',
+      contexts_in: ['ref_6','customer_phone','followup'],
+      contexts_out: ['ref_6 (1)','customer_phone (1)','followup (1)'],
+      bot_message: 'Need your email to send you details of our security solution',
+      quick_replies: []
+    }
+  },
+  {
+    id: 'end',
+    label: 'End\n(Follow-up)',
+    type: 'end',
+    x: 400, y: 1000,
+    detail: {
+      action: '',
+      contexts_in: ['ref_6','customer_phone'],
+      contexts_out: ['ref_7 (1)','customer_email (1)'],
+      bot_message: 'We will reach out to you within 24 hours.',
+      quick_replies: [],
+      params: ['email (@sys.email)'],
+      usersays: ['joshua@weberon.net','my email address is joshua@weberon.net']
+    }
+  },
+  {
+    id: 'fallback_global',
+    label: 'Default\nFallback',
+    type: 'fallback',
+    x: 680, y: 200,
+    detail: {
+      action: 'input.unknown',
+      contexts_in: ['(any)'],
+      contexts_out: [],
+      bot_message: "I didn't get that. Can you say it again? / Sorry, could you say that again?",
+      quick_replies: []
+    }
+  }
+];
+
+const edges = [
+  { from:'welcome',       to:'security_history', label:'Home / Business / Other' },
+  { from:'welcome',       to:'fallback_global',  label:'Unknown input', dashed:true },
+  { from:'security_history', to:'install_address', label:'Yes / No' },
+  { from:'install_address',  to:'install_address_fb', label:'unrecognised', dashed:true },
+  { from:'install_address',  to:'customer_name',  label:'address provided' },
+  { from:'install_address_fb', to:'customer_name', label:'address (retry)' },
+  { from:'customer_name', to:'customer_name_fb',  label:'unrecognised', dashed:true },
+  { from:'customer_name', to:'customer_phone',    label:'name provided' },
+  { from:'customer_name_fb', to:'customer_phone', label:'name (retry)' },
+  { from:'customer_phone', to:'customer_phone_fb', label:'unrecognised', dashed:true },
+  { from:'customer_phone', to:'customer_email',   label:'phone provided' },
+  { from:'customer_phone_fb', to:'customer_email', label:'phone (retry)' },
+  { from:'customer_email', to:'customer_email_fb', label:'unrecognised', dashed:true },
+  { from:'customer_email', to:'end',              label:'email provided' },
+  { from:'customer_email_fb', to:'end',           label:'email (retry)' },
+];
+
+// ─────────────────────────────────────────────
+// COLOURS
+// ─────────────────────────────────────────────
+const typeStyle = {
+  start:    { fill:'#312e81', stroke:'#6366f1', text:'#a5b4fc' },
+  question: { fill:'#0c4a6e', stroke:'#0ea5e9', text:'#7dd3fc' },
+  data:     { fill:'#064e3b', stroke:'#10b981', text:'#6ee7b7' },
+  fallback: { fill:'#451a03', stroke:'#f59e0b', text:'#fcd34d' },
+  end:      { fill:'#450a0a', stroke:'#ef4444', text:'#fca5a5' },
+};
+
+// ─────────────────────────────────────────────
+// SVG RENDER
+// ─────────────────────────────────────────────
+const PAD = 80;
+const NW = 150, NH = 52;
+const svgEl = document.getElementById('flow');
+
+function svgNS(tag, attrs={}) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [k,v] of Object.entries(attrs)) el.setAttribute(k,v);
+  return el;
+}
+
+function renderFlow() {
+  svgEl.innerHTML = '';
+
+  // Compute bounds
+  const xs = nodes.map(n=>n.x), ys = nodes.map(n=>n.y);
+  const minX = Math.min(...xs)-NW/2-PAD;
+  const minY = Math.min(...ys)-NH/2-PAD;
+  const maxX = Math.max(...xs)+NW/2+PAD;
+  const maxY = Math.max(...ys)+NH/2+PAD;
+  svgEl.setAttribute('width',  maxX - minX);
+  svgEl.setAttribute('height', maxY - minY);
+  svgEl.setAttribute('viewBox', `${minX} ${minY} ${maxX-minX} ${maxY-minY}`);
+
+  // Defs – arrowheads
+  const defs = svgNS('defs');
+
+  function mkArrow(id, color) {
+    const m = svgNS('marker',{id, markerWidth:'8', markerHeight:'8',
+      refX:'6', refY:'3', orient:'auto'});
+    const p = svgNS('path',{d:'M0,0 L0,6 L8,3 z', fill:color});
+    m.appendChild(p); defs.appendChild(m);
+  }
+  mkArrow('arr-normal','#475569');
+  mkArrow('arr-dashed','#f59e0b');
+  mkArrow('arr-hl','#a855f7');
+  svgEl.appendChild(defs);
+
+  // Node map
+  const nodeMap = {};
+  nodes.forEach(n=>nodeMap[n.id]=n);
+
+  // Draw edges
+  const edgeGroup = svgNS('g');
+  svgEl.appendChild(edgeGroup);
+
+  edges.forEach((e, ei) => {
+    const src = nodeMap[e.from], dst = nodeMap[e.to];
+    if (!src || !dst) return;
+
+    const isSelf = e.from === e.to;
+    const color  = e.dashed ? '#f59e0b55' : '#34406077';
+    const strokeC = e.dashed ? '#f59e0b' : '#475569';
+
+    // Simple bezier between node centres
+    const x1 = src.x, y1 = src.y + NH/2;
+    const x2 = dst.x, y2 = dst.y - NH/2;
+
+    const dx = x2 - x1;
+    const cx1 = x1 + dx * 0.1, cy1 = y1 + 60;
+    const cx2 = x2 - dx * 0.1, cy2 = y2 - 60;
+
+    const g = svgNS('g', { class:'edge', 'data-ei': ei });
+    const path = svgNS('path', {
+      d: `M${x1},${y1} C${cx1},${cy1} ${cx2},${cy2} ${x2},${y2}`,
+      fill:'none',
+      stroke: strokeC,
+      'stroke-width':'1.5',
+      'stroke-dasharray': e.dashed ? '6,4' : 'none',
+      'marker-end': `url(#arr-normal)`
+    });
+    g.appendChild(path);
+
+    // Edge label
+    const mx = (x1+x2)/2, my = (y1+y2)/2;
+    const lbl = svgNS('text',{
+      x: mx+8, y: my,
+      fill:'#64748b', 'font-size':'9.5',
+      'font-family':'Segoe UI,sans-serif',
+      'text-anchor':'start'
+    });
+    lbl.textContent = e.label || '';
+    g.appendChild(lbl);
+
+    edgeGroup.appendChild(g);
+  });
+
+  // Draw nodes
+  nodes.forEach(n => {
+    const st = typeStyle[n.type];
+    const g = svgNS('g', { class:'node', 'data-id': n.id, transform:`translate(${n.x-NW/2},${n.y-NH/2})` });
+
+    const rx = n.type==='start'?10: n.type==='end'?10:6;
+    const rect = svgNS('rect',{
+      width:NW, height:NH,
+      rx, ry:rx,
+      fill: st.fill,
+      stroke: st.stroke,
+      'stroke-width':'1.5'
+    });
+    g.appendChild(rect);
+
+    // Type icon
+    const icons = {start:'🏠',question:'❓',data:'📋',fallback:'⚠️',end:'✅'};
+    const icon = svgNS('text',{x:'12',y:'18','font-size':'13','font-family':'sans-serif',fill:'#fff'});
+    icon.textContent = icons[n.type]||'';
+    g.appendChild(icon);
+
+    // Label (multi-line)
+    const lines = n.label.split('\n');
+    lines.forEach((line, li) => {
+      const t = svgNS('text',{
+        x: NW/2+10, y: NH/2 - (lines.length-1)*7 + li*14 + 1,
+        fill: st.text,
+        'font-size':'11',
+        'font-weight':'600',
+        'font-family':'Segoe UI,sans-serif',
+        'text-anchor':'middle'
+      });
+      t.textContent = line;
+      g.appendChild(t);
+    });
+
+    g.addEventListener('click', () => showDetail(n));
+    svgEl.appendChild(g);
+  });
+}
+
+// ─────────────────────────────────────────────
+// DETAIL PANEL
+// ─────────────────────────────────────────────
+const detail = document.getElementById('detail');
+const dTitle = document.getElementById('d-title');
+const dBody  = document.getElementById('d-body');
+document.getElementById('detail-close').addEventListener('click',()=>{
+  detail.classList.remove('open');
+});
+
+function tag(text,cls) { return `<span class="tag ${cls}">${text}</span>`; }
+
+function showDetail(n) {
+  const d = n.detail;
+  dTitle.textContent = n.label.replace('\n',' ');
+  let html = '';
+
+  html += `<div class="detail-section"><div class="detail-label">Bot Says</div>
+    <div class="detail-value">"${d.bot_message}"</div></div>`;
+
+  if (d.quick_replies?.length) {
+    html += `<div class="detail-section"><div class="detail-label">Quick Replies</div><div>`;
+    d.quick_replies.forEach(qr=>{ html+=tag(qr,'tag-qr'); });
+    html += `</div></div>`;
+  }
+
+  if (d.contexts_in?.length) {
+    html += `<div class="detail-section"><div class="detail-label">Input Contexts</div><div>`;
+    d.contexts_in.forEach(c=>{ html+=tag(c,'tag-context'); });
+    html += `</div></div>`;
+  }
+
+  if (d.contexts_out?.length) {
+    html += `<div class="detail-section"><div class="detail-label">Output Contexts</div><div>`;
+    d.contexts_out.forEach(c=>{ html+=tag(c,'tag-output'); });
+    html += `</div></div>`;
+  }
+
+  if (d.params?.length) {
+    html += `<div class="detail-section"><div class="detail-label">Parameters</div><div>`;
+    d.params.forEach(p=>{ html+=tag(p,'tag-context'); });
+    html += `</div></div>`;
+  }
+
+  if (d.usersays?.length) {
+    html += `<div class="detail-section"><div class="detail-label">Training Phrases</div>
+      <div class="detail-value" style="font-size:11px">${d.usersays.join(', ')}</div></div>`;
+  }
+
+  if (d.action) {
+    html += `<div class="detail-section"><div class="detail-label">Action</div>
+      <div class="detail-value" style="font-size:11px;color:#94a3b8">${d.action}</div></div>`;
+  }
+
+  dBody.innerHTML = html;
+  detail.classList.add('open');
+}
+
+// ─────────────────────────────────────────────
+// PAN + ZOOM
+// ─────────────────────────────────────────────
+const wrap = document.getElementById('canvas-wrap');
+let scale = 1;
+const STEP = 0.15;
+
+function applyZoom(delta) {
+  scale = Math.max(0.3, Math.min(3, scale + delta));
+  svgEl.style.transform = `scale(${scale})`;
+  svgEl.style.transformOrigin = 'top left';
+}
+
+document.getElementById('btn-zoom-in').addEventListener('click', ()=>applyZoom(STEP));
+document.getElementById('btn-zoom-out').addEventListener('click', ()=>applyZoom(-STEP));
+document.getElementById('btn-reset').addEventListener('click', ()=>{
+  scale=1; svgEl.style.transform=''; wrap.scrollTop=0; wrap.scrollLeft=0;
+});
+
+wrap.addEventListener('wheel', e=>{
+  e.preventDefault();
+  applyZoom(e.deltaY < 0 ? STEP*0.5 : -STEP*0.5);
+},{passive:false});
+
+let dragging=false, dragX=0, dragY=0;
+wrap.addEventListener('mousedown', e=>{
+  if(e.target.closest('.node')) return;
+  dragging=true; dragX=e.clientX+wrap.scrollLeft; dragY=e.clientY+wrap.scrollTop;
+  wrap.classList.add('grabbing');
+});
+document.addEventListener('mousemove', e=>{
+  if(!dragging)return;
+  wrap.scrollLeft = dragX - e.clientX;
+  wrap.scrollTop  = dragY - e.clientY;
+});
+document.addEventListener('mouseup',()=>{ dragging=false; wrap.classList.remove('grabbing'); });
+
+// ─────────────────────────────────────────────
+// SIMULATOR
+// ─────────────────────────────────────────────
+const simEl  = document.getElementById('sim');
+const simMsgs= document.getElementById('sim-msgs');
+const simQR  = document.getElementById('sim-qr');
+const simInp = document.getElementById('sim-input');
+const simSend= document.getElementById('sim-send');
+
+let simState = 'idle';
+
+const flow = [
+  { state:'welcome', type:'start',
+    bot:'Welcome to SereNest. Are you looking for security & monitoring for your home or business?',
+    qr:['Home','Business','Other'],
+    next: ()=> 'security_history'
+  },
+  { state:'security_history', type:'question',
+    bot:'Do you currently have or used any security & monitoring services before?',
+    qr:['Yes','No'],
+    next: ()=> 'install_address'
+  },
+  { state:'install_address', type:'question',
+    bot:'What is the address where you want a security system to be installed?',
+    qr:[],
+    next: ()=> 'customer_name',
+    validate: v => v.trim().length > 3,
+    fallback:'Please provide the address where you want a security system to be installed'
+  },
+  { state:'customer_name', type:'data',
+    bot:'Whom do I have the pleasure of chatting with?',
+    qr:[],
+    next: ()=> 'customer_phone',
+    validate: v => v.trim().length > 1,
+    fallback:'Please provide your name'
+  },
+  { state:'customer_phone', type:'data',
+    bot:'What is the best number to call you?',
+    qr:[],
+    next: ()=> 'customer_email',
+    validate: v => /[\d\-\+\s]{7,}/.test(v),
+    fallback:'Please provide your phone number'
+  },
+  { state:'customer_email', type:'data',
+    bot:'Best email to send you details of our security solution?',
+    qr:[],
+    next: ()=> 'end',
+    validate: v => /\S+@\S+\.\S+/.test(v),
+    fallback:'Need your email to send you details of our security solution'
+  },
+  { state:'end', type:'end',
+    bot:'We will reach out to you within 24 hours.',
+    qr:[],
+    next: ()=> null
+  }
+];
+
+const flowMap = {};
+flow.forEach(f=>flowMap[f.state]=f);
+
+function addMsg(text, role) {
+  const div = document.createElement('div');
+  div.className = `msg ${role}`;
+  div.textContent = text;
+  simMsgs.appendChild(div);
+  simMsgs.scrollTop = 9999;
+}
+
+function addSystem(text) {
+  const div = document.createElement('div');
+  div.className = 'msg system';
+  div.textContent = text;
+  simMsgs.appendChild(div);
+  simMsgs.scrollTop = 9999;
+}
+
+function highlightNode(id) {
+  document.querySelectorAll('.node').forEach(el=>el.classList.remove('selected'));
+  const el = document.querySelector(`.node[data-id="${id}"]`);
+  if(el) { el.classList.add('selected'); }
+}
+
+function renderQR(step) {
+  simQR.innerHTML = '';
+  step.qr.forEach(r=>{
+    const b = document.createElement('button');
+    b.className='qr-btn'; b.textContent=r;
+    b.addEventListener('click',()=>handleUserInput(r));
+    simQR.appendChild(b);
+  });
+}
+
+function startSim() {
+  simMsgs.innerHTML=''; simQR.innerHTML='';
+  addSystem('— Conversation started —');
+  simState = 'welcome';
+  const step = flowMap[simState];
+  setTimeout(()=>{
+    addMsg(step.bot,'bot');
+    renderQR(step);
+    highlightNode(simState);
+  },300);
+}
+
+function handleUserInput(text) {
+  if(!text.trim()) return;
+  addMsg(text,'user');
+  simQR.innerHTML='';
+  simInp.value='';
+
+  const step = flowMap[simState];
+  if(!step) { addSystem('— Conversation ended —'); return; }
+
+  // Validate or fallback
+  if(step.validate && !step.validate(text)) {
+    setTimeout(()=>{
+      addMsg(step.fallback,'bot');
+      renderQR(step);
+    },400);
+    // Highlight fallback node
+    highlightNode(simState+'_fb');
+    return;
+  }
+
+  const nextState = step.next();
+  if(!nextState) {
+    simState='end';
+    setTimeout(()=>{
+      addMsg(flowMap['end'].bot,'bot');
+      highlightNode('end');
+      addSystem('— Conversation ended —');
+    },400);
+    return;
+  }
+  simState = nextState;
+  const nextStep = flowMap[simState];
+  setTimeout(()=>{
+    addMsg(nextStep.bot,'bot');
+    renderQR(nextStep);
+    highlightNode(simState);
+  },400);
+}
+
+simSend.addEventListener('click',()=>handleUserInput(simInp.value));
+simInp.addEventListener('keydown',e=>{ if(e.key==='Enter') handleUserInput(simInp.value); });
+
+const btnSim = document.getElementById('btn-sim');
+btnSim.addEventListener('click',()=>{
+  const hidden = simEl.classList.toggle('hidden');
+  btnSim.classList.toggle('active',!hidden);
+  if(!hidden) startSim();
+});
+
+// ─────────────────────────────────────────────
+// INIT
+// ─────────────────────────────────────────────
+renderFlow();
+startSim();
+
+// Scroll to centre
+setTimeout(()=>{
+  wrap.scrollLeft = (svgEl.clientWidth - wrap.clientWidth)/2;
+  wrap.scrollTop  = 0;
+},100);
+</script>
+</body>
+</html>

@@ -1,0 +1,1245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dialogflow Flow Visualizer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0f1117;--bg2:#1a1d2e;--bg3:#13151f;
+  --border:#2d3058;--border2:#1e2235;
+  --text:#e2e8f0;--text2:#94a3b8;--text3:#64748b;--text4:#475569;
+  --accent:#6366f1;--accent2:#a855f7;
+  --amber:#f59e0b;--red:#ef4444;--green:#10b981;--sky:#0ea5e9;
+  --radius:8px;--panel-w:340px;
+}
+html,body{height:100%;overflow:hidden}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);display:flex;flex-direction:column}
+button{font-family:inherit;cursor:pointer}
+input{font-family:inherit}
+
+/* DROP SCREEN */
+#screen-drop{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 20px}
+#screen-drop.hidden{display:none}
+.drop-hero{text-align:center;margin-bottom:36px}
+.drop-hero .logo{width:68px;height:68px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:18px;display:flex;align-items:center;justify-content:center;font-size:34px;margin:0 auto 18px;box-shadow:0 0 40px rgba(99,102,241,.3)}
+.drop-hero h1{font-size:24px;font-weight:800;background:linear-gradient(135deg,#a5b4fc,#c4b5fd);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:8px}
+.drop-hero p{color:var(--text2);font-size:13px;max-width:400px;line-height:1.6}
+.drop-zone{width:100%;max-width:540px;border:2px dashed var(--border);border-radius:16px;padding:44px 32px;text-align:center;background:var(--bg2);transition:all .2s}
+.drop-zone.drag-over{border-color:var(--accent);background:#1e2048;box-shadow:0 0 30px rgba(99,102,241,.2)}
+.drop-icon{font-size:44px;margin-bottom:14px}
+.drop-zone h2{font-size:15px;font-weight:600;margin-bottom:6px}
+.drop-zone p{color:var(--text3);font-size:12px;margin-bottom:22px}
+.drop-buttons{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+.btn-primary{padding:9px 18px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius);font-size:13px;font-weight:600;transition:background .15s}
+.btn-primary:hover{background:#4f46e5}
+.btn-secondary{padding:9px 18px;background:transparent;color:var(--text2);border:1px solid var(--border);border-radius:var(--radius);font-size:13px;font-weight:500;transition:all .15s}
+.btn-secondary:hover{border-color:var(--accent);color:var(--text)}
+#input-zip,#input-files{display:none}
+.drop-note{margin-top:14px;font-size:11px;color:var(--text4)}
+#drop-error{margin-top:12px;color:var(--red);font-size:12px;min-height:16px}
+
+/* APP SCREEN */
+#screen-app{flex:1;display:flex;flex-direction:column;overflow:hidden}
+#screen-app.hidden{display:none}
+
+/* Header */
+#app-header{display:flex;align-items:center;gap:12px;padding:11px 20px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0;z-index:10}
+.logo-sm{width:30px;height:30px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}
+#agent-name{font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#agent-meta{font-size:11px;color:var(--text3)}
+.hdr-space{flex:1}
+.hbtn{padding:5px 12px;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--text2);font-size:12px;transition:all .15s}
+.hbtn:hover{border-color:var(--accent);color:var(--text)}
+
+/* Toolbar */
+#toolbar{display:flex;align-items:center;gap:6px;padding:8px 20px;background:var(--bg3);border-bottom:1px solid var(--border2);flex-shrink:0;flex-wrap:wrap}
+.tbtn{padding:5px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text2);font-size:12px;transition:all .15s;white-space:nowrap}
+.tbtn:hover{background:#252849;color:var(--text);border-color:var(--accent)}
+.tbtn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.tb-sep{width:1px;height:20px;background:var(--border);margin:0 4px}
+.tb-legend{display:flex;gap:12px;align-items:center;margin-left:auto;flex-wrap:wrap}
+.leg-item{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--text3)}
+.leg-dot{width:9px;height:9px;border-radius:2px}
+
+/* Main */
+#main-area{flex:1;display:flex;overflow:hidden;position:relative}
+#canvas-wrap{flex:1;overflow:auto;cursor:grab;user-select:none}
+#canvas-wrap.grabbing{cursor:grabbing}
+#flow-svg{display:block}
+
+/* Detail Panel */
+#panel-detail{position:absolute;right:0;top:0;bottom:0;width:var(--panel-w);background:var(--bg2);border-left:1px solid var(--border);overflow-y:auto;transform:translateX(100%);transition:transform .25s cubic-bezier(.4,0,.2,1);z-index:20}
+#panel-detail.open{transform:translateX(0)}
+.panel-header{display:flex;align-items:flex-start;gap:8px;padding:14px 16px;border-bottom:1px solid var(--border2);position:sticky;top:0;background:var(--bg2);z-index:1}
+.panel-header h2{font-size:13px;font-weight:700;flex:1;word-break:break-word;line-height:1.4}
+.pcls{background:none;border:none;color:var(--text4);font-size:18px;line-height:1;padding:0;flex-shrink:0}
+.pcls:hover{color:var(--text)}
+.panel-body{padding:14px}
+.ps{margin-bottom:14px}
+.ps-label{font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:var(--text4);margin-bottom:5px}
+.ps-value{font-size:12px;color:var(--text2);background:var(--bg3);border-radius:6px;padding:8px 10px;line-height:1.5;word-break:break-word}
+.tag{display:inline-block;padding:2px 7px;border-radius:20px;font-size:10px;margin:2px}
+.tag-ctx{background:#1e3a5f;color:#7dd3fc}
+.tag-out{background:#1e3f2c;color:#6ee7b7}
+.tag-qr{background:#3b1f5e;color:#c4b5fd}
+.tag-param{background:#3f2a00;color:#fcd34d}
+.tag-type{background:#1e2235;color:var(--text2)}
+.params-table{width:100%;border-collapse:collapse;font-size:11px}
+.params-table th{text-align:left;color:var(--text4);padding:3px 6px;border-bottom:1px solid var(--border2);font-weight:500}
+.params-table td{padding:4px 6px;color:var(--text2);border-bottom:1px solid var(--border2)}
+
+/* Entities Panel */
+#panel-entities{position:absolute;right:0;top:0;bottom:0;width:var(--panel-w);background:var(--bg2);border-left:1px solid var(--border);overflow-y:auto;transform:translateX(100%);transition:transform .25s cubic-bezier(.4,0,.2,1);z-index:19}
+#panel-entities.open{transform:translateX(0)}
+.ent-row{border-bottom:1px solid var(--border2);padding:10px 14px}
+.ent-name{font-size:12px;font-weight:600;color:#a5b4fc;margin-bottom:4px}
+.ent-meta{font-size:11px;color:var(--text3);margin-bottom:6px}
+.ent-entries{font-size:11px;color:var(--text2);background:var(--bg3);border-radius:6px;padding:6px 8px;max-height:120px;overflow-y:auto;line-height:1.8;word-break:break-all}
+
+/* Simulator */
+#sim{position:fixed;left:20px;bottom:20px;width:300px;background:var(--bg2);border:1px solid var(--border);border-radius:12px;z-index:50;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+#sim.hidden{display:none}
+.sim-hdr{display:flex;align-items:center;gap:8px;padding:11px 14px;background:linear-gradient(135deg,var(--accent),var(--accent2));font-size:13px;font-weight:600;cursor:grab;user-select:none}
+.sim-hdr.dragging{cursor:grabbing}
+.sim-hdr-sp{flex:1}
+.sim-rst{background:rgba(255,255,255,.2);border:none;border-radius:4px;color:#fff;font-size:10px;padding:3px 8px}
+.sim-rst:hover{background:rgba(255,255,255,.35)}
+#sim-msgs{padding:10px;max-height:250px;overflow-y:auto;display:flex;flex-direction:column;gap:7px}
+.msg{max-width:88%;padding:7px 10px;border-radius:10px;font-size:12px;line-height:1.45}
+.msg.bot{background:#252849;color:var(--text2);align-self:flex-start}
+.msg.user{background:var(--accent);color:#fff;align-self:flex-end}
+.msg.sys{background:transparent;color:var(--text4);font-style:italic;font-size:10px;align-self:center;text-align:center;border:1px solid var(--border2);border-radius:6px;padding:3px 8px}
+#sim-qr{display:flex;flex-wrap:wrap;gap:5px;padding:0 10px 8px}
+.qr-btn{padding:4px 10px;background:#252849;border:1px solid #3d4270;border-radius:16px;color:#a5b4fc;font-size:11px;transition:all .15s}
+.qr-btn:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
+.sim-inp-row{display:flex;gap:6px;padding:8px 10px;border-top:1px solid var(--border2)}
+.sim-inp{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;padding:6px 9px;outline:none}
+.sim-inp:focus{border-color:var(--accent)}
+#sim-hint{display:flex;align-items:center;gap:8px;padding:3px 10px 6px;min-height:22px}
+#sim-hint-text{font-size:10px;color:var(--amber);line-height:1.4;flex:1}
+#sim-fb-btn{display:none;padding:3px 9px;background:transparent;border:1px solid var(--amber);border-radius:4px;color:var(--amber);font-size:10px;white-space:nowrap}
+#sim-fb-btn:hover{background:var(--amber);color:#1a1d2e}
+.sim-snd{background:var(--accent);border:none;border-radius:6px;color:#fff;padding:6px 11px;font-size:12px;transition:background .2s,color .2s}
+.sim-snd:hover{background:#4f46e5}
+
+/* Help Modal */
+#modal-help{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100;display:flex;align-items:center;justify-content:center;padding:20px}
+#modal-help.hidden{display:none}
+.modal-box{background:var(--bg2);border:1px solid var(--border);border-radius:14px;width:100%;max-width:620px;max-height:85vh;overflow-y:auto}
+.modal-hdr{display:flex;align-items:center;gap:10px;padding:16px 20px;border-bottom:1px solid var(--border2);position:sticky;top:0;background:var(--bg2);z-index:1}
+.modal-hdr h2{font-size:15px;font-weight:700;flex:1}
+.mcls{background:none;border:none;color:var(--text4);font-size:20px;line-height:1}
+.mcls:hover{color:var(--text)}
+.modal-body{padding:20px}
+.modal-body h3{font-size:12px;font-weight:700;color:#a5b4fc;margin:16px 0 8px;border-bottom:1px solid var(--border2);padding-bottom:5px;text-transform:uppercase;letter-spacing:.5px}
+.modal-body h3:first-child{margin-top:0}
+.modal-body ol,.modal-body ul{padding-left:18px}
+.modal-body li{font-size:13px;color:var(--text2);margin-bottom:7px;line-height:1.5}
+.modal-body li strong{color:var(--text)}
+.modal-body code{font-size:11px;background:var(--bg3);border:1px solid var(--border2);border-radius:4px;padding:1px 5px;color:#7dd3fc}
+.cbadge{display:inline-block;background:#3f2a00;color:var(--amber);font-size:10px;border-radius:4px;padding:1px 6px;margin-right:6px;font-weight:600}
+
+/* Node styles */
+.node{cursor:pointer}
+.node-bg{transition:filter .15s}
+.node:hover .node-bg{filter:brightness(1.3) drop-shadow(0 0 8px rgba(99,102,241,.5))}
+.node.selected .node-bg{filter:brightness(1.4) drop-shadow(0 0 14px rgba(168,85,247,.8))}
+
+/* Loading */
+#loading{position:fixed;inset:0;background:rgba(15,17,23,.88);z-index:200;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px}
+#loading.hidden{display:none}
+.spinner{width:38px;height:38px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#loading p{font-size:14px;color:var(--text2)}
+
+/* Scrollbar */
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:10px}
+::-webkit-scrollbar-thumb:hover{background:var(--accent)}
+</style>
+</head>
+<body>
+
+<!-- DROP SCREEN -->
+<div id="screen-drop">
+  <div class="drop-hero">
+    <div class="logo">🔀</div>
+    <h1>Dialogflow Flow Visualizer</h1>
+    <p>Upload your Dialogflow ES agent export to generate an interactive conversation flowchart with a built-in simulator.</p>
+  </div>
+  <div class="drop-zone" id="drop-zone">
+    <div class="drop-icon">📦</div>
+    <h2>Drop your Dialogflow export here</h2>
+    <p>Accepts the exported <strong>.zip</strong> directly, or all unzipped files</p>
+    <div class="drop-buttons">
+      <button class="btn-primary" id="btn-upload-zip">⬆ Upload ZIP</button>
+      <button class="btn-secondary" id="btn-upload-files">📂 Select Unzipped Files</button>
+    </div>
+    <div class="drop-note">Export from Dialogflow: Agent Settings → Export &amp; Import → Export as ZIP</div>
+    <div id="drop-error"></div>
+  </div>
+  <input type="file" id="input-zip" accept=".zip">
+  <input type="file" id="input-files" multiple>
+</div>
+
+<!-- APP SCREEN -->
+<div id="screen-app" class="hidden">
+  <div id="app-header">
+    <div class="logo-sm">🔀</div>
+    <div>
+      <div id="agent-name">Agent</div>
+      <div id="agent-meta"></div>
+    </div>
+    <div class="hdr-space"></div>
+    <button class="hbtn" id="btn-new-agent">⟳ Load New Agent</button>
+  </div>
+
+  <div id="toolbar">
+    <button class="tbtn" id="btn-zoom-in">＋ Zoom</button>
+    <button class="tbtn" id="btn-zoom-out">－ Zoom</button>
+    <button class="tbtn" id="btn-fit">⊡ Fit</button>
+    <button class="tbtn" id="btn-layout-dir" title="Toggle graph layout direction">↕ Top-Down</button>
+    <div class="tb-sep"></div>
+    <button class="tbtn" id="btn-sim-toggle">💬 Simulate</button>
+    <button class="tbtn" id="btn-ent-toggle">🗂 Entities</button>
+    <div class="tb-sep"></div>
+    <button class="tbtn" id="btn-help">❓ Help</button>
+    <div class="tb-legend">
+      <div class="leg-item"><div class="leg-dot" style="background:#6366f1"></div>Start</div>
+      <div class="leg-item"><div class="leg-dot" style="background:#0ea5e9"></div>Question</div>
+      <div class="leg-item"><div class="leg-dot" style="background:#10b981"></div>Data</div>
+      <div class="leg-item"><div class="leg-dot" style="background:#f59e0b"></div>Fallback</div>
+      <div class="leg-item"><div class="leg-dot" style="background:#ef4444"></div>End</div>
+      <div class="leg-item"><div class="leg-dot" style="background:#f97316"></div>Global FB</div>
+    </div>
+  </div>
+
+  <div id="main-area">
+    <div id="canvas-wrap">
+      <svg id="flow-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+    </div>
+
+    <!-- Detail Panel -->
+    <div id="panel-detail">
+      <div class="panel-header">
+        <h2 id="pd-title">Intent Detail</h2>
+        <button class="pcls" id="pd-close">✕</button>
+      </div>
+      <div class="panel-body" id="pd-body"></div>
+    </div>
+
+    <!-- Entities Panel -->
+    <div id="panel-entities">
+      <div class="panel-header">
+        <h2>Entities</h2>
+        <button class="pcls" id="pe-close">✕</button>
+      </div>
+      <div id="pe-body"></div>
+    </div>
+
+    <!-- Simulator -->
+    <div id="sim" class="hidden">
+      <div class="sim-hdr">
+        🤖 Chat Simulator
+        <div class="sim-hdr-sp"></div>
+        <button class="sim-rst" id="sim-reset">↺ Restart</button>
+      </div>
+      <div id="sim-msgs"></div>
+      <div id="sim-qr"></div>
+      <div class="sim-inp-row">
+        <input class="sim-inp" id="sim-input" placeholder="Type a reply…">
+        <button class="sim-snd" id="sim-send">→</button>
+      </div>
+      <div id="sim-hint"><span id="sim-hint-text"></span><button id="sim-fb-btn">↩ Fallback</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- Help Modal -->
+<div id="modal-help" class="hidden">
+  <div class="modal-box">
+    <div class="modal-hdr">
+      <h2>❓ How to Use &amp; Caveats</h2>
+      <button class="mcls" id="help-close">✕</button>
+    </div>
+    <div class="modal-body">
+      <h3>How to Export from Dialogflow</h3>
+      <ol>
+        <li>Open <strong>Dialogflow ES</strong> console and select your agent.</li>
+        <li>Click the <strong>gear icon ⚙</strong> next to the agent name (Agent Settings).</li>
+        <li>Go to the <strong>Export and Import</strong> tab.</li>
+        <li>Click <strong>"Export as ZIP"</strong> and download the file.</li>
+      </ol>
+      <h3>How to Use This Tool</h3>
+      <ol>
+        <li>Drop the downloaded <code>.zip</code> onto the drop zone — <em>no unzipping needed</em>.</li>
+        <li>Or unzip first and drag all files (including <code>entities/</code> and <code>intents/</code> subfolders) onto the drop zone, or click <strong>"Select Unzipped Files"</strong>.</li>
+        <li>The flow renders automatically. <strong>Click any node</strong> to inspect its full intent definition in the side panel.</li>
+        <li>Click <strong>Simulate</strong> to walk through the conversation in the chat widget — quick reply buttons appear where defined.</li>
+        <li>Click <strong>Entities</strong> to view all custom entity definitions, their type (regexp/synonym/enum), and entries.</li>
+        <li><strong>Scroll</strong> to zoom, <strong>drag</strong> the canvas to pan, or use the toolbar zoom buttons. <strong>Fit</strong> resets the view.</li>
+        <li>Click <strong>"Load New Agent"</strong> to visualize a different agent export.</li>
+      </ol>
+      <h3>Caveats &amp; Limitations</h3>
+      <ul>
+        <li><span class="cbadge">NLU</span> <strong>Approximate matching only</strong> — real Dialogflow uses ML intent classification at a configured confidence threshold. This tool uses regex/pattern matching and heuristics.</li>
+        <li><span class="cbadge">Webhook</span> <strong>Fulfillment not called</strong> — intents with <code>webhookUsed: true</code> show their static fallback text in the simulator.</li>
+        <li><span class="cbadge">Slot filling</span> <strong>Not simulated</strong> — <code>webhookForSlotFilling</code> behaviour is not replicated.</li>
+        <li><span class="cbadge">Language</span> <strong>English only</strong> — only <code>_usersays_en.json</code> files are parsed. Other language files are ignored.</li>
+        <li><span class="cbadge">Conditions</span> <strong>Conditional responses not evaluated</strong> — <code>conditionalResponses</code> are shown in the detail panel but not acted on.</li>
+        <li><span class="cbadge">Layout</span> <strong>BFS multi-column layout</strong> — nodes at the same depth are spread horizontally; branches and parallel paths each get their own column. Cyclic flows or very wide agents may still produce overlapping edges. Manual drag-to-reposition is not included.</li>
+        <li><span class="cbadge">Sys entities</span> <strong>System entities approximated</strong> — <code>@sys.email</code>, <code>@sys.phone-number</code> etc. use JS regex approximations, not Google's actual extractors.</li>
+        <li><span class="cbadge">Rich responses</span> <strong>Partial rendering</strong> — <code>type 0</code> (text) and <code>type 4</code> (custom payload + quick replies) are fully rendered. Cards, images, and other types show a placeholder.</li>
+        <li><span class="cbadge">Loops</span> <strong>Cyclic context chains</strong> are not detected and may render incorrectly.</li>
+        <li><span class="cbadge">CX</span> <strong>Dialogflow ES only</strong> — Dialogflow CX uses a different export format and is not supported by this tool.</li>
+        <li><span class="cbadge">Knowledge</span> <strong>Knowledge Bases not parsed</strong> — <code>enabledKnowledgeBaseNames</code> entries are ignored.</li>
+        <li><span class="cbadge">Privacy</span> <strong>All processing is local</strong> — no data leaves your browser. Nothing is uploaded to any server.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- Loading -->
+<div id="loading" class="hidden">
+  <div class="spinner"></div>
+  <p id="loading-msg">Parsing agent files…</p>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════════════
+let G = {
+  agent:{}, pkg:{},
+  entities:{},   // name → { def, entries[] }
+  intents:{},    // id  → intent object
+  ctxIndex:{},   // ctx → { input: Set<name>, output: Set<name> }
+  nodes:[], edges:[],
+};
+let layoutDir = 'TD'; // 'TD' = top-down, 'LR' = left-right
+
+// ══════════════════════════════════════════════════════
+// UTILS
+// ══════════════════════════════════════════════════════
+const $  = id => document.getElementById(id);
+const sh = id => $(id).classList.remove('hidden');
+const hd = id => $(id).classList.add('hidden');
+function svgE(tag, attrs={}) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [k,v] of Object.entries(attrs)) el.setAttribute(k,v);
+  return el;
+}
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') }
+function setLoad(msg){ sh('loading'); $('loading-msg').textContent = msg||'Loading…' }
+function hideLoad(){ hd('loading') }
+function showErr(msg){ const e=$('drop-error'); e.textContent=msg }
+function clearErr(){ $('drop-error').textContent='' }
+
+// ══════════════════════════════════════════════════════
+// FILE CLASSIFICATION
+// ══════════════════════════════════════════════════════
+function classifyPath(p) {
+  const name = p.split(/[\\/]/).pop();
+  if (name === 'agent.json')   return 'agent';
+  if (name === 'package.json') return 'package';
+  const inEntities = p.includes('entities');
+  const inIntents  = p.includes('intents') || (!p.includes('/') && !p.includes('\\'));
+  if (inEntities) {
+    if (/_entries_en\.json$/.test(name)) return 'entity-entries';
+    if (/\.json$/.test(name))            return 'entity-def';
+  }
+  if (inIntents || true) {
+    if (/_usersays_en\.json$/.test(name)) return 'usersays';
+    if (/ - fallback\.json$/i.test(name)) return 'fallback-intent';
+    if (/\.json$/.test(name) && name !== 'agent.json' && name !== 'package.json') return 'intent';
+  }
+  return 'unknown';
+}
+
+function baseName(path) {
+  let n = path.split(/[\\/]/).pop();
+  n = n.replace(/_usersays_en\.json$/,'');
+  n = n.replace(/ - fallback\.json$/i,'');
+  n = n.replace(/\.json$/,'');
+  return n;
+}
+
+// ══════════════════════════════════════════════════════
+// PARSERS
+// ══════════════════════════════════════════════════════
+function parseAgent(j) {
+  G.agent = {
+    displayName:      j.displayName      || 'Unknown Agent',
+    language:         j.language         || 'en',
+    timezone:         j.defaultTimezone  || '',
+    mlMinConfidence:  j.mlMinConfidence  ?? 0.3,
+    description:      j.description      || '',
+  };
+}
+
+function parsePkg(j) { G.pkg = { version: j.version||'' }; }
+
+function parseEntityDef(j) {
+  const name = j.name;
+  if (!G.entities[name]) G.entities[name] = { def:{}, entries:[] };
+  G.entities[name].def = {
+    name,
+    isRegexp:   j.isRegexp   || false,
+    isEnum:     j.isEnum     || false,
+    automatedExpansion: j.automatedExpansion || false,
+  };
+}
+
+function parseEntityEntries(j, path) {
+  const name = path.split(/[\\/]/).pop().replace(/_entries_en\.json$/,'');
+  if (!G.entities[name]) G.entities[name] = { def:{name,isRegexp:false}, entries:[] };
+  G.entities[name].entries = Array.isArray(j) ? j : [];
+}
+
+function parseIntent(j, type) {
+  const resp = (j.responses||[])[0] || {};
+  const msgs  = resp.messages || [];
+  let botText = '', quickReplies = [];
+
+  for (const m of msgs) {
+    const t = String(m.type);
+    if (t==='0') {
+      const sp = m.speech||[];
+      botText = Array.isArray(sp) ? (sp[0]||'') : (sp||'');
+    } else if (t==='4' && m.payload) {
+      if (m.payload.text) botText = m.payload.text;
+      quickReplies = (m.payload.quick_replies||[]).map(q=>q.title||q.payload||String(q));
+    }
+  }
+
+  G.intents[j.id] = {
+    id: j.id, name: j.name, type,
+    auto: j.auto !== false,
+    fallbackIntent: !!j.fallbackIntent,
+    events: (j.events||[]).map(e=>e.name),
+    contexts: j.contexts||[],
+    affectedContexts: resp.affectedContexts||[],
+    parameters: (resp.parameters||[]).map(p=>({
+      name:p.name, dataType:p.dataType,
+      required:!!p.required, value:p.value||'', defaultValue:p.defaultValue||'',
+    })),
+    botText, quickReplies,
+    action: resp.action||'',
+    webhookUsed:          !!j.webhookUsed,
+    webhookForSlotFilling:!!j.webhookForSlotFilling,
+    priority: j.priority||500000,
+    parentId: j.parentId||null,
+    rootParentId: j.rootParentId||null,
+    usersays: [],
+    allMessages: msgs,
+  };
+}
+
+function attachUsersays(j, path) {
+  const bn = baseName(path);
+  for (const intent of Object.values(G.intents)) {
+    if (intent.name === bn) {
+      intent.usersays = (Array.isArray(j)?j:[]).map(entry =>
+        (entry.data||[]).map(d=>d.text).join('')
+      ).filter(Boolean);
+      return;
+    }
+  }
+}
+
+// ══════════════════════════════════════════════════════
+// FILE LOADING PIPELINE
+// ══════════════════════════════════════════════════════
+async function processFileMap(fileMap) {
+  G = { agent:{}, pkg:{}, entities:{}, intents:{}, ctxIndex:{}, nodes:[], edges:[] };
+
+  const intentQ=[], usersaysQ=[], entryQ=[];
+
+  for (const [path, content] of Object.entries(fileMap)) {
+    const kind = classifyPath(path);
+    if      (kind==='agent')          parseAgent(content);
+    else if (kind==='package')        parsePkg(content);
+    else if (kind==='entity-def')     parseEntityDef(content);
+    else if (kind==='entity-entries') entryQ.push([content,path]);
+    else if (kind==='intent' || kind==='fallback-intent') intentQ.push([content,kind]);
+    else if (kind==='usersays')       usersaysQ.push([content,path]);
+  }
+
+  intentQ.forEach(([j,k])=>parseIntent(j,k));
+  usersaysQ.forEach(([j,p])=>attachUsersays(j,p));
+  entryQ.forEach(([j,p])=>parseEntityEntries(j,p));
+}
+
+async function loadZip(file) {
+  setLoad('Unzipping agent export…');
+  const zip = await JSZip.loadAsync(file);
+  const fileMap={}, ps=[];
+  zip.forEach((rel, entry) => {
+    if (entry.dir || !rel.endsWith('.json')) return;
+    ps.push(entry.async('string').then(txt=>{
+      try { fileMap[rel]=JSON.parse(txt); } catch(e){ console.warn('JSON err',rel,e); }
+    }));
+  });
+  await Promise.all(ps);
+  setLoad('Building flow graph…');
+  await processFileMap(fileMap);
+}
+
+async function loadFiles(files) {
+  setLoad('Reading files…');
+  const fileMap={};
+  await Promise.all(Array.from(files).map(f=>f.text().then(txt=>{
+    try { fileMap[f.webkitRelativePath||f.name]=JSON.parse(txt); }
+    catch(e){ console.warn('JSON err',f.name,e); }
+  })));
+  setLoad('Building flow graph…');
+  await processFileMap(fileMap);
+}
+
+// ══════════════════════════════════════════════════════
+// GRAPH BUILDER
+// ══════════════════════════════════════════════════════
+const NW=164, NH=54;
+
+const TSTYLE = {
+  start:          { fill:'#1e1b4b', stroke:'#6366f1', text:'#a5b4fc' },
+  question:       { fill:'#0c2340', stroke:'#0ea5e9', text:'#7dd3fc' },
+  data:           { fill:'#052e16', stroke:'#10b981', text:'#6ee7b7' },
+  fallback:       { fill:'#3f2a00', stroke:'#f59e0b', text:'#fcd34d' },
+  end:            { fill:'#3b0101', stroke:'#ef4444', text:'#fca5a5' },
+  global_fallback:{ fill:'#3c1100', stroke:'#f97316', text:'#fdba74' },
+};
+const TICON = { start:'🏠',question:'❓',data:'📋',fallback:'⚠️',end:'✅',global_fallback:'🚫' };
+
+function detectType(intent) {
+  if (intent.events.includes('WELCOME')) return 'start';
+  if (intent.fallbackIntent && !intent.parentId) return 'global_fallback';
+  if (intent.fallbackIntent &&  intent.parentId) return 'fallback';
+
+  // End = no other intent consumes this one's output context
+  const myOut = intent.affectedContexts.map(c=>c.name.toLowerCase());
+  for (const other of Object.values(G.intents)) {
+    if (other.id===intent.id) continue;
+    const otherIn = (other.contexts||[]).map(c=>c.toLowerCase());
+    if (myOut.some(c=>otherIn.includes(c))) return (intent.parameters.length ? 'data' : 'question');
+  }
+  return 'end';
+}
+
+function buildGraph() {
+  G.nodes=[]; G.edges=[];
+  const intentList = Object.values(G.intents);
+  const nodeById={};
+
+  // Create nodes
+  for (const intent of intentList) {
+    const node = {
+      id: intent.id,
+      label: intent.name.replace(/^(ans_|Default\s)/,'').replace(/_/g,' '),
+      fullName: intent.name,
+      type: detectType(intent),
+      x:0, y:0,
+    };
+    nodeById[intent.id]=node;
+    G.nodes.push(node);
+  }
+
+  // Build edges and compute intent relationships via context-aware traversal
+  buildCtxIndex();
+  G.edges = computeEdgesAndRelationships();
+
+  // Layout
+  layout(nodeById);
+}
+
+function layout(nodeById) {
+  // Build intent-name → node-id map
+  const nameToId={};
+  for (const n of G.nodes) {
+    const intent=G.intents[n.id];
+    if(intent) nameToId[intent.name]=n.id;
+  }
+
+  // BFS level assignment using computed outputIntents
+  const levels={};
+  const visited=new Set();
+  const rootIds=G.nodes
+    .filter(n=>{const i=G.intents[n.id];return i&&!i.fallbackIntent&&!(i.inputIntents||[]).length;})
+    .map(n=>n.id);
+
+  const queue=rootIds.map(id=>({id,level:0}));
+  while(queue.length){
+    const {id,level}=queue.shift();
+    if(visited.has(id)) continue;
+    visited.add(id);
+    if(!levels[level]) levels[level]=[];
+    levels[level].push(id);
+    const intent=G.intents[id];
+    for(const outName of (intent?.outputIntents||[])){
+      const outId=nameToId[outName];
+      if(outId&&!visited.has(outId)) queue.push({id:outId,level:level+1});
+    }
+  }
+  let mx=Math.max(0,...Object.keys(levels).map(Number));
+  for(const n of G.nodes){
+    if(!visited.has(n.id)&&!G.intents[n.id]?.fallbackIntent){
+      mx++;
+      if(!levels[mx]) levels[mx]=[];
+      levels[mx].push(n.id);
+      visited.add(n.id);
+    }
+  }
+
+  if(layoutDir==='LR'){
+    // Left-to-right: level drives X, nodes within a level spread on Y
+    const X0=80, CY=300, DX=260, DY=160, FB_DY=160;
+    for(const [level,ids] of Object.entries(levels)){
+      const x=X0+parseInt(level)*DX;
+      const startY=CY-((ids.length-1)*DY)/2;
+      ids.forEach((id,i)=>{
+        const n=nodeById[id];
+        if(n){n.x=x; n.y=startY+i*DY;}
+      });
+    }
+    for(const n of G.nodes){
+      const intent=G.intents[n.id];
+      if(!intent?.fallbackIntent) continue;
+      if(intent.parentId){
+        const parent=nodeById[intent.parentId];
+        n.x=parent?.x||X0;
+        n.y=(parent?.y||CY)+FB_DY;
+      } else {
+        n.x=X0; n.y=CY+FB_DY*2;
+      }
+    }
+  } else {
+    // Top-down (default): level drives Y, nodes within a level spread on X
+    const CX=420, Y0=70, DY=160, DX=240, FB_DX=260;
+    for(const [level,ids] of Object.entries(levels)){
+      const y=Y0+parseInt(level)*DY;
+      const startX=CX-((ids.length-1)*DX)/2;
+      ids.forEach((id,i)=>{
+        const n=nodeById[id];
+        if(n){n.x=startX+i*DX; n.y=y;}
+      });
+    }
+    for(const n of G.nodes){
+      const intent=G.intents[n.id];
+      if(!intent?.fallbackIntent) continue;
+      if(intent.parentId){
+        const parent=nodeById[intent.parentId];
+        n.x=(parent?.x||CX)+FB_DX;
+        n.y=parent?.y||Y0;
+      } else {
+        n.x=CX+FB_DX*2; n.y=Y0;
+      }
+    }
+  }
+}
+
+// ══════════════════════════════════════════════════════
+// CONTEXT INDEX & RELATIONSHIP TRAVERSAL (ported from app.js)
+// ══════════════════════════════════════════════════════
+function buildCtxIndex() {
+  const idx = {};
+  for (const intent of Object.values(G.intents)) {
+    for (const ctx of (intent.contexts || [])) {
+      const k = ctx.toLowerCase();
+      if (!idx[k]) idx[k] = { input: new Set(), output: new Set() };
+      idx[k].input.add(intent.name);
+    }
+    for (const { name: ctxName, lifespan } of (intent.affectedContexts || [])) {
+      const k = ctxName.toLowerCase();
+      if (!idx[k]) idx[k] = { input: new Set(), output: new Set() };
+      if (typeof lifespan === 'number' && lifespan > 0) idx[k].output.add(intent.name);
+    }
+  }
+  G.ctxIndex = idx;
+}
+
+// Returns new active context state after an intent fires:
+// decrements existing lifespans by 1 (removing expired), then applies intent's output contexts.
+function getActiveCtxState(activeCtx, intent) {
+  const next = {};
+  for (const [k, v] of Object.entries(activeCtx)) {
+    if (v - 1 > 0) next[k] = v - 1;
+  }
+  for (const { name: ctxName, lifespan } of (intent.affectedContexts || [])) {
+    const k = ctxName.toLowerCase();
+    if (typeof lifespan === 'number' && lifespan > 0) {
+      next[k] = Math.max(next[k] || 0, lifespan);
+    }
+  }
+  return next;
+}
+
+// Returns non-fallback intents whose ALL input contexts are currently active.
+// This is the intersection requirement: every input context must be satisfied.
+function findMatchingIntents(activeCtx) {
+  return Object.values(G.intents).filter(intent => {
+    if (intent.fallbackIntent) return false;
+    const inputCtxs = (intent.contexts || []).map(c => c.toLowerCase());
+    if (!inputCtxs.length) return false;
+    return inputCtxs.every(ctx => activeCtx[ctx] !== undefined);
+  });
+}
+
+// Traverses the intent graph from root intents, tracking active context state at each step.
+// Populates intent.inputIntents, intent.outputIntents, intent.hasOperatorRequest.
+// Returns edges array built from discovered transitions.
+function computeEdgesAndRelationships() {
+  const intentByName = {};
+  for (const intent of Object.values(G.intents)) {
+    intentByName[intent.name] = intent;
+    intent.inputIntents = [];
+    intent.outputIntents = [];
+    intent.hasOperatorRequest = (intent.affectedContexts || []).some(c => c.name === 'operator_request');
+  }
+
+  const edgeMap = new Map();
+  // Visited key: "parentName->intentName[ctx1,ctx2,...]" — prevents same transition+context repeating (cycle detection)
+  const visited = new Set();
+
+  function traverse(intentName, parentName, activeCtx) {
+    const intent = intentByName[intentName];
+    if (!intent) return;
+    const ctxKey = `${parentName}->${intentName}[${Object.keys(activeCtx).sort().join(',')}]`;
+    if (visited.has(ctxKey)) return;
+    visited.add(ctxKey);
+
+    if (parentName && intentByName[parentName]) {
+      const par = intentByName[parentName];
+      if (!intent.inputIntents.includes(parentName)) intent.inputIntents.push(parentName);
+      if (!par.outputIntents.includes(intentName)) par.outputIntents.push(intentName);
+      const ek = `${par.id}->${intent.id}`;
+      if (!edgeMap.has(ek)) {
+        const lbl = par.quickReplies.length
+          ? par.quickReplies.join(' / ').substring(0, 32)
+          : (intent.contexts[0] || '').substring(0, 32);
+        edgeMap.set(ek, { from: par.id, to: intent.id, label: lbl, dashed: false });
+      }
+    }
+
+    const newCtx = getActiveCtxState(activeCtx, intent);
+    for (const next of findMatchingIntents(newCtx)) {
+      traverse(next.name, intentName, newCtx);
+    }
+  }
+
+  // Seed traversal from root intents: non-fallback, no input contexts
+  for (const intent of Object.values(G.intents)) {
+    if (!intent.fallbackIntent && !(intent.contexts || []).length) {
+      traverse(intent.name, null, {});
+    }
+  }
+
+  // Fallback edges via parentId
+  for (const intent of Object.values(G.intents)) {
+    if (intent.fallbackIntent && intent.parentId) {
+      const ek = `${intent.parentId}->${intent.id}`;
+      if (!edgeMap.has(ek)) {
+        edgeMap.set(ek, { from: intent.parentId, to: intent.id, label: 'fallback', dashed: true });
+      }
+    }
+  }
+
+  return Array.from(edgeMap.values());
+}
+
+// ══════════════════════════════════════════════════════
+// SVG RENDERER
+// ══════════════════════════════════════════════════════
+let svgScale=1;
+const ZOOM_STEP=0.15;
+
+function renderSVG() {
+  const svg=$('flow-svg');
+  svg.innerHTML='';
+  if (!G.nodes.length) return;
+
+  const PAD=100;
+  const xs=G.nodes.map(n=>n.x), ys=G.nodes.map(n=>n.y);
+  const minX=Math.min(...xs)-NW/2-PAD, minY=Math.min(...ys)-NH/2-PAD;
+  const maxX=Math.max(...xs)+NW/2+PAD, maxY=Math.max(...ys)+NH/2+PAD;
+  const W=maxX-minX, H=maxY-minY;
+  svg.setAttribute('width',W); svg.setAttribute('height',H);
+  svg.setAttribute('viewBox',`${minX} ${minY} ${W} ${H}`);
+
+  // Defs
+  const defs=svgE('defs');
+  mkArr(defs,'arr-n','#47556999');
+  mkArr(defs,'arr-d','#f59e0b');
+  svg.appendChild(defs);
+
+  const nodeMap={};
+  G.nodes.forEach(n=>nodeMap[n.id]=n);
+
+  // Edges
+  const eg=svgE('g');
+  svg.appendChild(eg);
+  G.edges.forEach(e=>{
+    const s=nodeMap[e.from],d=nodeMap[e.to];
+    if(!s||!d) return;
+    const x1=s.x, y1=s.y+NH/2, x2=d.x, y2=d.y-NH/2;
+    const path = Math.abs(x1-x2)<5
+      ? `M${x1},${y1} C${x1},${(y1+y2)/2} ${x2},${(y1+y2)/2} ${x2},${y2}`
+      : `M${x1},${y1} C${x1},${y1+65} ${x2},${y2-65} ${x2},${y2}`;
+    const g=svgE('g');
+    g.appendChild(svgE('path',{
+      d:path,fill:'none',
+      stroke:e.dashed?'#f59e0b88':'#34406099',
+      'stroke-width':'1.5',
+      'stroke-dasharray':e.dashed?'6,4':'none',
+      'marker-end':`url(#${e.dashed?'arr-d':'arr-n'})`
+    }));
+    if (e.label) {
+      const mx=(x1+x2)/2+(x1===x2?10:0), my=(y1+y2)/2;
+      const lbl=e.label.substring(0,30)+(e.label.length>30?'…':'');
+      g.appendChild(svgE('rect',{x:mx-1,y:my-10,width:lbl.length*5.4+10,height:13,rx:3,fill:'#0f1117cc'}));
+      const lt=svgE('text',{x:mx+3,y:my,'fill':'#64748b','font-size':'9','font-family':'Segoe UI,sans-serif'});
+      lt.textContent=lbl;
+      g.appendChild(lt);
+    }
+    eg.appendChild(g);
+  });
+
+  // Nodes
+  G.nodes.forEach(n=>{
+    const st=TSTYLE[n.type]||TSTYLE.question;
+    const g=svgE('g',{class:'node','data-id':n.id,transform:`translate(${n.x-NW/2},${n.y-NH/2})`});
+    // shadow
+    g.appendChild(svgE('rect',{x:2,y:3,width:NW,height:NH,rx:8,fill:'#00000055'}));
+    // body
+    g.appendChild(svgE('rect',{class:'node-bg',width:NW,height:NH,rx:8,fill:st.fill,stroke:st.stroke,'stroke-width':'1.5'}));
+    // icon
+    const ic=svgE('text',{x:'11',y:'22','font-size':'13','font-family':'sans-serif'});
+    ic.textContent=TICON[n.type]||'●';
+    g.appendChild(ic);
+    // label wrap
+    const words=n.label.split(' ');
+    let l1='',l2='';
+    for(const w of words){
+      if((l1+' '+w).trim().length<=20) l1=(l1+' '+w).trim();
+      else l2=(l2+' '+w).trim();
+    }
+    const lines=l2?[l1,l2]:[l1];
+    lines.forEach((line,li)=>{
+      const t=svgE('text',{
+        x:NW/2+6, y:NH/2-(lines.length-1)*7+li*14+2,
+        fill:st.text,'font-size':'11','font-weight':'600',
+        'font-family':'Segoe UI,sans-serif','text-anchor':'middle'
+      });
+      t.textContent=line;
+      g.appendChild(t);
+    });
+    g.addEventListener('click',()=>showDetail(n.id));
+    svg.appendChild(g);
+  });
+}
+
+function mkArr(defs,id,color){
+  const m=svgE('marker',{id,'markerWidth':'8','markerHeight':'8','refX':'6','refY':'3','orient':'auto'});
+  m.appendChild(svgE('path',{d:'M0,0 L0,6 L8,3 z',fill:color}));
+  defs.appendChild(m);
+}
+
+// ══════════════════════════════════════════════════════
+// PAN / ZOOM  (transform-based, cursor-anchored)
+// ══════════════════════════════════════════════════════
+// vpX/vpY = translation of the SVG within the canvas wrap
+let vpX=0, vpY=0;
+
+function applyTransform(){
+  const svg=$('flow-svg');
+  svg.style.transform=`translate(${vpX}px,${vpY}px) scale(${svgScale})`;
+  svg.style.transformOrigin='0 0';
+}
+
+function zoomAt(factor, cx, cy){
+  // cx,cy are coordinates relative to canvas-wrap
+  const newScale=Math.max(.2,Math.min(4,svgScale*factor));
+  vpX = cx - (cx - vpX)*(newScale/svgScale);
+  vpY = cy - (cy - vpY)*(newScale/svgScale);
+  svgScale=newScale;
+  applyTransform();
+}
+
+function fitView(){
+  if(!G.nodes.length) return;
+  const wrap=$('canvas-wrap');
+  const ww=wrap.clientWidth, wh=wrap.clientHeight;
+  const NW_=164, NH_=54, PAD=60;
+  const xs=G.nodes.map(n=>n.x), ys=G.nodes.map(n=>n.y);
+  const minX=Math.min(...xs)-NW_/2-PAD, minY=Math.min(...ys)-NH_/2-PAD;
+  const maxX=Math.max(...xs)+NW_/2+PAD, maxY=Math.max(...ys)+NH_/2+PAD;
+  const gw=maxX-minX, gh=maxY-minY;
+  svgScale=Math.min(ww/gw, wh/gh, 1)*0.92;
+  vpX=(ww - gw*svgScale)/2 - minX*svgScale;
+  vpY=(wh - gh*svgScale)/2 - minY*svgScale;
+  applyTransform();
+}
+
+// Update canvas-wrap so SVG isn't clipped, and disable its own scroll
+(function(){
+  const wrap=$('canvas-wrap');
+  wrap.style.overflow='hidden';
+  const svg=$('flow-svg');
+  svg.style.position='absolute';
+  svg.style.top='0'; svg.style.left='0';
+})();
+
+let _drag=false, _startX=0, _startY=0, _startVpX=0, _startVpY=0, _moved=false;
+const wrap=$('canvas-wrap');
+wrap.addEventListener('mousedown',e=>{
+  if(e.target.closest('.node')) return;
+  _drag=true; _moved=false;
+  _startX=e.clientX; _startY=e.clientY;
+  _startVpX=vpX; _startVpY=vpY;
+  wrap.classList.add('grabbing');
+});
+document.addEventListener('mousemove',e=>{
+  if(!_drag) return;
+  const dx=e.clientX-_startX, dy=e.clientY-_startY;
+  if(Math.abs(dx)>2||Math.abs(dy)>2) _moved=true;
+  vpX=_startVpX+dx; vpY=_startVpY+dy;
+  applyTransform();
+});
+document.addEventListener('mouseup',()=>{ _drag=false; wrap.classList.remove('grabbing'); });
+
+wrap.addEventListener('wheel',e=>{
+  e.preventDefault();
+  const rect=wrap.getBoundingClientRect();
+  const cx=e.clientX-rect.left, cy=e.clientY-rect.top;
+  const factor=e.deltaY<0?1.1:1/1.1;
+  zoomAt(factor,cx,cy);
+},{passive:false});
+
+$('btn-zoom-in').addEventListener('click',()=>{
+  const w=$('canvas-wrap'); zoomAt(1+ZOOM_STEP, w.clientWidth/2, w.clientHeight/2);
+});
+$('btn-zoom-out').addEventListener('click',()=>{
+  const w=$('canvas-wrap'); zoomAt(1-ZOOM_STEP, w.clientWidth/2, w.clientHeight/2);
+});
+$('btn-fit').addEventListener('click',()=>fitView());
+$('btn-layout-dir').addEventListener('click',()=>{
+  if(!G.nodes.length) return;
+  layoutDir = layoutDir==='TD' ? 'LR' : 'TD';
+  $('btn-layout-dir').textContent = layoutDir==='TD' ? '↕ Top-Down' : '↔ Left-Right';
+  // Re-layout and re-render without re-parsing
+  const nodeById={};
+  G.nodes.forEach(n=>nodeById[n.id]=n);
+  layout(nodeById);
+  renderSVG();
+  setTimeout(fitView,50);
+});
+
+// ══════════════════════════════════════════════════════
+// DETAIL PANEL
+// ══════════════════════════════════════════════════════
+function showDetail(nodeId){
+  const node=G.nodes.find(n=>n.id===nodeId);
+  const intent=G.intents[nodeId];
+  if(!intent) return;
+  document.querySelectorAll('.node').forEach(el=>el.classList.remove('selected'));
+  document.querySelector(`.node[data-id="${nodeId}"]`)?.classList.add('selected');
+
+  $('pd-title').textContent=intent.name;
+  const tag=(t,c)=>`<span class="tag ${c}">${esc(t)}</span>`;
+  let h='';
+  h+=`<div class="ps"><div class="ps-label">Type</div><div>${tag(node.type,'tag-type')}</div></div>`;
+  h+=`<div class="ps"><div class="ps-label">Bot Message</div><div class="ps-value">"${esc(intent.botText)}"</div></div>`;
+  if(intent.quickReplies.length) h+=`<div class="ps"><div class="ps-label">Quick Replies</div><div>${intent.quickReplies.map(q=>tag(q,'tag-qr')).join('')}</div></div>`;
+  if(intent.contexts.length)     h+=`<div class="ps"><div class="ps-label">Input Contexts</div><div>${intent.contexts.map(c=>tag(c,'tag-ctx')).join('')}</div></div>`;
+  if(intent.affectedContexts.length) h+=`<div class="ps"><div class="ps-label">Output Contexts</div><div>${intent.affectedContexts.map(c=>tag(`${c.name} (${c.lifespan})`, 'tag-out')).join('')}</div></div>`;
+  if(intent.parameters.length){
+    h+=`<div class="ps"><div class="ps-label">Parameters</div><table class="params-table"><tr><th>Name</th><th>Entity</th><th>Req</th></tr>`;
+    intent.parameters.forEach(p=>{ h+=`<tr><td>${esc(p.name)}</td><td>${esc(p.dataType)}</td><td>${p.required?'✓':''}</td></tr>`; });
+    h+=`</table></div>`;
+  }
+  if(intent.usersays.length) h+=`<div class="ps"><div class="ps-label">Training Phrases (${intent.usersays.length})</div><div class="ps-value" style="font-size:11px;line-height:1.8">${intent.usersays.slice(0,15).map(s=>esc(s)).join('<br>')}</div></div>`;
+  if(intent.action) h+=`<div class="ps"><div class="ps-label">Action</div><div class="ps-value" style="font-size:11px;color:var(--text3)">${esc(intent.action)}</div></div>`;
+  if(intent.webhookUsed) h+=`<div class="ps"><div class="ps-label">Webhook</div><div>${tag('webhookUsed','tag-param')}${intent.webhookForSlotFilling?tag('slotFilling','tag-param'):''}</div></div>`;
+  if(intent.parentId){ const par=G.intents[intent.parentId]; h+=`<div class="ps"><div class="ps-label">Parent Intent</div><div class="ps-value" style="font-size:11px">${esc(par?.name||intent.parentId)}</div></div>`; }
+  if(intent.events.length) h+=`<div class="ps"><div class="ps-label">Events</div><div>${intent.events.map(e=>tag(e,'tag-ctx')).join('')}</div></div>`;
+  if(intent.inputIntents&&intent.inputIntents.length) h+=`<div class="ps"><div class="ps-label">Reached From</div><div>${intent.inputIntents.map(n=>tag(esc(n),'tag-ctx')).join('')}</div></div>`;
+  if(intent.outputIntents&&intent.outputIntents.length) h+=`<div class="ps"><div class="ps-label">Leads To</div><div>${intent.outputIntents.map(n=>tag(esc(n),'tag-out')).join('')}</div></div>`;
+  if(intent.hasOperatorRequest) h+=`<div class="ps"><div class="ps-label">Operator Handoff</div><div>${tag('operator_request','tag-param')}</div></div>`;
+
+  $('pd-body').innerHTML=h;
+  $('panel-detail').classList.add('open');
+  $('panel-entities').classList.remove('open');
+  $('btn-ent-toggle').classList.remove('active');
+}
+$('pd-close').addEventListener('click',()=>$('panel-detail').classList.remove('open'));
+
+// ══════════════════════════════════════════════════════
+// ENTITIES PANEL
+// ══════════════════════════════════════════════════════
+function buildEntitiesPanel(){
+  const sysEnts=new Set();
+  Object.values(G.intents).forEach(i=>i.parameters.forEach(p=>{ if(p.dataType.startsWith('@sys.')) sysEnts.add(p.dataType); }));
+  let h='';
+  const entKeys=Object.keys(G.entities);
+  if(!entKeys.length && !sysEnts.size){
+    h='<div style="padding:16px;font-size:13px;color:var(--text3)">No entity files found in this export.</div>';
+  } else {
+    for(const [name,ent] of Object.entries(G.entities)){
+      const typeLabel=ent.def.isRegexp?'Regexp':ent.def.isEnum?'Enum':'Synonym';
+      const usedBy=Object.values(G.intents).filter(i=>i.parameters.some(p=>p.dataType===`@${name}`)).map(i=>i.name).join(', ');
+      const displayEntries=ent.entries.slice(0,25).map(e=>{
+        return ent.def.isRegexp?`<code>/${esc(e.value)}/</code>`:`${esc(e.value)}${(e.synonyms||[]).length?` → ${(e.synonyms||[]).slice(0,3).map(s=>esc(s)).join(', ')}`:''}`;
+      }).join('<br>');
+      h+=`<div class="ent-row">
+        <div class="ent-name">@${esc(name)} <span style="font-size:10px;color:var(--text4);font-weight:400">(${typeLabel})</span></div>
+        ${usedBy?`<div class="ent-meta">Used in: ${esc(usedBy.substring(0,80))}</div>`:''}
+        ${ent.entries.length?`<div class="ent-entries">${displayEntries}</div>`:'<div class="ent-meta" style="color:var(--text4)">No entries loaded</div>'}
+      </div>`;
+    }
+    if(sysEnts.size){
+      h+=`<div class="ent-row"><div class="ent-name" style="color:var(--text2)">System Entities Referenced</div>
+        <div class="ent-entries">${[...sysEnts].map(e=>esc(e)).join('<br>')}</div></div>`;
+    }
+  }
+  $('pe-body').innerHTML=h;
+}
+$('btn-ent-toggle').addEventListener('click',()=>{
+  const open=$('panel-entities').classList.toggle('open');
+  $('btn-ent-toggle').classList.toggle('active',open);
+  if(open){ $('panel-detail').classList.remove('open'); }
+});
+$('pe-close').addEventListener('click',()=>{ $('panel-entities').classList.remove('open'); $('btn-ent-toggle').classList.remove('active'); });
+
+// ══════════════════════════════════════════════════════
+// SIMULATOR (dynamic, context-state-driven)
+// ══════════════════════════════════════════════════════
+// Returns a format hint string for display only — no validation is performed.
+function mkHint(dataType){
+  if(!dataType) return '';
+  const dt=dataType.toLowerCase();
+  if(dt==='@sys.email')        return 'Format hint: email address — e.g. name@example.com';
+  if(dt==='@sys.phone-number') return 'Format hint: phone number — e.g. +1 415 555 0100';
+  if(dt==='@sys.number')       return 'Format hint: a number — e.g. 42';
+  if(dt==='@sys.any')          return '';
+  if(dt==='@sys.given-name')   return 'Format hint: a first name — e.g. Alex';
+  if(dt==='@sys.date')         return 'Format hint: a date — e.g. tomorrow, March 5, or 2025-03-05';
+  const entName=dataType.replace(/^@/,'');
+  const ent=G.entities[entName];
+  if(ent){
+    if(ent.def.isRegexp&&ent.entries.length) return `Format hint: pattern — ${ent.entries[0].value}`;
+    if(ent.entries.length){
+      const examples=ent.entries.slice(0,3).map(e=>e.value).join(', ');
+      return `Format hint: one of — ${examples}`;
+    }
+  }
+  return '';
+}
+
+// Dynamic simulator state — tracks active contexts and current intent instead of a pre-computed path.
+let simCurrentIntentId = null;
+let simActiveCtx = {}; // { ctxName: lifespan } — decrements each turn
+
+function simMsg(text,role){
+  const d=document.createElement('div');
+  d.className=`msg ${role}`;
+  d.textContent=text;
+  $('sim-msgs').appendChild(d);
+  $('sim-msgs').scrollTop=9999;
+}
+function simSys(text){
+  const d=document.createElement('div');
+  d.className='msg sys';
+  d.textContent=text;
+  $('sim-msgs').appendChild(d);
+  $('sim-msgs').scrollTop=9999;
+}
+function simHL(id){
+  document.querySelectorAll('.node').forEach(el=>el.classList.remove('selected'));
+  document.querySelector(`.node[data-id="${id}"]`)?.classList.add('selected');
+}
+function simQR(qrs){
+  const a=$('sim-qr'); a.innerHTML='';
+  qrs.forEach(r=>{
+    const b=document.createElement('button');
+    b.className='qr-btn'; b.textContent=r;
+    b.addEventListener('click',()=>simHandle(r));
+    a.appendChild(b);
+  });
+}
+// Returns the fallback child intent of the given intent (via dashed edge), or null.
+function simFindFallback(intentId){
+  const fbEdge=G.edges.find(e=>e.from===intentId&&e.dashed);
+  return fbEdge?G.intents[fbEdge.to]:null;
+}
+
+// Finds the best next intent given current active context state.
+// Uses intersection logic: ALL input contexts of a candidate must be active.
+// Among ties, picks the candidate with the most matching contexts (most specific).
+function simFindNext(){
+  const candidates=findMatchingIntents(simActiveCtx)
+    .filter(i=>i.id!==simCurrentIntentId);
+  if(!candidates.length) return null;
+  return candidates.reduce((a,b)=>{
+    const as=(a.contexts||[]).filter(c=>simActiveCtx[c.toLowerCase()]).length;
+    const bs=(b.contexts||[]).filter(c=>simActiveCtx[c.toLowerCase()]).length;
+    return bs>as?b:a;
+  });
+}
+
+// Presents an intent: updates active context state, shows bot message, highlights node.
+function simPresentIntent(intent){
+  simCurrentIntentId=intent.id;
+  simActiveCtx=getActiveCtxState(simActiveCtx,intent);
+  const param=intent.parameters[0];
+  const hint=param?mkHint(param.dataType):'';
+  const fb=simFindFallback(intent.id);
+  $('sim-fb-btn').style.display=fb?'inline-block':'none';
+  setTimeout(()=>{
+    simMsg(intent.botText||'(no message)','bot');
+    simQR(intent.quickReplies);
+    simHL(intent.id);
+    $('sim-hint-text').textContent=hint;
+    const node=G.nodes.find(n=>n.id===intent.id);
+    if(node&&node.type==='end') setTimeout(()=>simSys('— Conversation ended —'),350);
+  },300);
+}
+
+function simHandle(text){
+  if(!text.trim()) return;
+  simMsg(text,'user');
+  $('sim-qr').innerHTML='';
+  $('sim-input').value='';
+  simContinue();
+}
+function simContinue(){
+  const node=G.nodes.find(n=>n.id===simCurrentIntentId);
+  if(node&&node.type==='end'){$('sim-hint-text').textContent='';simSys('— Conversation ended —');return;}
+  const next=simFindNext();
+  if(!next){$('sim-hint-text').textContent='';simSys('— No matching intent found —');return;}
+  simPresentIntent(next);
+}
+function startSim(){
+  simCurrentIntentId=null;
+  simActiveCtx={};
+  $('sim-msgs').innerHTML='';
+  $('sim-qr').innerHTML='';
+  $('sim-hint-text').textContent='';
+  $('sim-fb-btn').style.display='none';
+  simSys('— Conversation started —');
+  const startIntent=Object.values(G.intents).find(i=>i.events.includes('WELCOME'));
+  if(!startIntent){simSys('No Welcome intent found.');return;}
+  simPresentIntent(startIntent);
+}
+
+$('btn-sim-toggle').addEventListener('click',()=>{
+  const hidden=$('sim').classList.toggle('hidden');
+  $('btn-sim-toggle').classList.toggle('active',!hidden);
+  if(!hidden) startSim();
+});
+$('sim-reset').addEventListener('click',startSim);
+$('sim-send').addEventListener('click',()=>simHandle($('sim-input').value));
+$('sim-fb-btn').addEventListener('click',()=>{
+  const fb=simFindFallback(simCurrentIntentId);
+  if(!fb) return;
+  simSys('— fallback triggered —');
+  setTimeout(()=>{ simMsg(fb.botText||'(no fallback message)','bot'); simHL(fb.id); },300);
+});
+$('sim-input').addEventListener('keydown',e=>{ if(e.key==='Enter') simHandle($('sim-input').value); });
+
+// ══════════════════════════════════════════════════════
+// HELP MODAL
+// ══════════════════════════════════════════════════════
+$('btn-help').addEventListener('click',  ()=>sh('modal-help'));
+$('help-close').addEventListener('click',()=>hd('modal-help'));
+$('modal-help').addEventListener('click',e=>{ if(e.target===$('modal-help')) hd('modal-help'); });
+
+// ══════════════════════════════════════════════════════
+// LAUNCH
+// ══════════════════════════════════════════════════════
+function updateHeader(){
+  $('agent-name').textContent=G.agent.displayName||'Dialogflow Agent';
+  const parts=[];
+  if(G.agent.language)            parts.push(`Lang: ${G.agent.language}`);
+  if(G.agent.timezone)            parts.push(G.agent.timezone);
+  if(G.pkg.version)               parts.push(`v${G.pkg.version}`);
+  if(G.agent.mlMinConfidence!=null) parts.push(`ML conf: ${G.agent.mlMinConfidence}`);
+  $('agent-meta').textContent=parts.join(' · ');
+}
+
+async function launchApp(){
+  buildGraph();
+  updateHeader();
+  hd('screen-drop'); sh('screen-app');
+  renderSVG();
+  buildEntitiesPanel();
+  hideLoad();
+  setTimeout(fitView,120);
+}
+
+$('btn-new-agent').addEventListener('click',()=>{
+  hd('screen-app'); sh('screen-drop'); clearErr();
+  $('panel-detail').classList.remove('open');
+  $('panel-entities').classList.remove('open');
+  $('sim').classList.add('hidden');
+  $('btn-sim-toggle').classList.remove('active');
+  $('btn-ent-toggle').classList.remove('active');
+  svgScale=1; vpX=0; vpY=0;
+  layoutDir='TD'; $('btn-layout-dir').textContent='↕ Top-Down';
+});
+
+// ══════════════════════════════════════════════════════
+// DROP ZONE & FILE INPUT
+// ══════════════════════════════════════════════════════
+const dropZone=$('drop-zone');
+dropZone.addEventListener('dragover',e=>{ e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave',()=>dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop',async e=>{
+  e.preventDefault(); dropZone.classList.remove('drag-over'); clearErr();
+  const files=e.dataTransfer.files;
+  if(!files.length) return;
+  try {
+    if(files.length===1 && files[0].name.endsWith('.zip')) await loadZip(files[0]);
+    else await loadFiles(files);
+    await launchApp();
+  } catch(err){ hideLoad(); showErr('Error: '+err.message); console.error(err); }
+});
+
+$('btn-upload-zip').addEventListener('click',()=>$('input-zip').click());
+$('input-zip').addEventListener('change',async e=>{
+  const f=e.target.files[0]; if(!f) return; clearErr();
+  try { await loadZip(f); await launchApp(); }
+  catch(err){ hideLoad(); showErr('Error reading ZIP: '+err.message); console.error(err); }
+  e.target.value='';
+});
+
+// ══════════════════════════════════════════════════════
+// SIMULATOR DRAG
+// ══════════════════════════════════════════════════════
+(function(){
+  const sim=$('sim');
+  const hdr=sim.querySelector('.sim-hdr');
+  let dragging=false, offX=0, offY=0;
+  hdr.addEventListener('mousedown',e=>{
+    if(e.button!==0) return;
+    dragging=true;
+    const r=sim.getBoundingClientRect();
+    offX=e.clientX-r.left; offY=e.clientY-r.top;
+    hdr.classList.add('dragging');
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove',e=>{
+    if(!dragging) return;
+    let nx=e.clientX-offX, ny=e.clientY-offY;
+    nx=Math.max(0,Math.min(window.innerWidth-sim.offsetWidth,nx));
+    ny=Math.max(0,Math.min(window.innerHeight-sim.offsetHeight,ny));
+    sim.style.left=nx+'px'; sim.style.top=ny+'px';
+    sim.style.bottom='auto'; sim.style.right='auto';
+  });
+  document.addEventListener('mouseup',()=>{ dragging=false; hdr.classList.remove('dragging'); });
+})();
+</script>
+</body>
+</html>
