@@ -120,10 +120,10 @@ input{font-family:inherit}
 .sim-inp:focus{border-color:var(--accent)}
 #sim-hint{display:flex;align-items:center;gap:8px;padding:3px 10px 6px;min-height:22px}
 #sim-hint-text{font-size:10px;color:var(--amber);line-height:1.4;flex:1}
+#sim-fb-btn{display:none;padding:3px 9px;background:transparent;border:1px solid var(--amber);border-radius:4px;color:var(--amber);font-size:10px;white-space:nowrap}
+#sim-fb-btn:hover{background:var(--amber);color:#1a1d2e}
 .sim-snd{background:var(--accent);border:none;border-radius:6px;color:#fff;padding:6px 11px;font-size:12px;transition:background .2s,color .2s}
 .sim-snd:hover{background:#4f46e5}
-.sim-snd.skip-mode{background:var(--amber);color:#1a1d2e}
-.sim-snd.skip-mode:hover{background:#d97706}
 
 /* Help Modal */
 #modal-help{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100;display:flex;align-items:center;justify-content:center;padding:20px}
@@ -202,6 +202,7 @@ input{font-family:inherit}
     <button class="tbtn" id="btn-zoom-in">＋ Zoom</button>
     <button class="tbtn" id="btn-zoom-out">－ Zoom</button>
     <button class="tbtn" id="btn-fit">⊡ Fit</button>
+    <button class="tbtn" id="btn-layout-dir" title="Toggle graph layout direction">↕ Top-Down</button>
     <div class="tb-sep"></div>
     <button class="tbtn" id="btn-sim-toggle">💬 Simulate</button>
     <button class="tbtn" id="btn-ent-toggle">🗂 Entities</button>
@@ -253,7 +254,7 @@ input{font-family:inherit}
         <input class="sim-inp" id="sim-input" placeholder="Type a reply…">
         <button class="sim-snd" id="sim-send">→</button>
       </div>
-      <div id="sim-hint"><span id="sim-hint-text"></span></div>
+      <div id="sim-hint"><span id="sim-hint-text"></span><button id="sim-fb-btn">↩ Fallback</button></div>
     </div>
   </div>
 </div>
@@ -290,7 +291,7 @@ input{font-family:inherit}
         <li><span class="cbadge">Slot filling</span> <strong>Not simulated</strong> — <code>webhookForSlotFilling</code> behaviour is not replicated.</li>
         <li><span class="cbadge">Language</span> <strong>English only</strong> — only <code>_usersays_en.json</code> files are parsed. Other language files are ignored.</li>
         <li><span class="cbadge">Conditions</span> <strong>Conditional responses not evaluated</strong> — <code>conditionalResponses</code> are shown in the detail panel but not acted on.</li>
-        <li><span class="cbadge">Layout</span> <strong>Heuristic layout</strong> — graph is laid out from context chains using a topological BFS. Agents with complex branching, parallel paths, or loops may have overlapping edges.</li>
+        <li><span class="cbadge">Layout</span> <strong>BFS multi-column layout</strong> — nodes at the same depth are spread horizontally; branches and parallel paths each get their own column. Cyclic flows or very wide agents may still produce overlapping edges. Manual drag-to-reposition is not included.</li>
         <li><span class="cbadge">Sys entities</span> <strong>System entities approximated</strong> — <code>@sys.email</code>, <code>@sys.phone-number</code> etc. use JS regex approximations, not Google's actual extractors.</li>
         <li><span class="cbadge">Rich responses</span> <strong>Partial rendering</strong> — <code>type 0</code> (text) and <code>type 4</code> (custom payload + quick replies) are fully rendered. Cards, images, and other types show a placeholder.</li>
         <li><span class="cbadge">Loops</span> <strong>Cyclic context chains</strong> are not detected and may render incorrectly.</li>
@@ -316,9 +317,10 @@ let G = {
   agent:{}, pkg:{},
   entities:{},   // name → { def, entries[] }
   intents:{},    // id  → intent object
+  ctxIndex:{},   // ctx → { input: Set<name>, output: Set<name> }
   nodes:[], edges:[],
-  simFlow:[],
 };
+let layoutDir = 'TD'; // 'TD' = top-down, 'LR' = left-right
 
 // ══════════════════════════════════════════════════════
 // UTILS
@@ -453,7 +455,7 @@ function attachUsersays(j, path) {
 // FILE LOADING PIPELINE
 // ══════════════════════════════════════════════════════
 async function processFileMap(fileMap) {
-  G = { agent:{}, pkg:{}, entities:{}, intents:{}, nodes:[], edges:[], simFlow:[] };
+  G = { agent:{}, pkg:{}, entities:{}, intents:{}, ctxIndex:{}, nodes:[], edges:[] };
 
   const intentQ=[], usersaysQ=[], entryQ=[];
 
@@ -546,77 +548,206 @@ function buildGraph() {
     G.nodes.push(node);
   }
 
-  // Build edges
-  for (const src of intentList) {
-    const srcOut = (src.affectedContexts||[]).map(c=>c.name.toLowerCase());
-
-    for (const dst of intentList) {
-      if (dst.id===src.id) continue;
-
-      // Explicit fallback via parentId
-      if (dst.parentId && dst.parentId===src.id) {
-        if (!G.edges.find(e=>e.from===src.id&&e.to===dst.id))
-          G.edges.push({ from:src.id, to:dst.id, label:'fallback', dashed:true });
-        continue;
-      }
-
-      // Context match (non-fallback only)
-      if (dst.fallbackIntent) continue;
-      const dstIn = (dst.contexts||[]).map(c=>c.toLowerCase());
-      if (!dstIn.length) continue;
-      const shared = srcOut.filter(c=>dstIn.includes(c));
-      if (shared.length && !G.edges.find(e=>e.from===src.id&&e.to===dst.id)) {
-        const lbl = src.quickReplies.length
-          ? src.quickReplies.join(' / ').substring(0,32)
-          : shared[0].substring(0,32);
-        G.edges.push({ from:src.id, to:dst.id, label:lbl, dashed:false });
-      }
-    }
-  }
+  // Build edges and compute intent relationships via context-aware traversal
+  buildCtxIndex();
+  G.edges = computeEdgesAndRelationships();
 
   // Layout
   layout(nodeById);
 }
 
 function layout(nodeById) {
-  const CX=420, Y0=70, DY=160, FB_DX=290;
-  const start = G.nodes.find(n=>n.type==='start');
-  const gfb   = G.nodes.find(n=>n.type==='global_fallback');
+  // Build intent-name → node-id map
+  const nameToId={};
+  for (const n of G.nodes) {
+    const intent=G.intents[n.id];
+    if(intent) nameToId[intent.name]=n.id;
+  }
 
-  // BFS along non-dashed edges from start
-  const depth={};
-  if (start) {
-    const q=[{id:start.id,d:0}];
-    const vis=new Set();
-    while(q.length){
-      const {id,d}=q.shift();
-      if(vis.has(id)) continue;
-      vis.add(id); depth[id]=d;
-      G.edges.filter(e=>e.from===id&&!e.dashed).forEach(e=>{
-        if(!vis.has(e.to)&&depth[e.to]===undefined) q.push({id:e.to,d:d+1});
-      });
+  // BFS level assignment using computed outputIntents
+  const levels={};
+  const visited=new Set();
+  const rootIds=G.nodes
+    .filter(n=>{const i=G.intents[n.id];return i&&!i.fallbackIntent&&!(i.inputIntents||[]).length;})
+    .map(n=>n.id);
+
+  const queue=rootIds.map(id=>({id,level:0}));
+  while(queue.length){
+    const {id,level}=queue.shift();
+    if(visited.has(id)) continue;
+    visited.add(id);
+    if(!levels[level]) levels[level]=[];
+    levels[level].push(id);
+    const intent=G.intents[id];
+    for(const outName of (intent?.outputIntents||[])){
+      const outId=nameToId[outName];
+      if(outId&&!visited.has(outId)) queue.push({id:outId,level:level+1});
     }
   }
-  // Assign un-visited
-  let mx=Math.max(0,...Object.values(depth));
-  for (const n of G.nodes) {
-    if (depth[n.id]===undefined && n.type!=='global_fallback' && n.type!=='fallback') depth[n.id]=++mx;
+  let mx=Math.max(0,...Object.keys(levels).map(Number));
+  for(const n of G.nodes){
+    if(!visited.has(n.id)&&!G.intents[n.id]?.fallbackIntent){
+      mx++;
+      if(!levels[mx]) levels[mx]=[];
+      levels[mx].push(n.id);
+      visited.add(n.id);
+    }
   }
 
-  // Position main chain
-  for (const n of G.nodes) {
-    if (n.type==='fallback'||n.type==='global_fallback') continue;
-    n.x=CX; n.y=Y0+(depth[n.id]||0)*DY;
+  if(layoutDir==='LR'){
+    // Left-to-right: level drives X, nodes within a level spread on Y
+    const X0=80, CY=300, DX=260, DY=160, FB_DY=160;
+    for(const [level,ids] of Object.entries(levels)){
+      const x=X0+parseInt(level)*DX;
+      const startY=CY-((ids.length-1)*DY)/2;
+      ids.forEach((id,i)=>{
+        const n=nodeById[id];
+        if(n){n.x=x; n.y=startY+i*DY;}
+      });
+    }
+    for(const n of G.nodes){
+      const intent=G.intents[n.id];
+      if(!intent?.fallbackIntent) continue;
+      if(intent.parentId){
+        const parent=nodeById[intent.parentId];
+        n.x=parent?.x||X0;
+        n.y=(parent?.y||CY)+FB_DY;
+      } else {
+        n.x=X0; n.y=CY+FB_DY*2;
+      }
+    }
+  } else {
+    // Top-down (default): level drives Y, nodes within a level spread on X
+    const CX=420, Y0=70, DY=160, DX=240, FB_DX=260;
+    for(const [level,ids] of Object.entries(levels)){
+      const y=Y0+parseInt(level)*DY;
+      const startX=CX-((ids.length-1)*DX)/2;
+      ids.forEach((id,i)=>{
+        const n=nodeById[id];
+        if(n){n.x=startX+i*DX; n.y=y;}
+      });
+    }
+    for(const n of G.nodes){
+      const intent=G.intents[n.id];
+      if(!intent?.fallbackIntent) continue;
+      if(intent.parentId){
+        const parent=nodeById[intent.parentId];
+        n.x=(parent?.x||CX)+FB_DX;
+        n.y=parent?.y||Y0;
+      } else {
+        n.x=CX+FB_DX*2; n.y=Y0;
+      }
+    }
   }
-  // Position fallbacks beside parent
-  for (const n of G.nodes) {
-    if (n.type!=='fallback') continue;
-    const parent = nodeById[G.intents[n.id]?.parentId];
-    n.x = (parent?.x||CX) + FB_DX;
-    n.y = parent?.y||Y0;
+}
+
+// ══════════════════════════════════════════════════════
+// CONTEXT INDEX & RELATIONSHIP TRAVERSAL (ported from app.js)
+// ══════════════════════════════════════════════════════
+function buildCtxIndex() {
+  const idx = {};
+  for (const intent of Object.values(G.intents)) {
+    for (const ctx of (intent.contexts || [])) {
+      const k = ctx.toLowerCase();
+      if (!idx[k]) idx[k] = { input: new Set(), output: new Set() };
+      idx[k].input.add(intent.name);
+    }
+    for (const { name: ctxName, lifespan } of (intent.affectedContexts || [])) {
+      const k = ctxName.toLowerCase();
+      if (!idx[k]) idx[k] = { input: new Set(), output: new Set() };
+      if (typeof lifespan === 'number' && lifespan > 0) idx[k].output.add(intent.name);
+    }
   }
-  // Global fallback: top right
-  if (gfb) { gfb.x=CX+FB_DX+20; gfb.y=Y0; }
+  G.ctxIndex = idx;
+}
+
+// Returns new active context state after an intent fires:
+// decrements existing lifespans by 1 (removing expired), then applies intent's output contexts.
+function getActiveCtxState(activeCtx, intent) {
+  const next = {};
+  for (const [k, v] of Object.entries(activeCtx)) {
+    if (v - 1 > 0) next[k] = v - 1;
+  }
+  for (const { name: ctxName, lifespan } of (intent.affectedContexts || [])) {
+    const k = ctxName.toLowerCase();
+    if (typeof lifespan === 'number' && lifespan > 0) {
+      next[k] = Math.max(next[k] || 0, lifespan);
+    }
+  }
+  return next;
+}
+
+// Returns non-fallback intents whose ALL input contexts are currently active.
+// This is the intersection requirement: every input context must be satisfied.
+function findMatchingIntents(activeCtx) {
+  return Object.values(G.intents).filter(intent => {
+    if (intent.fallbackIntent) return false;
+    const inputCtxs = (intent.contexts || []).map(c => c.toLowerCase());
+    if (!inputCtxs.length) return false;
+    return inputCtxs.every(ctx => activeCtx[ctx] !== undefined);
+  });
+}
+
+// Traverses the intent graph from root intents, tracking active context state at each step.
+// Populates intent.inputIntents, intent.outputIntents, intent.hasOperatorRequest.
+// Returns edges array built from discovered transitions.
+function computeEdgesAndRelationships() {
+  const intentByName = {};
+  for (const intent of Object.values(G.intents)) {
+    intentByName[intent.name] = intent;
+    intent.inputIntents = [];
+    intent.outputIntents = [];
+    intent.hasOperatorRequest = (intent.affectedContexts || []).some(c => c.name === 'operator_request');
+  }
+
+  const edgeMap = new Map();
+  // Visited key: "parentName->intentName[ctx1,ctx2,...]" — prevents same transition+context repeating (cycle detection)
+  const visited = new Set();
+
+  function traverse(intentName, parentName, activeCtx) {
+    const intent = intentByName[intentName];
+    if (!intent) return;
+    const ctxKey = `${parentName}->${intentName}[${Object.keys(activeCtx).sort().join(',')}]`;
+    if (visited.has(ctxKey)) return;
+    visited.add(ctxKey);
+
+    if (parentName && intentByName[parentName]) {
+      const par = intentByName[parentName];
+      if (!intent.inputIntents.includes(parentName)) intent.inputIntents.push(parentName);
+      if (!par.outputIntents.includes(intentName)) par.outputIntents.push(intentName);
+      const ek = `${par.id}->${intent.id}`;
+      if (!edgeMap.has(ek)) {
+        const lbl = par.quickReplies.length
+          ? par.quickReplies.join(' / ').substring(0, 32)
+          : (intent.contexts[0] || '').substring(0, 32);
+        edgeMap.set(ek, { from: par.id, to: intent.id, label: lbl, dashed: false });
+      }
+    }
+
+    const newCtx = getActiveCtxState(activeCtx, intent);
+    for (const next of findMatchingIntents(newCtx)) {
+      traverse(next.name, intentName, newCtx);
+    }
+  }
+
+  // Seed traversal from root intents: non-fallback, no input contexts
+  for (const intent of Object.values(G.intents)) {
+    if (!intent.fallbackIntent && !(intent.contexts || []).length) {
+      traverse(intent.name, null, {});
+    }
+  }
+
+  // Fallback edges via parentId
+  for (const intent of Object.values(G.intents)) {
+    if (intent.fallbackIntent && intent.parentId) {
+      const ek = `${intent.parentId}->${intent.id}`;
+      if (!edgeMap.has(ek)) {
+        edgeMap.set(ek, { from: intent.parentId, to: intent.id, label: 'fallback', dashed: true });
+      }
+    }
+  }
+
+  return Array.from(edgeMap.values());
 }
 
 // ══════════════════════════════════════════════════════
@@ -794,6 +925,17 @@ $('btn-zoom-out').addEventListener('click',()=>{
   const w=$('canvas-wrap'); zoomAt(1-ZOOM_STEP, w.clientWidth/2, w.clientHeight/2);
 });
 $('btn-fit').addEventListener('click',()=>fitView());
+$('btn-layout-dir').addEventListener('click',()=>{
+  if(!G.nodes.length) return;
+  layoutDir = layoutDir==='TD' ? 'LR' : 'TD';
+  $('btn-layout-dir').textContent = layoutDir==='TD' ? '↕ Top-Down' : '↔ Left-Right';
+  // Re-layout and re-render without re-parsing
+  const nodeById={};
+  G.nodes.forEach(n=>nodeById[n.id]=n);
+  layout(nodeById);
+  renderSVG();
+  setTimeout(fitView,50);
+});
 
 // ══════════════════════════════════════════════════════
 // DETAIL PANEL
@@ -823,6 +965,9 @@ function showDetail(nodeId){
   if(intent.webhookUsed) h+=`<div class="ps"><div class="ps-label">Webhook</div><div>${tag('webhookUsed','tag-param')}${intent.webhookForSlotFilling?tag('slotFilling','tag-param'):''}</div></div>`;
   if(intent.parentId){ const par=G.intents[intent.parentId]; h+=`<div class="ps"><div class="ps-label">Parent Intent</div><div class="ps-value" style="font-size:11px">${esc(par?.name||intent.parentId)}</div></div>`; }
   if(intent.events.length) h+=`<div class="ps"><div class="ps-label">Events</div><div>${intent.events.map(e=>tag(e,'tag-ctx')).join('')}</div></div>`;
+  if(intent.inputIntents&&intent.inputIntents.length) h+=`<div class="ps"><div class="ps-label">Reached From</div><div>${intent.inputIntents.map(n=>tag(esc(n),'tag-ctx')).join('')}</div></div>`;
+  if(intent.outputIntents&&intent.outputIntents.length) h+=`<div class="ps"><div class="ps-label">Leads To</div><div>${intent.outputIntents.map(n=>tag(esc(n),'tag-out')).join('')}</div></div>`;
+  if(intent.hasOperatorRequest) h+=`<div class="ps"><div class="ps-label">Operator Handoff</div><div>${tag('operator_request','tag-param')}</div></div>`;
 
   $('pd-body').innerHTML=h;
   $('panel-detail').classList.add('open');
@@ -869,67 +1014,33 @@ $('btn-ent-toggle').addEventListener('click',()=>{
 $('pe-close').addEventListener('click',()=>{ $('panel-entities').classList.remove('open'); $('btn-ent-toggle').classList.remove('active'); });
 
 // ══════════════════════════════════════════════════════
-// SIMULATOR
+// SIMULATOR (dynamic, context-state-driven)
 // ══════════════════════════════════════════════════════
-function mkValidator(dataType){
-  if(!dataType) return {fn:()=>true,hint:''};
+// Returns a format hint string for display only — no validation is performed.
+function mkHint(dataType){
+  if(!dataType) return '';
   const dt=dataType.toLowerCase();
-  if(dt==='@sys.email')        return {fn:v=>/\S+@\S+\.\S+/.test(v),             hint:'Expected: email address — e.g. name@example.com'};
-  if(dt==='@sys.phone-number') return {fn:v=>/[\d\s\-\+\(\)]{7,}/.test(v),       hint:'Expected: phone number — e.g. +1 415 555 0100 or 555-1234'};
-  if(dt==='@sys.number')       return {fn:v=>/^\s*-?\d+(\.\d+)?\s*$/.test(v),    hint:'Expected: a number — e.g. 42'};
-  if(dt==='@sys.any')          return {fn:()=>true,                               hint:''};
-  if(dt==='@sys.given-name')   return {fn:v=>v.trim().length>0,                   hint:'Expected: a first name — e.g. Alex'};
-  if(dt==='@sys.date')         return {fn:v=>v.trim().length>1,                   hint:'Expected: a date — e.g. tomorrow, March 5, or 2025-03-05'};
+  if(dt==='@sys.email')        return 'Format hint: email address — e.g. name@example.com';
+  if(dt==='@sys.phone-number') return 'Format hint: phone number — e.g. +1 415 555 0100';
+  if(dt==='@sys.number')       return 'Format hint: a number — e.g. 42';
+  if(dt==='@sys.any')          return '';
+  if(dt==='@sys.given-name')   return 'Format hint: a first name — e.g. Alex';
+  if(dt==='@sys.date')         return 'Format hint: a date — e.g. tomorrow, March 5, or 2025-03-05';
   const entName=dataType.replace(/^@/,'');
   const ent=G.entities[entName];
   if(ent){
-    if(ent.def.isRegexp && ent.entries.length){
-      const pats=ent.entries.map(e=>{ try{return new RegExp(e.value,'i')}catch{return null} }).filter(Boolean);
-      const hint=ent.entries.length?`Expected pattern: ${ent.entries[0].value}`:'';
-      if(pats.length) return {fn:v=>pats.some(p=>p.test(v)),hint};
-    }
+    if(ent.def.isRegexp&&ent.entries.length) return `Format hint: pattern — ${ent.entries[0].value}`;
     if(ent.entries.length){
-      const syns=ent.entries.flatMap(e=>[e.value,...(e.synonyms||[])]).map(s=>s.toLowerCase());
       const examples=ent.entries.slice(0,3).map(e=>e.value).join(', ');
-      return {fn:v=>syns.includes(v.toLowerCase().trim()),hint:`Expected one of: ${examples}`};
+      return `Format hint: one of — ${examples}`;
     }
   }
-  return {fn:v=>v.trim().length>0,hint:''};
+  return '';
 }
 
-function buildSimFlow(){
-  G.simFlow=[];
-  const nodeMap={};
-  G.nodes.forEach(n=>nodeMap[n.id]=n);
-  let cur=G.nodes.find(n=>n.type==='start');
-  if(!cur) return;
-  const visited=new Set();
-  while(cur && !visited.has(cur.id)){
-    visited.add(cur.id);
-    const intent=G.intents[cur.id];
-    if(!intent) break;
-    const fbEdge=G.edges.find(e=>e.from===cur.id&&e.dashed);
-    const fbNode=fbEdge?nodeMap[fbEdge.to]:null;
-    const fbIntent=fbNode?G.intents[fbNode.id]:null;
-    const param=intent.parameters[0];
-    const v=param?mkValidator(param.dataType):{fn:null,hint:''};
-    G.simFlow.push({
-      nodeId:cur.id,
-      botText:intent.botText||'(no message)',
-      quickReplies:intent.quickReplies,
-      validator:v.fn,
-      hint:v.hint,
-      fallbackText:fbIntent?.botText||null,
-      fallbackNodeId:fbNode?.id||null,
-    });
-    if(cur.type==='end') break;
-    const nextEdge=G.edges.find(e=>e.from===cur.id&&!e.dashed);
-    cur=nextEdge?nodeMap[nextEdge.to]:null;
-  }
-}
-
-let simIdx=0;
-let simValidationFailed=false; // true after first failure — next attempt overrides
+// Dynamic simulator state — tracks active contexts and current intent instead of a pre-computed path.
+let simCurrentIntentId = null;
+let simActiveCtx = {}; // { ctxName: lifespan } — decrements each turn
 
 function simMsg(text,role){
   const d=document.createElement('div');
@@ -958,65 +1069,70 @@ function simQR(qrs){
     a.appendChild(b);
   });
 }
-function simSetSkipMode(on){
-  const btn=$('sim-send');
-  if(on){ btn.classList.add('skip-mode'); btn.textContent='Skip →'; btn.title='Click to skip validation and continue'; }
-  else  { btn.classList.remove('skip-mode'); btn.textContent='→'; btn.title=''; }
+// Returns the fallback child intent of the given intent (via dashed edge), or null.
+function simFindFallback(intentId){
+  const fbEdge=G.edges.find(e=>e.from===intentId&&e.dashed);
+  return fbEdge?G.intents[fbEdge.to]:null;
 }
 
-function simStep(idx){
-  if(idx>=G.simFlow.length){ simSys('— Conversation ended —'); $('sim-hint-text').textContent=''; simSetSkipMode(false); return; }
-  simIdx=idx;
-  simValidationFailed=false;
-  simSetSkipMode(false);
-  const s=G.simFlow[idx];
-  $('sim-hint-text').textContent=s.hint||'';
-  setTimeout(()=>{ simMsg(s.botText,'bot'); simQR(s.quickReplies); simHL(s.nodeId); },300);
+// Finds the best next intent given current active context state.
+// Uses intersection logic: ALL input contexts of a candidate must be active.
+// Among ties, picks the candidate with the most matching contexts (most specific).
+function simFindNext(){
+  const candidates=findMatchingIntents(simActiveCtx)
+    .filter(i=>i.id!==simCurrentIntentId);
+  if(!candidates.length) return null;
+  return candidates.reduce((a,b)=>{
+    const as=(a.contexts||[]).filter(c=>simActiveCtx[c.toLowerCase()]).length;
+    const bs=(b.contexts||[]).filter(c=>simActiveCtx[c.toLowerCase()]).length;
+    return bs>as?b:a;
+  });
 }
+
+// Presents an intent: updates active context state, shows bot message, highlights node.
+function simPresentIntent(intent){
+  simCurrentIntentId=intent.id;
+  simActiveCtx=getActiveCtxState(simActiveCtx,intent);
+  const param=intent.parameters[0];
+  const hint=param?mkHint(param.dataType):'';
+  const fb=simFindFallback(intent.id);
+  $('sim-fb-btn').style.display=fb?'inline-block':'none';
+  setTimeout(()=>{
+    simMsg(intent.botText||'(no message)','bot');
+    simQR(intent.quickReplies);
+    simHL(intent.id);
+    $('sim-hint-text').textContent=hint;
+    const node=G.nodes.find(n=>n.id===intent.id);
+    if(node&&node.type==='end') setTimeout(()=>simSys('— Conversation ended —'),350);
+  },300);
+}
+
 function simHandle(text){
-  if(!text.trim()){
-    // Empty input while in skip mode → treat as skip
-    if(simValidationFailed){ simDoSkip(); return; }
-    return;
-  }
-  // Skip mode: send button was clicked (or Enter) — skip validation
-  if(simValidationFailed && $('sim-send').classList.contains('skip-mode')){
-    simMsg(text,'user');
-    $('sim-input').value='';
-    $('sim-qr').innerHTML='';
-    // fall through to normal advance below
-    $('sim-hint-text').textContent='';
-    simSetSkipMode(false);
-    simStep(simIdx+1);
-    return;
-  }
+  if(!text.trim()) return;
   simMsg(text,'user');
   $('sim-qr').innerHTML='';
   $('sim-input').value='';
-  const s=G.simFlow[simIdx];
-  if(!s) return;
-  if(s.validator && !s.validator(text)){
-    simValidationFailed=true;
-    setTimeout(()=>{
-      simMsg(s.fallbackText||"I didn't understand, could you try again?",'bot');
-      simQR(s.quickReplies);
-      if(s.fallbackNodeId) simHL(s.fallbackNodeId);
-      $('sim-hint-text').textContent=s.hint||'';
-      simSetSkipMode(true);
-    },300);
-    return;
-  }
-  $('sim-hint-text').textContent='';
-  simSetSkipMode(false);
-  simStep(simIdx+1);
+  simContinue();
 }
-function simDoSkip(){
-  simSys('(validation skipped)');
-  $('sim-hint-text').textContent='';
-  simSetSkipMode(false);
-  simStep(simIdx+1);
+function simContinue(){
+  const node=G.nodes.find(n=>n.id===simCurrentIntentId);
+  if(node&&node.type==='end'){$('sim-hint-text').textContent='';simSys('— Conversation ended —');return;}
+  const next=simFindNext();
+  if(!next){$('sim-hint-text').textContent='';simSys('— No matching intent found —');return;}
+  simPresentIntent(next);
 }
-function startSim(){ $('sim-msgs').innerHTML=''; $('sim-qr').innerHTML=''; simValidationFailed=false; $('sim-hint-text').textContent=''; simSetSkipMode(false); simSys('— Conversation started —'); simStep(0); }
+function startSim(){
+  simCurrentIntentId=null;
+  simActiveCtx={};
+  $('sim-msgs').innerHTML='';
+  $('sim-qr').innerHTML='';
+  $('sim-hint-text').textContent='';
+  $('sim-fb-btn').style.display='none';
+  simSys('— Conversation started —');
+  const startIntent=Object.values(G.intents).find(i=>i.events.includes('WELCOME'));
+  if(!startIntent){simSys('No Welcome intent found.');return;}
+  simPresentIntent(startIntent);
+}
 
 $('btn-sim-toggle').addEventListener('click',()=>{
   const hidden=$('sim').classList.toggle('hidden');
@@ -1024,9 +1140,12 @@ $('btn-sim-toggle').addEventListener('click',()=>{
   if(!hidden) startSim();
 });
 $('sim-reset').addEventListener('click',startSim);
-$('sim-send').addEventListener('click',()=>{
-  if(simValidationFailed && $('sim-send').classList.contains('skip-mode')) simDoSkip();
-  else simHandle($('sim-input').value);
+$('sim-send').addEventListener('click',()=>simHandle($('sim-input').value));
+$('sim-fb-btn').addEventListener('click',()=>{
+  const fb=simFindFallback(simCurrentIntentId);
+  if(!fb) return;
+  simSys('— fallback triggered —');
+  setTimeout(()=>{ simMsg(fb.botText||'(no fallback message)','bot'); simHL(fb.id); },300);
 });
 $('sim-input').addEventListener('keydown',e=>{ if(e.key==='Enter') simHandle($('sim-input').value); });
 
@@ -1056,7 +1175,6 @@ async function launchApp(){
   hd('screen-drop'); sh('screen-app');
   renderSVG();
   buildEntitiesPanel();
-  buildSimFlow();
   hideLoad();
   setTimeout(fitView,120);
 }
@@ -1069,6 +1187,7 @@ $('btn-new-agent').addEventListener('click',()=>{
   $('btn-sim-toggle').classList.remove('active');
   $('btn-ent-toggle').classList.remove('active');
   svgScale=1; vpX=0; vpY=0;
+  layoutDir='TD'; $('btn-layout-dir').textContent='↕ Top-Down';
 });
 
 // ══════════════════════════════════════════════════════

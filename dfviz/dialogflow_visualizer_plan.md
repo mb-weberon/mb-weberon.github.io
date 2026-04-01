@@ -1,4 +1,4 @@
-# Dialogflow Conversation Flow Visualizer — Full Build Plan
+# Dialogflow Conversation Flow Visualizer — Full Build Plan (v2)
 
 ## Overview
 
@@ -67,19 +67,19 @@ Classification is done by simple string matching on the file path — no assumpt
 Extract:
 - `displayName` → shown in header
 - `defaultTimezone`
-- `mlMinConfidence` → shown in help/caveats
+- `mlMinConfidence` → shown in header
 - `language`
 
 ### Package Info (`package.json`)
 Extract:
-- `version` → shown in header/footer
+- `version` → shown in header
 
 ### Entity Definitions (`entities/<name>.json`)
 Extract:
 - `name`
 - `isRegexp` (boolean) → if true, entries are regex patterns
 - `isEnum` (boolean)
-- `isOverridable`
+- `automatedExpansion`
 
 ### Entity Entries (`entities/<name>_entries_en.json`)
 Extract:
@@ -112,39 +112,66 @@ Match to intent by stripping `_usersays_en` suffix from filename and finding the
 
 Extract per entry:
 - `data[]` array — concatenate `text` fields to form the full phrase
-- Annotated segments: `{ text, meta, alias }` where `meta` is the entity type
 
 ---
 
-## Step 3 — Graph Construction
+## Step 3 — Context Index & Graph Construction
 
-### Intent Linking (Context Chain)
-For each pair of intents A and B:
-- If any string in B's `contexts` (input) matches any name in A's `affectedContexts` (output) → draw edge A → B
-- Edge label: the shared context name or the training phrase triggers (quick replies if available)
-- Edge style: solid for happy path, dashed for fallback
+### 3.1 Context Index (`buildCtxIndex`)
+Builds `G.ctxIndex`: maps each context name to the sets of intents that consume it (input) and produce it (output).
 
-### Fallback Linking
-- Fallback intent's `parentId` directly identifies its parent
-- Draw a dashed edge from parent → fallback
-- Fallback node is positioned to the right of its parent
+### 3.2 Active Context State (`getActiveCtxState`)
+Given a `{ ctxName: lifespan }` map and a fired intent:
+- Decrement all current lifespans by 1, remove expired (lifespan ≤ 0)
+- Apply the intent's `affectedContexts`, overwriting with the higher lifespan if already present
 
-### Node Type Detection
+### 3.3 Matching Intents (`findMatchingIntents`)
+Returns non-fallback intents whose **every** input context is currently active (intersection requirement). Intents with no input contexts (roots) are excluded here and seeded separately.
+
+### 3.4 Edge & Relationship Computation (`computeEdgesAndRelationships`)
+BFS/DFS traversal from all root intents (no input contexts, non-fallback):
+
+```
+for each root intent:
+  traverse(intentName, parentName=null, activeCtx={})
+    → record edge parent→intent
+    → compute newCtx = getActiveCtxState(activeCtx, intent)
+    → for each next = findMatchingIntents(newCtx): recurse
+```
+
+Cycle detection key: `"parentName->intentName[ctx1,ctx2,...]"` — same two intents can connect via different context states, but the exact same `(parent, child, activeCtx)` triple is only traversed once.
+
+Populates on each intent:
+- `intent.inputIntents` — names of intents that lead to this one
+- `intent.outputIntents` — names of intents this leads to
+- `intent.hasOperatorRequest` — true if `affectedContexts` contains `operator_request`
+
+Fallback edges added separately via `parentId` linkage (dashed amber edges).
+
+### 3.5 Node Type Detection
 | Condition | Type |
 |---|---|
 | Has `events: [{ name: "WELCOME" }]` | `start` |
 | `fallbackIntent: true` and no `parentId` | `global_fallback` |
 | `fallbackIntent: true` and has `parentId` | `fallback` |
 | Output contexts lead to no other intent | `end` |
-| Has parameters with `@sys.*` or custom entity | `data` |
+| Has parameters | `data` |
 | Everything else | `question` |
 
-### Layout Algorithm
-- **Happy path** (main chain): vertical, top-to-bottom, centred on X=400
-- **Fallback nodes**: horizontally offset (+280px) from their parent node, same Y
-- **Global fallback**: top-right corner
-- **Y spacing**: 160px between main chain nodes
-- Future improvement: force-directed layout for complex agents
+### 3.6 Layout Algorithm
+BFS level assignment using computed `outputIntents`, with two direction modes:
+
+**Top-Down (TD)** — default:
+- Level drives Y (Y0=70, DY=160px)
+- Nodes within a level spread on X (centred at CX=420, DX=240px between siblings)
+- Fallback nodes: offset right of parent (FB_DX=260px), same Y
+
+**Left-Right (LR)**:
+- Level drives X (X0=80, DX=260px)
+- Nodes within a level spread on Y (centred at CY=300, DY=160px)
+- Fallback nodes: below parent (FB_DY=160px), same X
+
+User can toggle between TD and LR via the toolbar button without re-parsing.
 
 ---
 
@@ -153,27 +180,29 @@ For each pair of intents A and B:
 ### 4.1 Drop Zone (initial screen)
 - Large centred drop target
 - Accepts `.zip` file OR multi-file selection
-- Two clearly labelled buttons: "Upload ZIP" and "Select Files"
+- Two labelled buttons: "Upload ZIP" and "Select Unzipped Files"
 - Drag-over highlight state
 - On load: parse files, transition to flow view
-- Error display if files are invalid or unrecognised
+- Error display if files are invalid
 
 ### 4.2 Header
-- Agent `displayName` (from `agent.json`)
-- Language and timezone
-- Agent version (from `package.json`)
-- "Load New Agent" button → resets to drop zone
+- Agent `displayName`
+- Language, timezone, version, ML confidence threshold
+- "Load New Agent" button → resets to drop zone (resets `layoutDir` to TD)
 
 ### 4.3 Toolbar
-- Zoom In / Zoom Out / Reset View
+- Zoom In / Zoom Out / Fit View
+- **Layout Direction** toggle: "↕ Top-Down" ↔ "↔ Left-Right" (re-layouts without re-parsing)
 - Toggle: Simulate
 - Toggle: Entities Panel
 - Help button → opens Help Modal
+- Legend: colour dots for each node type
 
 ### 4.4 Flow Canvas
-- SVG element inside a scrollable/pannable container
-- Pan: mouse drag
-- Zoom: scroll wheel + toolbar buttons
+- SVG element with transform-based pan/zoom
+- Pan: mouse drag on canvas background
+- Zoom: scroll wheel (cursor-anchored) + toolbar buttons
+- Fit: scales and centres all nodes in view
 - Node click → opens Detail Panel
 
 #### Node visual styles
@@ -187,78 +216,59 @@ For each pair of intents A and B:
 | end | Deep red | Red | ✅ |
 
 #### Edge styles
-- Happy path: solid line, grey, arrowhead
-- Fallback: dashed line, amber, arrowhead
-- Highlighted (on node select): purple, thicker
+- Happy path: solid grey line, arrowhead
+- Fallback: dashed amber line, arrowhead
+- Selected node: purple drop-shadow highlight
 
 ### 4.5 Detail Panel (slide-in, right side)
 Shown when a node is clicked. Sections:
 - Intent name + type badge
 - Bot message(s) — verbatim
-- Quick replies (if any)
-- Input contexts (with lifespan badges)
-- Output contexts (with lifespan badges)
-- Parameters table: name / entity type / required / default
-- Training phrases (collapsible list)
+- Quick replies
+- Input contexts
+- Output contexts (with lifespan)
+- Parameters table: name / entity type / required
+- Training phrases (up to 15, collapsible)
 - Action string
 - Webhook used / slot filling flags
 - Parent intent (for fallback nodes)
+- Events
+- **Reached From** — intent names that lead to this node (from computed `inputIntents`)
+- **Leads To** — intent names this node leads to (from computed `outputIntents`)
+- **Operator Handoff** badge — if intent sets `operator_request` context
 
-### 4.6 Entities Panel (slide-in or bottom drawer)
+### 4.6 Entities Panel (slide-in, right side)
 Toggled from toolbar. Shows:
-- Table of all custom entities: name / type (regex/enum/synonym) / language
-- For each entity: expandable row showing all entries/patterns
-- System entities referenced in intents listed separately (`@sys.email`, `@sys.phone-number`, etc.)
-- Which intents reference each entity
+- All custom entities: name / type (regexp/enum/synonym) / entries
+- Regexp entries shown as `/pattern/`
+- System entities referenced in intent parameters listed separately
+- Which intents use each entity
 
-### 4.7 Simulator (bottom-left chat widget)
-- Walks the detected conversation flow
-- Highlights active node on canvas as conversation progresses
-- Shows quick reply buttons where defined
-- Input validation:
-  - `@sys.email` → JS `/\S+@\S+\.\S+/` regex
-  - `@sys.phone-number` → JS `/[\d\s\-\+\(\)]{7,}/` regex
-  - `@sys.any` → accepts anything
-  - `@sys.given-name` → accepts any non-empty string
-  - Custom entity with `isRegexp: true` → uses actual pattern from `_entries_en.json`
-  - Custom entity with synonyms → checks if input matches any synonym value
-- On validation failure: shows fallback bot message, highlights fallback node
-- Reset button to restart conversation
+### 4.7 Simulator (bottom-left floating chat widget)
+- Draggable: grab the header bar to reposition anywhere on screen
+- Dynamic, context-state-driven: tracks `simCurrentIntentId` and `simActiveCtx` per turn
+- Starts at the WELCOME-event intent; each user reply advances to the next matching intent
+- Highlights active node on canvas
+- Quick reply buttons rendered where defined
+- **Format hints** (no validation): shown below the input field for known entity types
+  - `@sys.email` → hint text, not a gate
+  - `@sys.phone-number`, `@sys.number`, `@sys.given-name`, `@sys.date` → hint text
+  - Custom regexp entity → shows the pattern as a hint
+  - Custom synonym entity → shows first 3 example values
+- **↩ Fallback button**: appears when the current intent has a fallback child; click to see the fallback message without advancing the conversation
+- Restart button to replay from the beginning
+- System messages for "Conversation ended" and "No matching intent found"
 
 ### 4.8 Help Modal
-Triggered by Help button in toolbar. Two sections:
-
-#### How to Use
-1. Go to your Dialogflow console
-2. Click the gear icon (Agent Settings) → Export and Import tab
-3. Click "Export as ZIP" and download the file
-4. Open this tool in any modern browser
-5. Drop the downloaded `.zip` onto the drop zone (or click "Upload ZIP")
-6. Alternatively, unzip it first and drag all the files/folders onto the drop zone
-7. The flow renders automatically
-8. Click any node to inspect its full intent definition
-9. Click "Simulate" to walk through the conversation interactively
-10. Click "Entities" to view all custom entity definitions
-
-#### Caveats & Limitations
-- **Simulator uses approximate NLU** — the real Dialogflow uses ML-based intent matching at a configured confidence threshold (`mlMinConfidence`). This tool uses regex/pattern matching only.
-- **Webhook fulfillment is not called** — intents with `webhookUsed: true` will show the static fallback message in the simulator instead of the real webhook response.
-- **Slot filling not simulated** — `webhookForSlotFilling` behaviour is not replicated.
-- **Only English training phrases parsed** — files matching `*_usersays_en.json` are loaded. Other language files (`_usersays_de.json` etc.) are ignored.
-- **Conditional responses not evaluated** — `conditionalResponses` fields are displayed in the detail panel but not acted upon in the simulator.
-- **Google Assistant fields ignored** — `googleAssistant`, `voiceType`, `capabilities` etc. are not visualised.
-- **Layout is heuristic** — the graph layout is computed from context chains using a simple vertical algorithm. Agents with complex branching, loops, or many parallel paths may have overlapping edges. A manual drag-to-reposition feature is not included in v1.
-- **System entities are name-matched only** — `@sys.date`, `@sys.number` etc. are recognised by name and shown in the detail panel, but the simulator does not validate against Google's actual system entity extractors.
-- **Multi-turn context loops** — if your agent has cycles (context A leads back to context A), the layout algorithm will not detect the loop and may render incorrectly.
-- **No support for Mega Agents or sub-agents** — only standard single-agent exports are supported.
-- **No support for Knowledge Bases** — `enabledKnowledgeBaseNames` entries are not parsed or visualised.
-- **Rich response types** — only `type: "0"` (text) and `type: "4"` (custom payload with quick replies) are fully rendered. Card responses, image responses, etc. show a placeholder.
+Triggered by Help button. Two sections:
+- How to export from Dialogflow (steps)
+- How to use the tool (steps)
+- Caveats & Limitations (12 items with coloured badges)
+- Dismiss by button or backdrop click
 
 ---
 
 ## Step 5 — External Dependencies
-
-All loaded from CDN, no install required:
 
 | Library | Version | Purpose | CDN URL |
 |---|---|---|---|
@@ -268,22 +278,20 @@ No other dependencies. SVG rendering, pan/zoom, and all UI are hand-written vani
 
 ---
 
-## Step 6 — Build Order
+## Step 6 — Build Order (original, completed)
 
-Build in this sequence to allow incremental testing:
-
-1. **HTML shell** — full page layout: drop zone, header, toolbar, canvas area, panel placeholders, modal placeholder
-2. **CSS** — all visual styles, colour tokens, transitions, responsive behaviour
-3. **File loader** — ZIP detection, JSZip unzip, multi-file fallback, file classification function
-4. **JSON parsers** — agent, package, entities (definition + entries), intents (main + fallback + usersays)
-5. **Graph builder** — context chain linking, node type detection, edge construction
-6. **Layout engine** — assign X/Y coordinates to nodes and edges
-7. **SVG renderer** — draw nodes, edges, labels, arrowheads; pan/zoom interaction
-8. **Detail panel** — populate all sections from parsed intent data on node click
-9. **Entities panel** — render entity table with expandable rows
-10. **Simulator** — conversation walker, node highlighting, entity-aware validation, reset
-11. **Help modal** — static content, open/close behaviour
-12. **Polish** — loading states, error handling, empty states, edge cases
+1. HTML shell — layout, drop zone, panels, modal
+2. CSS — styles, colour tokens, transitions
+3. File loader — ZIP + multi-file + classification
+4. JSON parsers — agent, package, entities, intents, usersays
+5. Graph builder — context index, traversal, node type detection, edge construction
+6. Layout engine — BFS levels, TD/LR branching, fallback positioning
+7. SVG renderer — nodes, edges, labels, arrowheads, pan/zoom
+8. Detail panel — full intent metadata on node click
+9. Entities panel — entity table
+10. Simulator — dynamic context-aware walk, hints, fallback button
+11. Help modal — static content
+12. Polish — loading states, error handling, header, reset
 
 ---
 
@@ -291,18 +299,35 @@ Build in this sequence to allow incremental testing:
 
 A single file: `dialogflow_visualizer.html`
 
-- ~800–1000 lines
+- ~1250 lines
 - No build step
 - Open in any modern browser (Chrome, Firefox, Safari, Edge)
 - Works fully offline after initial CDN load (JSZip)
-- Shareable — send the `.html` file to anyone; they just open it
+- All agent data stays in the browser — nothing is sent to any server
 
 ---
 
-## Resume Instructions (if build is interrupted)
+## Known Gaps / Possible Future Enhancements
 
-If code generation is cut off mid-build, resume by saying:
+1. **Drag to reposition nodes** — layout is fixed; complex agents may have overlapping edges
+2. **Cyclic context loop detection** — loops are not detected and may render strangely
+3. **Rich response types** — type 1 (card), type 2 (quick reply list), type 3 (image) show no special rendering
+4. **Dialogflow CX support** — CX uses a completely different export schema
+5. **Multi-language usersays** — only `_usersays_en.json` files parsed
+6. **Conditional responses** — `conditionalResponses` array not evaluated
+7. **Knowledge base** — `enabledKnowledgeBaseNames` ignored
+8. **Webhook simulation** — static text only, webhook not called
+9. **Mini-map** — no overview thumbnail for large agents
+10. **Export as PNG/SVG** — no download of the rendered graph
+11. **Followup context skipping** — `app.js` skips contexts ending in `-followup` during traversal; dfviz does not; may cause minor edge differences for agents using Dialogflow's built-in followup intent system
 
-> "Continue the build from Step N — [component name]"
+---
 
-Reference the Build Order in Step 6 above. Each step is independently testable before moving to the next.
+## Resume Instructions
+
+If making changes, resume by sharing:
+1. This plan (`dialogflow_visualizer_plan.md`)
+2. The handoff document (`handoff.md`)
+3. The current HTML file (`dialogflow_visualizer.html`)
+
+Then say: **"Here is the current state of the Dialogflow Visualizer. Please [enhancement/fix]."**
