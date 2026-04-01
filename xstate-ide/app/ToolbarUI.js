@@ -10,13 +10,12 @@ import { html, render } from 'htm/preact';
  * Usage:
  *   const updateToolbar = mountToolbar(
  *     document.getElementById('toolbar-mount'),
- *     { onTest, onRestart, onLoadResults, onSaveFlow, onLoadFlow, onPackProd, onShare, onShareClose, onShareCopy }
+ *     { onTest, onRestart, onSaveResults, onSaveFlow, onSaveFlowFiles, onLoad, onPackProd, onShare, onShareClose, onShareCopy }
  *   );
  *
  *   // Later, update any subset of state:
- *   updateToolbar({ enabledBtns: ['test-btn', 'restart-btn'], saveMode: false });
+ *   updateToolbar({ enabledBtns: ['test-btn', 'restart-btn'] });
  *   updateToolbar({ testRunning: true });
- *   updateToolbar({ onLoadResults: () => downloadTestResults() });
  *   updateToolbar({ shareResult: { url, included } });   // show share popover
  *   updateToolbar({ shareResult: null });                 // hide share popover
  */
@@ -89,18 +88,14 @@ function SharePopover({ shareResult, onShareClose, onShareCopy }) {
 
 function Toolbar(props) {
     const {
-        enabledBtns  = [],
-        saveMode     = false,
-        testRunning  = false,
-        shareResult  = null,
-        onTest, onRestart, onLoadResults, onSaveFlow, onLoadFlow, onPackProd,
+        enabledBtns    = [],
+        testRunning    = false,
+        shareResult    = null,
+        onTest, onRestart, onSaveResults, onSaveFlow, onSaveFlowFiles, onLoad, onPackProd,
         onShare, onShareClose, onShareCopy,
     } = props;
 
-    // A button is enabled if its id is in the enabledBtns array.
-    // load-results-btn is enabled in both load-mode AND save-mode.
-    const en = (id) =>
-        enabledBtns.includes(id) || (id === 'load-results-btn' && saveMode);
+    const en = (id) => enabledBtns.includes(id);
 
     // Disabled buttons get reduced opacity and a not-allowed cursor.
     const st = (id, extra = {}) => ({
@@ -128,27 +123,23 @@ function Toolbar(props) {
             title="Restart conversation"
             onClick=${onRestart}>🔄<br/>Restart</button>
 
-        <button id="load-results-btn"
-            disabled=${!en('load-results-btn')}
-            style=${st('load-results-btn')}
-            title=${saveMode
-                ? 'Save test results as JSON'
-                : 'Load a previously saved test results JSON'}
-            onClick=${onLoadResults}>
-            ${saveMode ? '💾' : '📋'}<br/>${saveMode ? 'Save' : 'Load'}<br/>Results
-        </button>
+        <button id="save-results-btn"
+            disabled=${!en('save-results-btn')}
+            style=${st('save-results-btn')}
+            title="Save test results as ZIP"
+            onClick=${onSaveResults}>💾<br/>Save<br/>Results</button>
 
         <button id="save-flow-btn"
             disabled=${!en('save-flow-btn')}
             style=${st('save-flow-btn', { display: en('save-flow-btn') ? '' : 'none' })}
-            title="Save state machine and services as a ZIP file"
-            onClick=${onSaveFlow}>💾<br/>Save<br/>Flow</button>
+            title="Save flow as ZIP (Shift+click: save machine.json + services.js separately)"
+            onClick=${(e) => e.shiftKey ? onSaveFlowFiles() : onSaveFlow()}>💾<br/>Save<br/>Flow</button>
 
-        <button id="load-flow-btn"
-            disabled=${!en('load-flow-btn')}
-            style=${st('load-flow-btn')}
-            title="Load state machine (.json), services (.js), or both as a ZIP"
-            onClick=${onLoadFlow}>📂<br/>Load<br/>Flow</button>
+        <button id="load-btn"
+            disabled=${!en('load-btn')}
+            style=${st('load-btn')}
+            title="Load flow (.zip, .json, .js) or test results (.zip, .json)"
+            onClick=${onLoad}>📂<br/>Load</button>
 
         <button id="pack-prod-btn"
             disabled=${!en('pack-prod-btn')}
@@ -166,10 +157,6 @@ function Toolbar(props) {
             accept=".zip,.json,.js" multiple
             onChange=${(e) => { window.loadPair?.(e.target.files); e.target.value = ''; }}/>
 
-        <input type="file" id="load-results" style="display:none"
-            accept=".json"
-            onChange=${(e) => { window.loadTestResults?.(e.target.files[0]); e.target.value = ''; }}/>
-
         ${shareResult && html`<div style="position:fixed; inset:0; z-index:999;" onClick=${onShareClose}/>`}
         <${SharePopover} shareResult=${shareResult} onShareClose=${onShareClose} onShareCopy=${onShareCopy}/>
 
@@ -179,19 +166,19 @@ function Toolbar(props) {
 export function mountToolbar(container, initialCallbacks = {}) {
     // All mutable toolbar state lives here. Preact reads it on each render.
     const state = {
-        enabledBtns:   [],
-        saveMode:      false,
-        testRunning:   false,
-        shareResult:   null,
-        onTest:        () => {},
-        onRestart:     () => {},
-        onLoadResults: () => {},
-        onSaveFlow:    () => {},
-        onLoadFlow:    () => {},
-        onPackProd:    () => {},
-        onShare:       () => {},
-        onShareClose:  () => {},
-        onShareCopy:   () => {},
+        enabledBtns:     [],
+        testRunning:     false,
+        shareResult:     null,
+        onTest:          () => {},
+        onRestart:       () => {},
+        onSaveResults:   () => {},
+        onSaveFlow:      () => {},
+        onSaveFlowFiles: () => {},
+        onLoad:          () => {},
+        onPackProd:      () => {},
+        onShare:         () => {},
+        onShareClose:    () => {},
+        onShareCopy:     () => {},
         ...initialCallbacks,
     };
 

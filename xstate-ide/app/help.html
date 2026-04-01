@@ -327,23 +327,35 @@
 }</pre>
 
     <!-- ── The services file ── -->
-    <h2>The Services File (<code>*-services.js</code>)</h2>
+    <h2>The Services File (<code>&lt;id&gt;-services.js</code>)</h2>
     <p>
         A single ES module that exports one object containing all async service
-        functions and guards used by the machine. Because the file is loaded as a
-        <strong>blob URL</strong> at runtime, it must be <strong>fully
-        self-contained</strong> — no relative imports.
+        functions, guards, and sample inputs used by the machine.
+        Name it to match your machine: if your machine id is <code>my_bot</code>,
+        call it <code>my_bot-services.js</code>.
+        Because the file is loaded as a <strong>blob URL</strong> at runtime, it
+        must be <strong>fully self-contained</strong> — no relative imports.
     </p>
 
     <div class="callout">
         Export your services object as a named export
         (<code>export const myServices = {…}</code>) or as the default export
-        (<code>export default {…}</code>). The IDE resolves either.
+        (<code>export default {…}</code>). The name does not matter — the IDE
+        takes the first named export, or the default export if there is no named one.
     </div>
 
-    <h3>Structure</h3>
-    <pre><span class="cm">// Minimal services file structure</span>
+    <h3>Minimal structure</h3>
+    <pre><span class="cm">// my_bot-services.js — fully self-contained, no imports</span>
 <span class="kw">export const</span> myServices = {
+
+  <span class="cm">// ── Sample inputs (required if machine has text-input states) ──</span>
+  <span class="cm">// Keyed by state id (states with meta.input === "text").</span>
+  <span class="cm">// Used by the test runner to fill SUBMIT events during path generation.</span>
+  <span class="cm">// Values must pass any guard on the SUBMIT transition.</span>
+  SAMPLE_INPUTS: {
+    ask_email: <span class="str">'test@example.com'</span>,
+    ask_phone: <span class="str">'4155550123'</span>,
+  },
 
   <span class="cm">// ── Async services ─────────────────────────────────────────────</span>
   <span class="cm">// Each key matches an "invoke.src" name in the machine JSON.</span>
@@ -369,7 +381,6 @@
     <div class="callout">
         If the flow has no services or guards, the services file can be omitted
         entirely — just load the <code>machine.json</code> on its own.
-        An empty <code>services.js</code> also works.
     </div>
 
     <!-- ── The full flow of the realtor example ── -->
@@ -446,29 +457,28 @@
 
     <h3>Sample inputs for text states</h3>
     <p>
-        Export a <code>SAMPLE_INPUTS</code> object from your services file, keyed
-        by state id. This takes precedence over any built-in fallback values:
+        Add a <code>SAMPLE_INPUTS</code> property inside your services object, keyed
+        by state id. The test runner will block until all text-input states have a
+        sample value and will show a dialog with the required snippet if any are missing.
     </p>
-    <pre><span class="cm">// In your *-services.js</span>
+    <pre><span class="kw">export const</span> myServices = {
 
-<span class="cm">// Keyed by the state id of each text-input state (meta.input === "text").</span>
-<span class="cm">// The test runner submits these values when walking that state's SUBMIT path.</span>
-<span class="kw">export const</span> SAMPLE_INPUTS = {
-  ask_email:           <span class="str">'test@example.com'</span>,
-  ask_phone:           <span class="str">'4155550123'</span>,
-  extend_quota_check:  <span class="str">'extend'</span>,   <span class="cm">// value that passes the noActiveExtensionExists guard</span>
-  upgrade_plan_check:  <span class="str">'Pro'</span>,
-  downgrade_plan_check:<span class="str">'Starter'</span>,
-};
+  <span class="cm">// Keyed by state id (states with meta.input === "text").</span>
+  <span class="cm">// The test runner submits these values on each SUBMIT step.</span>
+  SAMPLE_INPUTS: {
+    ask_email:           <span class="str">'test@example.com'</span>,
+    ask_phone:           <span class="str">'4155550123'</span>,
+    extend_quota_check:  <span class="str">'extend'</span>,
+    upgrade_plan_check:  <span class="str">'Pro'</span>,
+    downgrade_plan_check:<span class="str">'Starter'</span>,
+  },
 
-<span class="kw">export const</span> myServices = {
   <span class="cm">// … async services and guards …</span>
 };</pre>
     <div class="callout">
-        <code>SAMPLE_INPUTS</code> is a <strong>top-level named export</strong>,
-        separate from your services object. The value for each key must pass any
-        guard on the <code>SUBMIT</code> transition — otherwise the test runner
-        will abort that path as a validation failure.
+        Each value must pass any guard on the <code>SUBMIT</code> transition for
+        that state — otherwise the test runner will skip that path as a validation
+        failure.
     </div>
 
     <!-- ── Loading results ── -->

@@ -20,15 +20,15 @@
  *   Runs on every invocation; failures are always reported regardless of mode.
  *
  * Usage (browser console):
- *   await window.smide_contracts()           — auto: check if baseline exists, else capture
- *   await window.smide_contracts('capture')  — force capture baseline
- *   await window.smide_contracts('check')    — force check against baseline
+ *   await window.contracts.smide()           — auto: check if baseline exists, else capture
+ *   await window.contracts.smide('capture')  — force capture baseline
+ *   await window.contracts.smide('check')    — force check against baseline
  *
  * Workflow (first time / after machine or getAllTraces changes):
- *   1. await window.smide_contracts('capture')
+ *   1. await window.contracts.smide('capture')
  *      Downloads smide-baseline.json. Commit it alongside this file.
  *   2. Before/after every change:
- *      await window.smide_contracts()
+ *      await window.contracts.smide()
  *      Compares against saved baseline.
  */
 
@@ -50,7 +50,7 @@ async function loadSmideFixture() {
             import(SMIDE_SERVICES_URL),
         ]);
         _smideMachine  = machine;
-        _smideServices = mod.realtorServices;   // exported under legacy name in smide-services.js
+        _smideServices = mod.smideServices;
     }
     return { machine: _smideMachine, services: _smideServices };
 }
@@ -504,7 +504,7 @@ async function smide_contracts(mode) {
         if (mode === 'capture') {
             console.info(
                 '📋 Smide Contracts — no baseline found.\n' +
-                '   Run: await window.smide_contracts(\'capture\')  to create one.\n' +
+                '   Run: await window.contracts.smide(\'capture\')  to create one.\n' +
                 '   Commit smide-baseline.json alongside this file.'
             );
         }
@@ -551,7 +551,7 @@ async function smide_contracts(mode) {
             baseline = await res.json();
         } catch (e) {
             console.error(`❌ Could not load baseline: ${e.message}`);
-            console.info(`   Run: await window.smide_contracts('capture')  to create one.`);
+            console.info(`   Run: await window.contracts.smide('capture')  to create one.`);
             console.groupEnd();
             return null;
         }
@@ -568,4 +568,5 @@ async function smide_contracts(mode) {
 
 // ── Expose on window ──────────────────────────────────────────────────────────
 
-window.smide_contracts = smide_contracts;
+window.contracts       = window.contracts       || {};
+window.contracts.smide = smide_contracts;

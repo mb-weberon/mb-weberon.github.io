@@ -42,7 +42,7 @@ const HAS_SESSION   = false;
 const BOOT_FAILS    = false;
 const RESTORE_FAILS = false;
 
-export const realtorServices = {
+export const smideServices = {
 
     // ── Async services ────────────────────────────────────────────────────────
 

@@ -38,6 +38,36 @@ function showToast(message, type = 'error') {
 }
 window.showToast = showToast;
 
+// ── FSA availability banner ────────────────────────────────────────────────────
+// Shown on load when the File System Access API is unavailable (Firefox, Safari).
+// Stays pinned until the user dismisses it.
+
+function _showFSAWarningBanner() {
+    const banner = document.createElement('div');
+    banner.id = 'fsa-warning-banner';
+    banner.style.cssText = `
+        position:fixed; top:0; left:0; right:0;
+        background:#78350f; color:#fef3c7;
+        font-family:'Segoe UI',sans-serif; font-size:13px; line-height:1.6;
+        padding:10px 48px 10px 16px;
+        box-shadow:0 2px 8px rgba(0,0,0,0.4);
+        z-index:9998;
+    `;
+    banner.innerHTML = `
+        <strong>⚠ Limited save support in this browser.</strong>
+        Use <strong>Chrome</strong> or <strong>Edge</strong> for full File System Access API support.<br>
+        <span style="opacity:0.85">On this browser: files download to your <em>Downloads</em> folder with an auto-generated name,
+        and the app cannot detect if you cancel a save.</span>
+        <button id="fsa-banner-dismiss" style="
+            position:absolute; top:50%; right:12px; transform:translateY(-50%);
+            background:transparent; border:1px solid #fef3c7; color:#fef3c7;
+            border-radius:4px; padding:2px 8px; cursor:pointer; font-size:12px;
+        ">Dismiss</button>
+    `;
+    document.body.appendChild(banner);
+    document.getElementById('fsa-banner-dismiss').onclick = () => banner.remove();
+}
+
 console.log('📁 Base URL:', BASE);
 
 async function boot() {
@@ -47,6 +77,9 @@ async function boot() {
     // ── Diagram pane — mount first so #mermaid-container exists for blank-slate ─
     const diagramMount = document.getElementById('diagram-mount');
     if (diagramMount) mountDiagramPane(diagramMount);
+
+    // ── FSA availability check ────────────────────────────────────────────────
+    if (!('showSaveFilePicker' in window)) _showFSAWarningBanner();
 
     // ── Version ───────────────────────────────────────────────────────────────
     const version = await loadVersion(BASE);
@@ -62,10 +95,8 @@ async function boot() {
 
     // ── smide-machine — source of truth for toolbar button state ─────────────
     // Each state declares meta.toolbar: an array of enabled button IDs.
-    // "save-results-btn" is a virtual ID meaning the load-results-btn should
-    // show as "💾 Save Results" instead of "📋 Load Results".
     const smideMachine = await fetch(BASE + 'test/smide-machine.json').then(r => r.json());
-    const ALL_TOOLBAR_BTNS = ['test-btn', 'restart-btn', 'load-results-btn', 'save-flow-btn', 'load-flow-btn', 'pack-prod-btn', 'share-btn'];
+    const ALL_TOOLBAR_BTNS = ['test-btn', 'restart-btn', 'save-results-btn', 'save-flow-btn', 'load-btn', 'pack-prod-btn', 'share-btn'];
     let _updateToolbar = null;
     let _updatePane    = null;
     let smideRuntime   = null;
@@ -294,10 +325,11 @@ async function boot() {
                     });
                 }
             },
-            onRestart:     () => { smideRuntime?.send('RESTART'); window._restartRuntime(); },
-            onLoadResults: () => document.getElementById('load-results').click(),
-            onSaveFlow:    () => window.downloadPair(),
-            onLoadFlow:    () => document.getElementById('upload').click(),
+            onRestart:       () => { smideRuntime?.send('RESTART'); window._restartRuntime(); },
+            onSaveResults:   () => { window.downloadTestResults?.().then(ok => { if (ok) smideRuntime?.send('SAVE_RESULTS'); }); },
+            onSaveFlow:      () => window.downloadPair(),
+            onSaveFlowFiles: () => window.downloadFlowFiles(),
+            onLoad:          () => document.getElementById('upload').click(),
             onPackProd:    () => window.downloadProductionBundle(),
             onShare: () => {
                 if (!config) return;
@@ -419,15 +451,8 @@ async function boot() {
             const { stateId } = snap;
             const meta    = smideMachine.states[stateId]?.meta ?? {};
             const toolbar = meta.toolbar ?? [];
-            const saveMode = toolbar.includes('save-results-btn');
-
-            const enabledBtns = ALL_TOOLBAR_BTNS.filter(id =>
-                toolbar.includes(id) || (id === 'load-results-btn' && saveMode)
-            );
-            const onLoadResults = saveMode
-                ? () => { window.downloadTestResults?.(); smideRuntime.send('SAVE_RESULTS'); }
-                : () => document.getElementById('load-results').click();
-            _updateToolbar?.({ enabledBtns, saveMode, onLoadResults });
+            const enabledBtns = ALL_TOOLBAR_BTNS.filter(id => toolbar.includes(id));
+            _updateToolbar?.({ enabledBtns });
 
             const hasFlow = !['no_flow', 'booting', 'prompt_restore', 'restoring_flow', 'load_error', 'render_ui'].includes(stateId);
             _updatePane?.({ copyBtnEnabled: hasFlow });
@@ -658,7 +683,7 @@ async function boot() {
     };
 
     // ── Save / Load Flow ──────────────────────────────────────────────────────
-    window.downloadPair = () => {
+    window.downloadPair = async () => {
         if (!config) { console.warn('⚠️  No flow loaded'); return; }
         const flowId      = config.id || 'flow';
         const machineStr  = strToU8(JSON.stringify(config, null, 2));
@@ -668,11 +693,61 @@ async function boot() {
             [`${flowId}-services.js`]:  servicesStr,
         });
         const blob = new Blob([zipped], { type: 'application/zip' });
-        const a    = document.createElement('a');
-        a.href     = URL.createObjectURL(blob);
-        a.download = `${config.id || 'flow'}.zip`;
-        a.click();
-        console.log('💾 Saved flow ZIP:', a.download);
+        const filename = `${flowId}.zip`;
+
+        if ('showSaveFilePicker' in window) {
+            try {
+                const handle = await window.showSaveFilePicker({
+                    suggestedName: filename,
+                    types: [{ description: 'ZIP archive', accept: { 'application/zip': ['.zip'] } }],
+                });
+                const writable = await handle.createWritable();
+                await writable.write(blob);
+                await writable.close();
+                console.log('💾 Saved flow ZIP via FSA:', filename);
+            } catch (e) {
+                if (e.name !== 'AbortError') { console.error('❌ Save failed:', e); showToast('Save failed: ' + e.message); }
+                else { console.log('💾 Save cancelled'); }
+            }
+        } else {
+            const a    = document.createElement('a');
+            a.href     = URL.createObjectURL(blob);
+            a.download = filename;
+            a.click();
+            console.log('💾 Saved flow ZIP (blob fallback):', filename);
+        }
+    };
+
+    // ── Save flow as separate editable files ──────────────────────────────────
+    // Shift+click on Save Flow. FSA: showDirectoryPicker → writes both files at once.
+    // Fallback: two sequential blob downloads.
+    window.downloadFlowFiles = async () => {
+        if (!config) { console.warn('⚠️  No flow loaded'); return; }
+        const flowId      = config.id || 'flow';
+        const machineStr  = JSON.stringify(config, null, 2);
+        const servicesStr = window._loadedServicesSource || '// no services loaded';
+
+        if ('showDirectoryPicker' in window) {
+            try {
+                const dir = await window.showDirectoryPicker({ mode: 'readwrite' });
+                const mh  = await dir.getFileHandle(`${flowId}-machine.json`,  { create: true });
+                const sh  = await dir.getFileHandle(`${flowId}-services.js`,   { create: true });
+                const mw  = await mh.createWritable(); await mw.write(machineStr);  await mw.close();
+                const sw  = await sh.createWritable(); await sw.write(servicesStr); await sw.close();
+                console.log(`💾 Saved ${flowId}-machine.json + ${flowId}-services.js`);
+            } catch (e) {
+                if (e.name !== 'AbortError') { console.error('❌ Save failed:', e); showToast('Save failed: ' + e.message); }
+            }
+        } else {
+            const dl = (content, name, type) => {
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(new Blob([content], { type }));
+                a.download = name; a.click();
+            };
+            dl(machineStr,  `${flowId}-machine.json`, 'application/json');
+            dl(servicesStr, `${flowId}-services.js`,  'text/javascript');
+            console.log(`💾 Saved ${flowId}-machine.json + ${flowId}-services.js (blob fallback)`);
+        }
     };
 
     window.loadPair = async (fileList) => {
@@ -695,6 +770,13 @@ async function boot() {
         if (zipFile) {
             const buf      = await zipFile.arrayBuffer();
             const unzipped = unzipSync(new Uint8Array(buf));
+
+            // Results ZIP: contains results.json at root
+            if (Object.keys(unzipped).includes('results.json')) {
+                window.loadTestResults?.(zipFile);
+                return;
+            }
+
             const machineEntry  = Object.keys(unzipped).find(k => k.endsWith('.json'));
             const servicesEntry = Object.keys(unzipped).find(k => k.endsWith('.js'));
             if (!machineEntry)  { const m = 'ZIP contains no .json machine file'; console.error('❌', m); showToast(m); return; }
@@ -705,10 +787,18 @@ async function boot() {
             await reloadServices(strFromU8(unzipped[servicesEntry]), servicesEntry);
         } else {
             if (!jsonFile && !jsFile) { const m = 'Unsupported file type — load a .zip, .json, or .js'; console.error('❌', m); showToast(m); return; }
-            if (jsonFile && !jsFile)  activeServices = {};   // no services — reset to empty
             if (jsonFile) {
-                try { newConfig = JSON.parse(await readText(jsonFile)); }
-                catch (e) { const m = `Invalid machine JSON: ${e.message}`; console.error('❌', m); showToast(m); return; }
+                const text = await readText(jsonFile);
+                try {
+                    const parsed = JSON.parse(text);
+                    // Results JSON detection: has cases array or both flowId + runAt
+                    if (Array.isArray(parsed.cases) || (parsed.flowId !== undefined && parsed.runAt !== undefined)) {
+                        window.loadTestResults?.(jsonFile);
+                        return;
+                    }
+                    newConfig = parsed;
+                    if (!jsFile) activeServices = {};   // machine-only load — reset services
+                } catch (e) { const m = `Invalid machine JSON: ${e.message}`; console.error('❌', m); showToast(m); return; }
             }
             if (jsFile) await reloadServices(await readText(jsFile), jsFile.name);
         }
@@ -1190,14 +1280,16 @@ window.addEventListener('load', () => {
         `For a stable fixed-size window:\n` +
         `  window.open(location.href, '_blank', 'width=1024,height=768')\n` +
         `then undock DevTools before measuring.\n\n` +
-        `  await window.ui_full()            — check (or capture) at 1024×768\n` +
-        `  await window.ui_full('capture')   — force capture baseline\n\n` +
+        `  await window.contracts.ui()            — check (or capture) at 1024×768\n` +
+        `  await window.contracts.ui('capture')   — force capture baseline\n\n` +
         `── Runtime Contracts ──\n` +
-        `  await window.runtime_contracts()           — check (or capture)\n` +
-        `  await window.runtime_contracts('capture')  — force capture baseline\n\n` +
+        `  await window.contracts.runtime()           — check (or capture)\n` +
+        `  await window.contracts.runtime('capture')  — force capture baseline\n\n` +
         `── Smide Contracts ──\n` +
-        `  await window.smide_contracts()           — check (or capture)\n` +
-        `  await window.smide_contracts('capture')  — force capture baseline\n\n` +
+        `  await window.contracts.smide()           — check (or capture)\n` +
+        `  await window.contracts.smide('capture')  — force capture baseline\n\n` +
+        `── Load Contracts ──\n` +
+        `  await window.contracts.load()            — toolbar DOM + load routing + ZIP round-trip\n\n` +
         `Workflow: run ('capture') once → commit *-baseline.json → run () before/after every change.`
     );
     console.groupEnd();

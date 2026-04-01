@@ -106,4 +106,13 @@ export const realtorServices = {
         isLater:      ({ context }) => context.timing === 'later',
         isValidText:  ({ event })   => validators.text(event.value),
     },
+
+    // ── Sample inputs for automated test path generation ─────────────────────
+    // Keyed by state id (meta.input === 'text' states).
+    // Used by getAllTraces() / runAllTracesHeadless() to fill SUBMIT events.
+
+    SAMPLE_INPUTS: {
+        ask_email: 'test@example.com',
+        ask_phone: '4155550123',
+    },
 };

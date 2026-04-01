@@ -1,6 +1,6 @@
 {
-  "timestamp": "2026-04-01T17:01:14.179Z",
-  "appVersion": "v0.12.62",
+  "timestamp": "2026-04-01T23:10:14.139Z",
+  "appVersion": "v0.12.65",
   "viewport": {
     "width": 1026,
     "height": 769
@@ -123,22 +123,22 @@
         "unit": "px"
       },
       {
-        "name": "toolbar_btn_3[📋_Load_Results]_height",
+        "name": "toolbar_btn_3[💾_Save_Results]_height",
         "value": 66.77,
         "unit": "px"
       },
       {
-        "name": "toolbar_btn_3[📋_Load_Results]_width",
+        "name": "toolbar_btn_3[💾_Save_Results]_width",
         "value": 60.5,
         "unit": "px"
       },
       {
-        "name": "toolbar_btn_3[📋_Load_Results]_fontSize",
+        "name": "toolbar_btn_3[💾_Save_Results]_fontSize",
         "value": 12,
         "unit": "px"
       },
       {
-        "name": "toolbar_btn_3[📋_Load_Results]_right_edge",
+        "name": "toolbar_btn_3[💾_Save_Results]_right_edge",
         "value": 774.18,
         "unit": "px"
       },
@@ -163,22 +163,22 @@
         "unit": "px"
       },
       {
-        "name": "toolbar_btn_5[📂_Load_Flow]_height",
+        "name": "toolbar_btn_5[📂_Load]_height",
         "value": 66.77,
         "unit": "px"
       },
       {
-        "name": "toolbar_btn_5[📂_Load_Flow]_width",
+        "name": "toolbar_btn_5[📂_Load]_width",
         "value": 52,
         "unit": "px"
       },
       {
-        "name": "toolbar_btn_5[📂_Load_Flow]_fontSize",
+        "name": "toolbar_btn_5[📂_Load]_fontSize",
         "value": 12,
         "unit": "px"
       },
       {
-        "name": "toolbar_btn_5[📂_Load_Flow]_right_edge",
+        "name": "toolbar_btn_5[📂_Load]_right_edge",
         "value": 894.18,
         "unit": "px"
       },
@@ -328,22 +328,22 @@
         "unit": "px"
       },
       {
-        "name": "mobile_toolbar_btn_3[📋_Load_Results]_height",
+        "name": "mobile_toolbar_btn_3[💾_Save_Results]_height",
         "value": 66.77,
         "unit": "px"
       },
       {
-        "name": "mobile_toolbar_btn_3[📋_Load_Results]_width",
+        "name": "mobile_toolbar_btn_3[💾_Save_Results]_width",
         "value": 64,
         "unit": "px"
       },
       {
-        "name": "mobile_toolbar_btn_3[📋_Load_Results]_fontSize",
+        "name": "mobile_toolbar_btn_3[💾_Save_Results]_fontSize",
         "value": 12,
         "unit": "px"
       },
       {
-        "name": "mobile_toolbar_btn_3[📋_Load_Results]_right_edge",
+        "name": "mobile_toolbar_btn_3[💾_Save_Results]_right_edge",
         "value": 216.27,
         "unit": "px"
       },
@@ -368,22 +368,22 @@
         "unit": "px"
       },
       {
-        "name": "mobile_toolbar_btn_5[📂_Load_Flow]_height",
+        "name": "mobile_toolbar_btn_5[📂_Load]_height",
         "value": 66.77,
         "unit": "px"
       },
       {
-        "name": "mobile_toolbar_btn_5[📂_Load_Flow]_width",
+        "name": "mobile_toolbar_btn_5[📂_Load]_width",
         "value": 52,
         "unit": "px"
       },
       {
-        "name": "mobile_toolbar_btn_5[📂_Load_Flow]_fontSize",
+        "name": "mobile_toolbar_btn_5[📂_Load]_fontSize",
         "value": 12,
         "unit": "px"
       },
       {
-        "name": "mobile_toolbar_btn_5[📂_Load_Flow]_right_edge",
+        "name": "mobile_toolbar_btn_5[📂_Load]_right_edge",
         "value": 336.27,
         "unit": "px"
       },

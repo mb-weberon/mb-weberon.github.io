@@ -9,12 +9,12 @@
  *   ui-baseline-1024x768.json   ← created automatically on capture
  *
  * Usage (browser console):
- *   await window.ui_full()           — one-call: opens popup, loads fixture, checks (or captures)
- *   await window.ui_full('capture')  — force capture baseline
- *   await window.ui_full('check')    — force check against baseline
+ *   await window.contracts.ui()           — one-call: opens popup, loads fixture, checks (or captures)
+ *   await window.contracts.ui('capture')  — force capture baseline
+ *   await window.contracts.ui('check')    — force check against baseline
  *
  * Fixture: app/test/smide-test-results.json
- *   ui_full loads this pre-baked results file which puts the IDE in results_ready
+ *   contracts.ui loads this pre-baked results file which puts the IDE in results_ready
  *   state — the only state where all toolbar buttons (including Save Flow) are
  *   visible. Generate it once by running tests on the smide-machine and saving
  *   the results, then commit as app/test/smide-test-results.json.
@@ -24,17 +24,12 @@
  *      Load smide-machine.json + smide-services.js → Test → Save Results →
  *      commit the downloaded file as app/test/smide-test-results.json.
  *   2. Capture baseline:
- *      await window.ui_full('capture')
+ *      await window.contracts.ui('capture')
  *      Opens a 1024×768 popup, loads the fixture, downloads ui-baseline-1024x768.json.
  *      Commit it alongside the fixture.
  *   3. Before/after every change:
- *      await window.ui_full()
+ *      await window.contracts.ui()
  *      Opens popup, loads fixture, checks against the saved baseline.
- *
- * Low-level (if you need manual control):
- *   await window.ui_contracts()           — auto: check if baseline exists, else capture
- *   await window.ui_contracts('capture')  — capture baseline for current viewport
- *   await window.ui_contracts('check')    — compare against baseline for current viewport
  *
  * Prerequisites for capture / check:
  *   - DevTools must be undocked or closed — side/bottom docking changes
@@ -57,9 +52,9 @@ const RECALC_DELAY_MS   = 350;
 // Baseline files are named ui-baseline-{label}.json where label = WxH of the
 // inner viewport at capture time. ui_full() always uses 1024x768.
 //
-// Pass an explicit label to ui_contracts() to target a specific file:
-//   await window.ui_contracts('check',   '1024x768')  — uses ui-baseline-1024x768.json
-//   await window.ui_contracts('capture', '1024x768')  — saves ui-baseline-1024x768.json
+// Pass an explicit label to contracts.ui() to target a specific file:
+//   await window.contracts.ui('check',   '1024x768')  — uses ui-baseline-1024x768.json
+//   await window.contracts.ui('capture', '1024x768')  — saves ui-baseline-1024x768.json
 
 const baselineUrl  = (label) => `./test/ui-baseline-${label}.json`;
 const defaultLabel = ()      => `${window.innerWidth}x${window.innerHeight}`;
@@ -675,14 +670,14 @@ function _printHint(label) {
         `  Load smide-machine.json + smide-services.js → Test → Save Results\n` +
         `  Commit as app/test/smide-test-results.json\n\n` +
         `Then capture a baseline (opens a 1024×768 popup automatically):\n` +
-        `  await window.ui_full('capture')  ← recommended\n\n` +
+        `  await window.contracts.ui('capture')  ← recommended\n\n` +
         `Or manually in a 1024×768 window with DevTools undocked:\n` +
-        `  await window.ui_contracts('capture', '1024x768')\n\n` +
+        `  await window.contracts.ui('capture', '1024x768')\n\n` +
         `To check against the baseline:\n` +
-        `  await window.ui_full()           ← recommended\n` +
-        `  await window.ui_contracts('check', '1024x768')\n\n` +
+        `  await window.contracts.ui()           ← recommended\n` +
+        `  await window.contracts.ui('check', '1024x768')\n\n` +
         `To auto-detect viewport (uses current ${W}×${H} as label):\n` +
-        `  await window.ui_contracts()`
+        `  await window.contracts.ui()`
     );
     console.groupEnd();
 }
@@ -747,7 +742,7 @@ async function ui_contracts(mode, label) {
             baseline = await res.json();
         } catch (e) {
             console.error(`❌ Could not load baseline from ${url}: ${e.message}`);
-            console.info(`   Run: await window.ui_contracts('capture', '${label}')  to create one.`);
+            console.info(`   Run: await window.contracts.ui('capture', '${label}')  to create one.`);
             console.groupEnd();
             return null;
         }
@@ -771,9 +766,9 @@ async function ui_contracts(mode, label) {
 // Opens a fixed-size popup if needed, loads the smide test fixture, then runs
 // ui_contracts. Intended for developer use from the DevTools console:
 //
-//   await window.ui_full()           — check (or capture if no baseline)
-//   await window.ui_full('capture')  — force capture
-//   await window.ui_full('check')    — force check
+//   await window.contracts.ui()           — check (or capture if no baseline)
+//   await window.contracts.ui('capture')  — force capture
+//   await window.contracts.ui('check')    — force check
 
 const UI_FULL_W = 1024;
 const UI_FULL_H = 768;
@@ -897,15 +892,15 @@ async function ui_full(mode, label = `${UI_FULL_W}x${UI_FULL_H}`) {
         }
         console.log('✅ ui_full: UI ready');
 
-        // ui_contracts is assigned at module evaluation time; by the time the app
-        // has booted it must exist — but guard to give a clear error if not.
-        if (typeof w.ui_contracts !== 'function') {
-            console.error('❌ w.ui_contracts is not a function — ui-contracts.js may not have loaded in the popup.');
+        // contracts._uiLowLevel is assigned at module evaluation time; by the time
+        // the app has booted it must exist — but guard to give a clear error if not.
+        if (typeof w.contracts?._uiLowLevel !== 'function') {
+            console.error('❌ w.contracts._uiLowLevel is not a function — ui-contracts.js may not have loaded in the popup.');
             return null;
         }
 
-        console.log(`▶️  ui_full: running ui_contracts('${mode ?? 'auto'}', '${label}') in popup…`);
-        return await w.ui_contracts(mode, label);
+        console.log(`▶️  contracts.ui: running _uiLowLevel('${mode ?? 'auto'}', '${label}') in popup…`);
+        return await w.contracts._uiLowLevel(mode, label);
     }
 
     // Already the right size — run in-place.
@@ -931,11 +926,12 @@ async function ui_full(mode, label = `${UI_FULL_W}x${UI_FULL_H}`) {
     }
     console.log('✅ ui_full: UI ready');
 
-    console.log(`▶️  ui_full: running ui_contracts('${mode ?? 'auto'}', '${label}')…`);
-    return await window.ui_contracts(mode, label);
+    console.log(`▶️  contracts.ui: running ui_contracts('${mode ?? 'auto'}', '${label}')…`);
+    return await ui_contracts(mode, label);
 }
 
 // ── Expose on window ──────────────────────────────────────────────────────────
 
-window.ui_contracts = ui_contracts;
-window.ui_full      = ui_full;
+window.contracts       = window.contracts       || {};
+window.contracts.ui    = ui_full;
+window.contracts._uiLowLevel = ui_contracts;  // low-level: pass explicit viewport label

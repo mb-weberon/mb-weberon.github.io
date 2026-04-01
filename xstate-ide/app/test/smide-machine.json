@@ -106,7 +106,7 @@
       "meta": {
         "text": "Load failed. Check the browser console for details.",
         "chat": "Load failed. Check the browser console.",
-        "toolbar": ["load-flow-btn"]
+        "toolbar": ["load-btn"]
       },
       "on": {
         "DISMISS": {
@@ -122,9 +122,9 @@
 
     "no_flow": {
       "meta": {
-        "text": "No flow loaded. Use Load Flow or Load Results to begin.",
+        "text": "No flow loaded. Use Load to open a flow or restore test results.",
         "chat": "Ready. Load a flow to get started.",
-        "toolbar": ["load-flow-btn", "load-results-btn"]
+        "toolbar": ["load-btn"]
       },
       "on": {
         "LOAD_FLOW": {
@@ -146,7 +146,7 @@
       "meta": {
         "text": "Flow loaded. Chat at initial state. Ready to converse or run tests.",
         "chat": "Flow loaded. Ready to chat or run tests.",
-        "toolbar": ["test-btn", "restart-btn", "load-flow-btn", "load-results-btn", "pack-prod-btn", "share-btn"]
+        "toolbar": ["test-btn", "restart-btn", "load-btn", "pack-prod-btn", "share-btn"]
       },
       "on": {
         "LOAD_FLOW": {
@@ -184,7 +184,7 @@
       "meta": {
         "text": "Conversation in progress. Trace being recorded.",
         "chat": "Conversation active. Trace being recorded.",
-        "toolbar": ["test-btn", "restart-btn", "load-flow-btn", "load-results-btn", "pack-prod-btn", "share-btn"]
+        "toolbar": ["test-btn", "restart-btn", "load-btn", "pack-prod-btn", "share-btn"]
       },
       "on": {
         "LOAD_FLOW": {
@@ -266,7 +266,7 @@
       "meta": {
         "text": "Results saved to disk. Load Flow re-enabled.",
         "chat": "Results saved. All options available.",
-        "toolbar": ["test-btn", "restart-btn", "load-flow-btn", "load-results-btn", "pack-prod-btn", "share-btn"]
+        "toolbar": ["test-btn", "restart-btn", "load-btn", "pack-prod-btn", "share-btn"]
       },
       "on": {
         "LOAD_FLOW": {
@@ -304,7 +304,7 @@
       "meta": {
         "text": "Results loaded or restored from storage. Drawer shown. Flow active and re-loadable.",
         "chat": "Results ready. Flow active and re-loadable.",
-        "toolbar": ["test-btn", "restart-btn", "save-flow-btn", "load-flow-btn", "load-results-btn", "pack-prod-btn", "share-btn"]
+        "toolbar": ["test-btn", "restart-btn", "save-flow-btn", "load-btn", "pack-prod-btn", "share-btn"]
       },
       "on": {
         "LOAD_FLOW": {

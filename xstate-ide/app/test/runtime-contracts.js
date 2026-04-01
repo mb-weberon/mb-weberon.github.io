@@ -12,16 +12,16 @@
  *             recordService, and multi-step guard validation
  *
  * Usage (browser console):
- *   await window.runtime_contracts()           — auto: check if baseline exists, else capture
- *   await window.runtime_contracts('capture')  — force capture baseline
- *   await window.runtime_contracts('check')    — force check against baseline
+ *   await window.contracts.runtime()           — auto: check if baseline exists, else capture
+ *   await window.contracts.runtime('capture')  — force capture baseline
+ *   await window.contracts.runtime('check')    — force check against baseline
  *
  * Workflow (first time / after Runtime or machine changes):
- *   1. await window.runtime_contracts('capture')
+ *   1. await window.contracts.runtime('capture')
  *      Runs all paths, downloads runtime-baseline.json.
  *      Commit the file alongside this one.
  *   2. Before/after every change:
- *      await window.runtime_contracts()
+ *      await window.contracts.runtime()
  *      Runs all paths, compares against saved baseline.
  */
 
@@ -371,7 +371,7 @@ async function runtime_contracts(mode) {
         if (mode === 'capture') {
             console.info(
                 '📋 Runtime Contracts — no baseline found.\n' +
-                '   Run: await window.runtime_contracts(\'capture\')  to create one.\n' +
+                '   Run: await window.contracts.runtime(\'capture\')  to create one.\n' +
                 '   Commit runtime-baseline.json alongside this file.'
             );
         }
@@ -409,7 +409,7 @@ async function runtime_contracts(mode) {
             baseline = await res.json();
         } catch (e) {
             console.error(`❌ Could not load baseline: ${e.message}`);
-            console.info(`   Run: await window.runtime_contracts('capture')  to create one.`);
+            console.info(`   Run: await window.contracts.runtime('capture')  to create one.`);
             console.groupEnd();
             return null;
         }
@@ -426,4 +426,5 @@ async function runtime_contracts(mode) {
 
 // ── Expose on window ──────────────────────────────────────────────────────────
 
-window.runtime_contracts = runtime_contracts;
+window.contracts         = window.contracts         || {};
+window.contracts.runtime = runtime_contracts;

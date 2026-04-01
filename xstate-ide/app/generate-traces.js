@@ -1,5 +1,6 @@
 import { Runtime }             from './Runtime.js';
 import { mountResultsDrawer } from './ResultsDrawerUI.js';
+import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
 
 /**
  * generate-traces.js
@@ -21,21 +22,10 @@ import { mountResultsDrawer } from './ResultsDrawerUI.js';
  *   loadTestResults(file)     — load a saved results JSON into the drawer
  *
  * For text-input states (meta.input === 'text') add a sample value keyed by
- * state id. Preferred location: export SAMPLE_INPUTS from the *-services.js
- * file (takes precedence). The built-in SAMPLE_INPUTS in this file is the
- * fallback for configs whose services file hasn't been updated yet.
+ * state id inside the services file: SAMPLE_INPUTS: { stateId: 'value', ... }
+ * as a property of the services object. Tests will not start until all
+ * text-input states have a sample value.
  */
-
-const SAMPLE_INPUTS = {
-    // realtor_bot
-    ask_email: 'test@example.com',
-    ask_phone: '4155550123',
-    // ucbs_bot (ask_phone and ask_email reuse the same keys above)
-    // subscription_management_v2
-    extend_quota_check:   'extend',
-    upgrade_plan_check:   'Pro',
-    downgrade_plan_check: 'Starter',
-};
 
 
 // ── Results cache (Cache API) ─────────────────────────────────────────────────
@@ -68,6 +58,66 @@ export async function clearResultsCache() {
     } catch (_) {}
 }
 
+
+// ── Sample inputs modal ───────────────────────────────────────────────────────
+
+function _showSampleInputsModal(missingIds, snippet, isSkeleton) {
+    const existing = document.getElementById('smide-sample-inputs-dialog');
+    if (existing) existing.remove();
+
+    const rows   = snippet.split('\n').length + 1;
+    const title  = isSkeleton
+        ? 'Tests blocked — no services file loaded'
+        : 'Tests blocked — sample inputs missing';
+    const desc   = isSkeleton
+        ? 'Save the skeleton below as <code style="background:#f0f0f0;padding:1px 4px;border-radius:3px;">*-services.js</code>, fill in the sample values, then load it with Load Flow.'
+        : 'Add the following inside the services object in your <code style="background:#f0f0f0;padding:1px 4px;border-radius:3px;">*-services.js</code> file.';
+
+    const dialog = document.createElement('dialog');
+    dialog.id = 'smide-sample-inputs-dialog';
+    dialog.style.cssText = `
+        border: none; border-radius: 8px; padding: 0;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+        max-width: 480px; width: 100%;
+        font-family: 'Segoe UI', sans-serif;
+    `;
+
+    dialog.innerHTML = `
+        <div style="padding:20px 24px 0">
+            <h3 style="margin:0 0 8px; font-size:15px; color:#1c1e21;">${title}</h3>
+            <p style="margin:0 0 12px; font-size:13px; color:#444;">${desc}</p>
+            <textarea id="smide-snippet-ta" readonly rows="${rows}" style="
+                width:100%; box-sizing:border-box;
+                font-family:monospace; font-size:12px;
+                background:#1e1e1e; color:#61dafb;
+                border:1px solid #444; border-radius:4px;
+                padding:10px; resize:vertical;
+            ">${snippet}</textarea>
+        </div>
+        <div style="display:flex; justify-content:flex-end; gap:8px; padding:12px 24px 16px;">
+            <button id="smide-snippet-copy" style="
+                padding:6px 14px; border-radius:5px; border:none; cursor:pointer;
+                background:#0084ff; color:#fff; font-size:13px;
+            ">Copy</button>
+            <button id="smide-snippet-close" style="
+                padding:6px 14px; border-radius:5px; border:1px solid #ddd; cursor:pointer;
+                background:#fff; color:#333; font-size:13px;
+            ">Close</button>
+        </div>
+    `;
+
+    document.body.appendChild(dialog);
+    dialog.showModal();
+
+    dialog.querySelector('#smide-snippet-copy').onclick = () => {
+        navigator.clipboard?.writeText(snippet).catch(() => {});
+        const btn = dialog.querySelector('#smide-snippet-copy');
+        btn.textContent = 'Copied!';
+        setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+    };
+    dialog.querySelector('#smide-snippet-close').onclick = () => dialog.close();
+    dialog.addEventListener('close', () => dialog.remove());
+}
 
 // ── Path enumeration ──────────────────────────────────────────────────────────
 
@@ -121,7 +171,7 @@ export function getAllTraces(config, sampleInputs = {}) {
                 if (!branch?.target) return;
 
                 if (eventType === 'SUBMIT') {
-                    const sample = sampleInputs[stateId] ?? SAMPLE_INPUTS[stateId] ?? 'sample-input';
+                    const sample = sampleInputs[stateId] ?? 'sample-input';
                     walk(branch.target, [...trace, sample], nextVisited);
                 } else {
                     walk(branch.target, [...trace, eventType], nextVisited);
@@ -334,7 +384,22 @@ export async function runAllTracesHeadless(config, services, { pauseMs = 0, serv
     _skipCurrent = false;
     _dismissDrawer();
 
-    const traces = getAllTraces(config, services.SAMPLE_INPUTS ?? {});
+    // ── Pre-flight: check that all text-input states have a sample value ───────
+    const sampleInputs = services.SAMPLE_INPUTS ?? {};
+    const missingInputs = Object.entries(config.states)
+        .filter(([id, s]) => s.meta?.input === 'text' && !sampleInputs[id])
+        .map(([id]) => id);
+    if (missingInputs.length > 0) {
+        const sampleBlock = `  SAMPLE_INPUTS: {\n${missingInputs.map(id => `    ${id}: 'your-sample-value',`).join('\n')}\n  },`;
+        const snippet = servicesSource
+            ? sampleBlock
+            : `export default {\n\n${sampleBlock}\n\n  guards: {\n    // guardName: ({ event, context }) => true,\n  },\n\n};`;
+        console.warn('⚠️  Tests blocked — no sample input for:', missingInputs.join(', '), '\n\n' + snippet);
+        _showSampleInputsModal(missingInputs, snippet, !servicesSource);
+        return;
+    }
+
+    const traces = getAllTraces(config, sampleInputs);
     const total  = traces.length;
     const runAt  = new Date().toISOString();
 
@@ -650,29 +715,53 @@ function hideStatusBadge() {
 
 // ── Load results from file ────────────────────────────────────────────────────
 
+async function _applyLoadedResults(results) {
+    window._testResults = results;
+    cacheResults(results);
+    if (results.servicesSource && window._reloadServicesFromSource) {
+        await window._reloadServicesFromSource(results.servicesSource, `${results.flowId}-services.js`);
+    }
+    if (results.config && typeof window._restartRuntime === 'function') {
+        window._restartRuntime(results.config);
+    }
+    showResultsDrawer(results, window._replayTrace);
+    window._setSmideState?.('results_ready');
+    console.log(`✅ Loaded ${results.cases?.length} test cases from file`);
+}
+
+// Accepts a results ZIP (.zip containing results.json) or a plain results JSON
+// for backward compatibility.
 export function loadTestResults(file) {
-    if (!file) { console.warn('Pass a File object via the Load Results button.'); return; }
+    if (!file) { console.warn('Pass a File object via the Load button.'); return; }
+
+    if (file.name.endsWith('.zip')) {
+        file.arrayBuffer().then(buf => {
+            const unzipped = unzipSync(new Uint8Array(buf));
+            if (!Object.keys(unzipped).includes('results.json')) {
+                const m = 'ZIP contains no results.json';
+                console.error('❌', m); window.showToast?.(m); return;
+            }
+            try {
+                return _applyLoadedResults(JSON.parse(strFromU8(unzipped['results.json'])));
+            } catch (err) {
+                const m = `Invalid results JSON in ZIP: ${err.message}`;
+                console.error('❌', m); window.showToast?.(m);
+            }
+        }).catch(err => {
+            const m = `Could not read ZIP: ${err.message}`;
+            console.error('❌', m); window.showToast?.(m);
+        });
+        return;
+    }
+
+    // Plain JSON — backward compat
     const reader = new FileReader();
     reader.onload = async (e) => {
         try {
-            const results = JSON.parse(e.target.result);
-            window._testResults = results;
-            cacheResults(results);
-            // Restore services so re-runs work
-            if (results.servicesSource && window._reloadServicesFromSource) {
-                await window._reloadServicesFromSource(results.servicesSource, `${results.flowId}-services.js`);
-            }
-            // Restore config so re-runs and diagram use the saved machine
-            if (results.config && typeof window._restartRuntime === 'function') {
-                window._restartRuntime(results.config);
-            }
-            showResultsDrawer(results, window._replayTrace);
-            window._setSmideState?.('results_ready');  // results loaded from file — Load Results stays, Load Flow enabled
-            console.log(`✅ Loaded ${results.cases?.length} test cases from file`);
+            await _applyLoadedResults(JSON.parse(e.target.result));
         } catch (err) {
             const m = `Invalid results JSON: ${err.message}`;
-            console.error('❌', m);
-            window.showToast?.(m);
+            console.error('❌', m); window.showToast?.(m);
         }
     };
     reader.readAsText(file);
@@ -723,12 +812,35 @@ export function drawerReset() {
 
 // ── Download helper ───────────────────────────────────────────────────────────
 
-export function downloadTestResults() {
+export async function downloadTestResults() {
     const results = window._testResults;
-    if (!results) { console.warn('No test results. Run runAllTraces() first.'); return; }
-    const blob = new Blob([JSON.stringify(results, null, 2)], { type: 'application/json' });
-    const a    = document.createElement('a');
-    a.href     = URL.createObjectURL(blob);
-    a.download = `test-results-${results.flowId}-${results.runAt.slice(0, 10)}.json`;
-    a.click();
+    if (!results) { console.warn('No test results. Run runAllTraces() first.'); return false; }
+    const filename = `test-results-${results.flowId}-${results.runAt.slice(0, 10)}.zip`;
+    const zipped   = zipSync({ 'results.json': strToU8(JSON.stringify(results, null, 2)) });
+    const blob     = new Blob([zipped], { type: 'application/zip' });
+
+    if ('showSaveFilePicker' in window) {
+        try {
+            const handle = await window.showSaveFilePicker({
+                suggestedName: filename,
+                types: [{ description: 'ZIP archive', accept: { 'application/zip': ['.zip'] } }],
+            });
+            const writable = await handle.createWritable();
+            await writable.write(blob);
+            await writable.close();
+            console.log('💾 Saved test results ZIP via FSA:', filename);
+            return true;
+        } catch (e) {
+            if (e.name !== 'AbortError') console.error('❌ Save failed:', e);
+            else console.log('💾 Save cancelled');
+            return false;
+        }
+    } else {
+        const a    = document.createElement('a');
+        a.href     = URL.createObjectURL(blob);
+        a.download = filename;
+        a.click();
+        console.log('💾 Saved test results ZIP (blob fallback):', filename);
+        return true;
+    }
 }
