@@ -2,6 +2,7 @@
  * ChatUI.js
  *
  * Owns all chat DOM rendering. Zero IDE knowledge, zero XState imports.
+ * Backed by Preact for declarative rendering.
  *
  * Usage:
  *   const chatUI = new ChatUI(runtime, document.getElementById('chat-mount'));
@@ -12,17 +13,99 @@
  *   clear()   — wipe messages + input area (call before runtime.restart())
  */
 
+// Import html from 'htm/preact' (already loaded by ToolbarUI — no extra CDN fetch)
+// but import render from the shared 'preact' importmap entry, which is the same
+// module instance as 'preact/hooks'. This keeps currentComponent in sync:
+// render sets it, useState/useRef/useEffect read it from the same module.
+import { html } from 'htm/preact';
+import { render } from 'preact';
+import { useState, useRef, useEffect } from 'preact/hooks';
+
+// ── Components ────────────────────────────────────────────────────────────────
+
+function Messages({ messages }) {
+    const ref = useRef(null);
+    useEffect(() => {
+        if (ref.current) ref.current.scrollTop = ref.current.scrollHeight;
+    }, [messages.length]);
+    return html`<div id="messages" ref=${ref}>
+        ${messages.map((m, i) => html`<div key=${i} class=${'msg ' + m.side}>${m.text}</div>`)}
+    </div>`;
+}
+
+function InputArea({ input, placeholder, choices, error, onSubmit, onChoice }) {
+    const [value, setValue]       = useState('');
+    const [localErr, setLocalErr] = useState(null);
+    const inputRef                = useRef(null);
+
+    // Sync incoming error into local display state
+    useEffect(() => { setLocalErr(error || null); }, [error]);
+
+    // Focus text input whenever it appears
+    useEffect(() => {
+        if (input === 'text') setTimeout(() => inputRef.current?.focus(), 50);
+    }, [input]);
+
+    const go = () => {
+        const val = value.trim();
+        if (!val) return;
+        setValue('');
+        setLocalErr(null);
+        onSubmit(val);
+    };
+
+    return html`<div id="input-area">
+        ${input === 'text' && html`
+            <input ref=${inputRef} type="text"
+                class=${localErr ? 'input-error' : ''}
+                placeholder=${placeholder || 'Type and press Enter\u2026'}
+                value=${value}
+                onInput=${e => { setValue(e.target.value); setLocalErr(null); }}
+                onKeyDown=${e => { if (e.key === 'Enter') go(); }}
+            />
+            <button style="flex-shrink:0" onClick=${go}>Send</button>
+        `}
+        ${localErr && html`<div class="validation-error">${localErr}</div>`}
+        ${choices.map((c, i) => html`
+            <button key=${c} onClick=${() => onChoice(c)}>(${i + 1}) ${c}</button>
+        `)}
+    </div>`;
+}
+
+function ChatRoot({ messages, input, placeholder, choices, error, runtime, onUserInput }) {
+    // display:contents makes this div invisible to the flex layout in chatMount,
+    // so #messages and #controls-container remain direct flex children — same as
+    // using a Fragment. A concrete root element avoids htm's <> shorthand, which
+    // can produce an empty-string type and cause createElementNS errors on remount.
+    return html`<div style="display:contents">
+        <${Messages} messages=${messages}/>
+        <div id="controls-container">
+            <${InputArea}
+                input=${input}
+                placeholder=${placeholder}
+                choices=${choices}
+                error=${error}
+                onSubmit=${val => { onUserInput?.(); runtime.submit(val); }}
+                onChoice=${c => { onUserInput?.(); runtime.send(c); }}
+            />
+        </div>
+    </div>`;
+}
+
+// ── ChatUI class — same public API as the previous imperative version ─────────
+
 export class ChatUI {
     /**
      * @param {object} runtime  — Runtime instance (submit, send, restart, onSnapshot, onReplayStep)
      * @param {Element} el      — DOM element to render the chat UI into
      */
-    constructor(runtime, el) {
+    constructor(runtime, el, { onUserInput } = {}) {
         this.runtime          = runtime;
         this.el               = el;
         this._lastTraceLength = 0;
+        this._state           = { messages: [], input: null, placeholder: '', choices: [], error: null };
+        this._onUserInput     = onUserInput ?? null;
 
-        // Bound handlers — stored so they can be re-assigned on the runtime
         this._onSnapshot   = this._handleSnapshot.bind(this);
         this._onReplayStep = this._handleReplayStep.bind(this);
     }
@@ -30,9 +113,21 @@ export class ChatUI {
     // ── Public API ────────────────────────────────────────────────────────────
 
     mount() {
-        this._buildDOM();
+        this._rerender();
         this.runtime.onSnapshot   = this._onSnapshot;
         this.runtime.onReplayStep = this._onReplayStep;
+    }
+
+    /**
+     * Switches to a new runtime without tearing down the Preact tree.
+     * Resets all message state, re-renders, and re-wires snapshot handlers.
+     * Call this instead of unmount()+mount() to avoid Preact hook-state issues.
+     */
+    reset(newRuntime) {
+        this.runtime          = newRuntime;
+        this._lastTraceLength = 0;
+        this._state           = { messages: [], input: null, placeholder: '', choices: [], error: null };
+        this.mount();   // _rerender() + wire handlers on the new runtime
     }
 
     /**
@@ -41,129 +136,53 @@ export class ChatUI {
      * new snapshot fires.
      */
     clear() {
-        if (this._messagesEl) this._messagesEl.innerHTML = '';
-        if (this._inputAreaEl) this._inputAreaEl.innerHTML = '';
         this._lastTraceLength = 0;
+        this._state = { messages: [], input: null, placeholder: '', choices: [], error: null };
+        this._rerender();
     }
 
-    // ── DOM construction ──────────────────────────────────────────────────────
+    // ── Internal ──────────────────────────────────────────────────────────────
 
-    _buildDOM() {
-        // Messages scroll area
-        this._messagesEl = this.el.querySelector('#messages');
-        if (!this._messagesEl) {
-            this._messagesEl = document.createElement('div');
-            this._messagesEl.id = 'messages';
-            this.el.appendChild(this._messagesEl);
-        }
-
-        // Controls container + input area
-        this._controlsEl = this.el.querySelector('#controls-container');
-        if (!this._controlsEl) {
-            this._controlsEl = document.createElement('div');
-            this._controlsEl.id = 'controls-container';
-            this.el.appendChild(this._controlsEl);
-        }
-
-        this._inputAreaEl = this._controlsEl.querySelector('#input-area');
-        if (!this._inputAreaEl) {
-            this._inputAreaEl = document.createElement('div');
-            this._inputAreaEl.id = 'input-area';
-            this._controlsEl.appendChild(this._inputAreaEl);
-        }
+    _rerender() {
+        render(html`<${ChatRoot} ...${this._state} runtime=${this.runtime} onUserInput=${this._onUserInput}/>`, this.el);
     }
 
-    // ── Runtime callbacks ─────────────────────────────────────────────────────
+    _update(patch) {
+        Object.assign(this._state, patch);
+        this._rerender();
+    }
 
     _handleSnapshot(snap) {
         const { message, input, placeholder, choices, error, context } = snap;
+        const newMessages = [...this._state.messages];
 
-        // User bubble: only if trace advanced (not a self-transition / replay double)
         if (message && (context.trace?.length ?? 0) > this._lastTraceLength) {
             const lastTrace = context.trace[context.trace.length - 1];
-            this._addBubble(lastTrace, 'user');
+            newMessages.push({ text: lastTrace, side: 'user' });
             this._lastTraceLength = context.trace.length;
         }
 
         if (message) {
-            this._addBubble(message, 'bot');
+            newMessages.push({ text: message, side: 'bot' });
         }
 
         if (error) {
-            this._showError(error);
-            return;   // self-transition: keep existing input controls
+            // Self-transition: show error inline, keep existing input controls
+            this._update({ messages: newMessages, error });
+            return;
         }
 
-        this._renderInputArea(input, placeholder, choices);
-    }
-
-    _handleReplayStep(item) {
-        this._addBubble(item, 'user');
-        this._lastTraceLength++;
-    }
-
-    // ── Rendering helpers ─────────────────────────────────────────────────────
-
-    _renderInputArea(input, placeholder, choices) {
-        this._inputAreaEl.innerHTML = '';
-
-        if (input === 'text') {
-            const inputEl       = document.createElement('input');
-            inputEl.type        = 'text';
-            inputEl.placeholder = placeholder || 'Type and press Enter…';
-
-            const sendBtn     = document.createElement('button');
-            sendBtn.innerText = 'Send';
-            sendBtn.style.cssText = 'flex-shrink:0;';
-
-            const go = () => {
-                const val = inputEl.value.trim();
-                if (!val) return;
-                inputEl.value = '';
-                this.runtime.submit(val);
-            };
-
-            inputEl.onkeydown = (e) => { if (e.key === 'Enter') go(); };
-            sendBtn.onclick   = go;
-
-            this._inputAreaEl.appendChild(inputEl);
-            this._inputAreaEl.appendChild(sendBtn);
-            setTimeout(() => inputEl.focus(), 100);
-        }
-
-        choices.forEach((c, i) => {
-            const b     = document.createElement('button');
-            b.innerText = `(${i + 1}) ${c}`;
-            b.onclick   = () => this.runtime.send(c);
-            this._inputAreaEl.appendChild(b);
+        this._update({
+            messages:    newMessages,
+            input:       input    ?? null,
+            placeholder: placeholder ?? '',
+            choices:     choices  ?? [],
+            error:       null,
         });
     }
 
-    _addBubble(text, side) {
-        const d = document.createElement('div');
-        d.className = `msg ${side}`;
-        d.innerText = text;
-        this._messagesEl.appendChild(d);
-        this._messagesEl.scrollTop = this._messagesEl.scrollHeight;
-    }
-
-    _showError(message) {
-        const input = this._inputAreaEl.querySelector('input');
-        this._inputAreaEl.querySelector('.validation-error')?.remove();
-
-        const err       = document.createElement('div');
-        err.className   = 'validation-error';
-        err.textContent = message;
-
-        this._inputAreaEl.appendChild(err);
-
-        if (input) {
-            input.classList.add('input-error');
-            input.focus();
-            input.addEventListener('input', () => {
-                input.classList.remove('input-error');
-                err.remove();
-            }, { once: true });
-        }
+    _handleReplayStep(item) {
+        this._lastTraceLength++;
+        this._update({ messages: [...this._state.messages, { text: item, side: 'user' }] });
     }
 }

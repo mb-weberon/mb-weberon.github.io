@@ -1,0 +1,499 @@
+{
+  "timestamp": "2026-04-01T17:02:36.390Z",
+  "appVersion": "v0.12.62",
+  "allTracesCount": 1730,
+  "traceIssues": [],
+  "runtimePaths": [
+    {
+      "name": "fresh_start_load_flow_run_tests_save",
+      "snapshots": [
+        {
+          "stateId": "booting",
+          "input": null,
+          "choices": [],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "no_flow",
+          "input": null,
+          "choices": [
+            "LOAD_ERROR",
+            "LOAD_FLOW",
+            "LOAD_RESULTS"
+          ],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "flow_idle",
+          "input": null,
+          "choices": [
+            "CHAT_INPUT",
+            "LOAD_ERROR",
+            "LOAD_FLOW",
+            "LOAD_RESULTS",
+            "LOAD_SERVICES",
+            "RESTART",
+            "RUN_TESTS"
+          ],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "tests_running",
+          "input": null,
+          "choices": [
+            "TESTS_COMPLETE",
+            "TESTS_STOP"
+          ],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "results_unsaved",
+          "input": null,
+          "choices": [
+            "REPLAY",
+            "RUN_TESTS",
+            "SAVE_RESULTS"
+          ],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "results_saved",
+          "input": null,
+          "choices": [
+            "LOAD_ERROR",
+            "LOAD_FLOW",
+            "LOAD_RESULTS",
+            "LOAD_SERVICES",
+            "REPLAY",
+            "RESTART",
+            "RUN_TESTS"
+          ],
+          "hasMessage": true,
+          "hasError": false
+        }
+      ]
+    },
+    {
+      "name": "boot_error_dismiss",
+      "snapshots": [
+        {
+          "stateId": "booting",
+          "input": null,
+          "choices": [],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "load_error",
+          "input": null,
+          "choices": [
+            "DISMISS",
+            "LOAD_FLOW"
+          ],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "no_flow",
+          "input": null,
+          "choices": [
+            "LOAD_ERROR",
+            "LOAD_FLOW",
+            "LOAD_RESULTS"
+          ],
+          "hasMessage": true,
+          "hasError": false
+        }
+      ]
+    },
+    {
+      "name": "fresh_start_load_results_replay_restart",
+      "snapshots": [
+        {
+          "stateId": "booting",
+          "input": null,
+          "choices": [],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "no_flow",
+          "input": null,
+          "choices": [
+            "LOAD_ERROR",
+            "LOAD_FLOW",
+            "LOAD_RESULTS"
+          ],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "results_ready",
+          "input": null,
+          "choices": [
+            "LOAD_ERROR",
+            "LOAD_FLOW",
+            "LOAD_SERVICES",
+            "REPLAY",
+            "RESTART",
+            "RUN_TESTS",
+            "SAVE_RESULTS"
+          ],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "session_active",
+          "input": null,
+          "choices": [
+            "CHAT_INPUT",
+            "LOAD_ERROR",
+            "LOAD_FLOW",
+            "LOAD_RESULTS",
+            "LOAD_SERVICES",
+            "REPLAY",
+            "RESTART",
+            "RUN_TESTS"
+          ],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "flow_idle",
+          "input": null,
+          "choices": [
+            "CHAT_INPUT",
+            "LOAD_ERROR",
+            "LOAD_FLOW",
+            "LOAD_RESULTS",
+            "LOAD_SERVICES",
+            "RESTART",
+            "RUN_TESTS"
+          ],
+          "hasMessage": true,
+          "hasError": false
+        }
+      ]
+    },
+    {
+      "name": "returning_user_start_fresh",
+      "snapshots": [
+        {
+          "stateId": "booting",
+          "input": null,
+          "choices": [],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "prompt_restore",
+          "input": null,
+          "choices": [
+            "LOAD_FLOW",
+            "LOAD_RESULTS",
+            "RESTORE",
+            "START_FRESH"
+          ],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "no_flow",
+          "input": null,
+          "choices": [
+            "LOAD_ERROR",
+            "LOAD_FLOW",
+            "LOAD_RESULTS"
+          ],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "flow_idle",
+          "input": null,
+          "choices": [
+            "CHAT_INPUT",
+            "LOAD_ERROR",
+            "LOAD_FLOW",
+            "LOAD_RESULTS",
+            "LOAD_SERVICES",
+            "RESTART",
+            "RUN_TESTS"
+          ],
+          "hasMessage": true,
+          "hasError": false
+        }
+      ]
+    },
+    {
+      "name": "restore_with_results",
+      "snapshots": [
+        {
+          "stateId": "booting",
+          "input": null,
+          "choices": [],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "prompt_restore",
+          "input": null,
+          "choices": [
+            "LOAD_FLOW",
+            "LOAD_RESULTS",
+            "RESTORE",
+            "START_FRESH"
+          ],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "restoring_flow",
+          "input": null,
+          "choices": [],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "results_ready",
+          "input": null,
+          "choices": [
+            "LOAD_ERROR",
+            "LOAD_FLOW",
+            "LOAD_SERVICES",
+            "REPLAY",
+            "RESTART",
+            "RUN_TESTS",
+            "SAVE_RESULTS"
+          ],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "tests_running",
+          "input": null,
+          "choices": [
+            "TESTS_COMPLETE",
+            "TESTS_STOP"
+          ],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "results_unsaved",
+          "input": null,
+          "choices": [
+            "REPLAY",
+            "RUN_TESTS",
+            "SAVE_RESULTS"
+          ],
+          "hasMessage": true,
+          "hasError": false
+        }
+      ]
+    },
+    {
+      "name": "restore_with_session_then_test",
+      "snapshots": [
+        {
+          "stateId": "booting",
+          "input": null,
+          "choices": [],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "prompt_restore",
+          "input": null,
+          "choices": [
+            "LOAD_FLOW",
+            "LOAD_RESULTS",
+            "RESTORE",
+            "START_FRESH"
+          ],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "restoring_flow",
+          "input": null,
+          "choices": [],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "session_active",
+          "input": null,
+          "choices": [
+            "CHAT_INPUT",
+            "LOAD_ERROR",
+            "LOAD_FLOW",
+            "LOAD_RESULTS",
+            "LOAD_SERVICES",
+            "REPLAY",
+            "RESTART",
+            "RUN_TESTS"
+          ],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "session_active",
+          "input": null,
+          "choices": [
+            "CHAT_INPUT",
+            "LOAD_ERROR",
+            "LOAD_FLOW",
+            "LOAD_RESULTS",
+            "LOAD_SERVICES",
+            "REPLAY",
+            "RESTART",
+            "RUN_TESTS"
+          ],
+          "hasMessage": false,
+          "hasError": false
+        },
+        {
+          "stateId": "tests_running",
+          "input": null,
+          "choices": [
+            "TESTS_COMPLETE",
+            "TESTS_STOP"
+          ],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "results_unsaved",
+          "input": null,
+          "choices": [
+            "REPLAY",
+            "RUN_TESTS",
+            "SAVE_RESULTS"
+          ],
+          "hasMessage": true,
+          "hasError": false
+        }
+      ]
+    },
+    {
+      "name": "restore_to_flow_idle",
+      "snapshots": [
+        {
+          "stateId": "booting",
+          "input": null,
+          "choices": [],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "prompt_restore",
+          "input": null,
+          "choices": [
+            "LOAD_FLOW",
+            "LOAD_RESULTS",
+            "RESTORE",
+            "START_FRESH"
+          ],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "restoring_flow",
+          "input": null,
+          "choices": [],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "flow_idle",
+          "input": null,
+          "choices": [
+            "CHAT_INPUT",
+            "LOAD_ERROR",
+            "LOAD_FLOW",
+            "LOAD_RESULTS",
+            "LOAD_SERVICES",
+            "RESTART",
+            "RUN_TESTS"
+          ],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "session_active",
+          "input": null,
+          "choices": [
+            "CHAT_INPUT",
+            "LOAD_ERROR",
+            "LOAD_FLOW",
+            "LOAD_RESULTS",
+            "LOAD_SERVICES",
+            "REPLAY",
+            "RESTART",
+            "RUN_TESTS"
+          ],
+          "hasMessage": true,
+          "hasError": false
+        }
+      ]
+    },
+    {
+      "name": "restore_fails",
+      "snapshots": [
+        {
+          "stateId": "booting",
+          "input": null,
+          "choices": [],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "prompt_restore",
+          "input": null,
+          "choices": [
+            "LOAD_FLOW",
+            "LOAD_RESULTS",
+            "RESTORE",
+            "START_FRESH"
+          ],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "restoring_flow",
+          "input": null,
+          "choices": [],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "load_error",
+          "input": null,
+          "choices": [
+            "DISMISS",
+            "LOAD_FLOW"
+          ],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "no_flow",
+          "input": null,
+          "choices": [
+            "LOAD_ERROR",
+            "LOAD_FLOW",
+            "LOAD_RESULTS"
+          ],
+          "hasMessage": true,
+          "hasError": false
+        }
+      ]
+    }
+  ]
+}

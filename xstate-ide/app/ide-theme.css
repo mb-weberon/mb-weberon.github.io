@@ -214,15 +214,14 @@ input[type="text"]:focus { border-color: var(--accent); }
 }
 
 /* ── Right pane ─────────────────────────────────────────────────────────────── */
-/* ── Right pane ─────────────────────────────────────────────────────────────── *
- *                                                                               *
- * Desktop (> 700px): static flex sibling of #diagram-pane, fixed 460px width. *
- * The slide-handle acts as a drag-to-resize gripper (col-resize cursor).       *
- *                                                                               *
- * Mobile (≤ 700px): full-width absolute overlay that slides left/right via     *
- * translateX, revealing the diagram underneath. Dragging the handle pans it.   *
+/* Desktop: in-flow flex sibling of #diagram-pane. JS shrinks its width to      *
+ * collapse it; #diagram-pane (flex:1) expands/contracts naturally.             *
+ * Mobile (≤ 700px): switches to position:absolute overlay; translateX slides   *
+ * it off-screen. See media query below.                                         *
  * ──────────────────────────────────────────────────────────────────────────── */
 #right-pane {
+    position: relative;
+    flex-shrink: 0;
     width: 460px;
     min-width: var(--handle-w);
     max-width: calc(100% - 40px);
@@ -231,7 +230,7 @@ input[type="text"]:focus { border-color: var(--accent); }
     background: var(--panel);
     box-shadow: -2px 0 10px rgba(0,0,0,0.08);
     z-index: 10;
-    position: relative;
+    transition: width 0.3s ease;
 }
 
 /* Content area — offset left to make room for the handle */
@@ -440,6 +439,62 @@ body.in-fullscreen #fs-exit-btn { display: inline-flex; align-items: center; }
     transition: transform 0.2s;
 }
 
+/* ── Observer section (IDE LOG) ─────────────────────────────────────────────── */
+#observer-toggle {
+    padding: 4px 10px;
+    background: #23272e;
+    border-top: 1px solid #333;
+    border-bottom: 1px solid #333;
+    cursor: pointer;
+    flex-shrink: 0;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+#observer-toggle span {
+    font-family: 'Courier New', monospace;
+    font-size: 10px;
+    color: #888;
+}
+
+#observer-toggle-arrow {
+    font-size: 10px;
+    color: #888;
+    transition: transform 0.2s;
+    margin-left: auto;
+}
+
+#observer-viewer {
+    background: #282c34;
+    overflow-y: auto;
+    border-bottom: 1px solid #ddd;
+    flex-shrink: 0;
+    max-height: 0;
+    transition: max-height 0.25s ease;
+}
+
+#observer-viewer.open {
+    max-height: 200px;
+}
+
+/* Same layout as #messages in chat-theme.css */
+#observer-list {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--chat-gap);
+}
+
+.obs-sys {
+    align-self: center;
+    font-size: 11px;
+    color: #999;
+    font-family: 'Courier New', monospace;
+    font-style: italic;
+}
+
 /* ── Replay bar — hidden until triggered ────────────────────────────────────── */
 #replay-bar {
     padding: 4px 8px 4px 18px;
@@ -590,7 +645,9 @@ body.in-fullscreen #fs-exit-btn { display: inline-flex; align-items: center; }
 
     #right-pane {
         position: absolute;
-        top: 0; right: 0; bottom: 0;
+        right: 0;
+        top: 0;
+        bottom: 0;
         width: 99% !important;
         max-width: unset;
         transform: translateX(0);
@@ -627,7 +684,9 @@ body.force-mobile-layout #diagram-pane {
 
 body.force-mobile-layout #right-pane {
     position: absolute;
-    top: 0; right: 0; bottom: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
     width: 99% !important;
     max-width: unset;
     transform: translateX(0);

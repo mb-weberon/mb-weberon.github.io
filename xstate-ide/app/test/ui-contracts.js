@@ -6,23 +6,30 @@
  * compares against one.
  *
  * Baseline files are named after the viewport they were captured at:
- *   ui-baseline-1026x769.json   ← created automatically on capture
- *
- * This means the tool is machine-independent by design: each machine captures
- * its own baseline and checks against it. No constants to maintain.
+ *   ui-baseline-1024x768.json   ← created automatically on capture
  *
  * Usage (browser console):
  *   await window.ui_full()           — one-call: opens popup, loads fixture, checks (or captures)
  *   await window.ui_full('capture')  — force capture baseline
  *   await window.ui_full('check')    — force check against baseline
  *
- * Workflow (first time on a machine):
- *   1. Open the app in any tab.
- *   2. Run: await window.ui_full('capture')
- *      Opens a 1024×768 popup, loads the smide test fixture, captures baseline.
- *      Accept the Save dialog or copy the JSON, then commit ui-baseline-1024x768.json.
- *   3. Before/after every change: await window.ui_full()
- *      Automatically opens popup, loads fixture, and checks against the saved baseline.
+ * Fixture: app/test/smide-test-results.json
+ *   ui_full loads this pre-baked results file which puts the IDE in results_ready
+ *   state — the only state where all toolbar buttons (including Save Flow) are
+ *   visible. Generate it once by running tests on the smide-machine and saving
+ *   the results, then commit as app/test/smide-test-results.json.
+ *
+ * Workflow (first time / after UI changes):
+ *   1. Generate the fixture (once):
+ *      Load smide-machine.json + smide-services.js → Test → Save Results →
+ *      commit the downloaded file as app/test/smide-test-results.json.
+ *   2. Capture baseline:
+ *      await window.ui_full('capture')
+ *      Opens a 1024×768 popup, loads the fixture, downloads ui-baseline-1024x768.json.
+ *      Commit it alongside the fixture.
+ *   3. Before/after every change:
+ *      await window.ui_full()
+ *      Opens popup, loads fixture, checks against the saved baseline.
  *
  * Low-level (if you need manual control):
  *   await window.ui_contracts()           — auto: check if baseline exists, else capture
@@ -30,8 +37,6 @@
  *   await window.ui_contracts('check')    — compare against baseline for current viewport
  *
  * Prerequisites for capture / check:
- *   - App must be loaded with at least the first bot message visible and
- *     #input-area populated (so controls-container has its real height).
  *   - DevTools must be undocked or closed — side/bottom docking changes
  *     window.innerWidth / innerHeight, which changes which baseline file is used.
  */
@@ -114,11 +119,17 @@ function measure(name, elementId, property) {
  */
 function measureToolbarButtons(prefix = '') {
     const results = [];
-    document.querySelectorAll('#toolbar button').forEach((btn, i) => {
-        const r     = btn.getBoundingClientRect();
+    let visibleIndex = 0;
+    document.querySelectorAll('#toolbar button').forEach((btn) => {
+        const r = btn.getBoundingClientRect();
+        // Skip hidden buttons (display:none or otherwise not rendered).
+        // State-driven visibility means some buttons are intentionally absent;
+        // measuring them at height:0 would trigger false touch-minimum failures.
+        if (r.height === 0) return;
+        visibleIndex++;
         const s     = getComputedStyle(btn);
         const label = btn.innerText.trim().replace(/\s+/g, '_').slice(0, 20);
-        const base  = `${prefix}toolbar_btn_${i + 1}[${label}]`;
+        const base  = `${prefix}toolbar_btn_${visibleIndex}[${label}]`;
         results.push(
             { name: `${base}_height`,     value: parseFloat(r.height.toFixed(2)),               unit: 'px' },
             { name: `${base}_width`,      value: parseFloat(r.width.toFixed(2)),                unit: 'px' },
@@ -155,6 +166,8 @@ async function snapshotDefault() {
         measure('controls_bottom',      'controls-container', 'bottom'),
         measure('toolbar_height',       'toolbar',            'height'),
         measure('pane_content_left',    'pane-content',       'left'),
+        measure('diagram_pane_right',   'diagram-pane',       'right'),
+        measure('right_pane_left',      'right-pane',         'left'),
         ...measureToolbarButtons(),
     ];
 }
@@ -193,6 +206,38 @@ async function snapshotProfileViewerClosed() {
     ];
 
     if (wasOpen) { window.toggleProfile?.(); await reflow(); }
+    return measurements;
+}
+
+async function snapshotObserverViewerOpen() {
+    const viewer  = document.getElementById('observer-viewer');
+    if (!viewer) return [];
+    const wasOpen = viewer.classList.contains('open');
+
+    if (!wasOpen) { window.toggleObserver?.(); await reflow(); }
+
+    const measurements = [
+        measure('observer_toggle_height',      'observer-toggle', 'height'),
+        measure('observer_viewer_open_maxHeight', 'observer-viewer', 'maxHeight'),
+    ];
+
+    if (!wasOpen) { window.toggleObserver?.(); await reflow(); }
+    return measurements;
+}
+
+async function snapshotObserverViewerClosed() {
+    const viewer  = document.getElementById('observer-viewer');
+    if (!viewer) return [];
+    const wasOpen = viewer.classList.contains('open');
+
+    if (wasOpen) { window.toggleObserver?.(); await reflow(); }
+
+    const measurements = [
+        measure('observer_toggle_height',        'observer-toggle', 'height'),
+        measure('observer_viewer_closed_height', 'observer-viewer', 'height'),
+    ];
+
+    if (wasOpen) { window.toggleObserver?.(); await reflow(); }
     return measurements;
 }
 
@@ -257,9 +302,63 @@ async function snapshotMobileLayout() {
     const mobileCollapsed = await _measurePaneCollapsed('mobile_');
     measurements.push(...mobileCollapsed);
 
+    // Drawer position in mobile context — catches translateY-over-negative-bottom stacking
+    const mobileDrawer = await _measureDrawerInMobile();
+    measurements.push(...mobileDrawer);
+
     if (!wasMobile) {
         window._forceMobileLayout = false;
         document.body.classList.remove('force-mobile-layout');
+        await reflow();
+    }
+    return measurements;
+}
+
+// Measures the drawer while in mobile context (called from snapshotMobileLayout so
+// force-mobile-layout is already active). Checks that the collapsed drawer header
+// is within the viewport — catches the translateY-over-negative-bottom stacking bug.
+async function _measureDrawerInMobile() {
+    const existing       = document.getElementById('test-results-drawer');
+    const alreadyPresent = !!existing;
+
+    if (!alreadyPresent) {
+        const mockResults = {
+            runAt:  new Date().toISOString(),
+            flowId: 'ui-contract-mock-mobile',
+            total: 1, passed: 1, failed: 0,
+            config: window._config ?? { id: 'mock', states: {} },
+            cases: [
+                { path: 1, passed: true, expected: ['a'], actual: ['a'],
+                  diffs: [], finalStateId: 'state_a', finalContext: {},
+                  bubbles: [], visitedEdges: [] },
+            ]
+        };
+        if (!window._showResultsDrawer) return [];
+        window._showResultsDrawer(mockResults);
+        await reflow();
+    }
+
+    const drawer = document.getElementById('test-results-drawer');
+    if (!drawer) return [];
+
+    // Measure the collapsed state (drawer should be visible as a bottom strip)
+    const rect   = drawer.getBoundingClientRect();
+    const header = drawer.firstElementChild;
+    const hRect  = header?.getBoundingClientRect();
+
+    // header_top_in_viewport: should be < window.innerHeight (header visible at bottom)
+    // A value >= window.innerHeight means the header was pushed below the viewport.
+    const headerTopInViewport = parseFloat((hRect?.top ?? rect.top).toFixed(2));
+
+    const measurements = [
+        { name: 'mobile_drawer_bottom_viewport_distance',
+          value: parseFloat((window.innerHeight - rect.bottom).toFixed(2)), unit: 'px' },
+        { name: 'mobile_drawer_header_top_in_viewport',
+          value: headerTopInViewport, unit: 'px' },
+    ];
+
+    if (!alreadyPresent) {
+        drawer.remove();
         await reflow();
     }
     return measurements;
@@ -318,11 +417,19 @@ async function snapshotResultsDrawer() {
         ? parseFloat((window.innerHeight - headerRect.bottom).toFixed(2))
         : 0;
 
+    // drawer_bottom_viewport_distance: distance from drawer bottom edge to viewport bottom.
+    // Should be ~0 when the drawer is correctly pinned at bottom:0 (fixed position).
+    // A negative value means the drawer has been pushed below the viewport — the exact
+    // symptom of the mobile/desktop resize bug (bottom:-238px stacked with translateY).
+    const drawerBottomDist = parseFloat((window.innerHeight - drawerRect.bottom).toFixed(2));
+
     const measurements = [
-        { name: 'drawer_width',                value: parseFloat(drawerRect.width.toFixed(2)),          unit: 'px' },
-        { name: 'drawer_right_edge',           value: parseFloat(drawerRect.right.toFixed(2)),           unit: 'px' },
-        { name: 'drawer_header_height',        value: parseFloat((headerRect?.height ?? 0).toFixed(2)), unit: 'px' },
-        { name: 'drawer_header_bottom_offset', value: headerBottomOffset,                                unit: 'px' },
+        { name: 'drawer_width',                    value: parseFloat(drawerRect.width.toFixed(2)),          unit: 'px' },
+        { name: 'drawer_right_edge',               value: parseFloat(drawerRect.right.toFixed(2)),           unit: 'px' },
+        { name: 'drawer_top',                      value: parseFloat(drawerRect.top.toFixed(2)),             unit: 'px' },
+        { name: 'drawer_bottom_viewport_distance', value: drawerBottomDist,                                  unit: 'px' },
+        { name: 'drawer_header_height',            value: parseFloat((headerRect?.height ?? 0).toFixed(2)), unit: 'px' },
+        { name: 'drawer_header_bottom_offset',     value: headerBottomOffset,                                unit: 'px' },
     ];
 
     if (!alreadyPresent) {
@@ -344,11 +451,13 @@ async function measureAll() {
     // Pane-collapsed is now measured inside mobile_layout (the only context
     // where the CSS rule fires), under mobile_pane_collapsed_* keys.
     const sections = {
-        default:               await snapshotDefault(),
-        profile_viewer_open:   await snapshotProfileViewerOpen(),
-        profile_viewer_closed: await snapshotProfileViewerClosed(),
-        mobile_layout:         await snapshotMobileLayout(),
-        results_drawer:        await snapshotResultsDrawer(),
+        default:                  await snapshotDefault(),
+        profile_viewer_open:      await snapshotProfileViewerOpen(),
+        profile_viewer_closed:    await snapshotProfileViewerClosed(),
+        observer_viewer_open:     await snapshotObserverViewerOpen(),
+        observer_viewer_closed:   await snapshotObserverViewerClosed(),
+        mobile_layout:            await snapshotMobileLayout(),
+        results_drawer:           await snapshotResultsDrawer(),
     };
 
     return { timestamp, appVersion, viewport, sections };
@@ -381,6 +490,15 @@ function compareToBaseline(current, baseline) {
         'mobile_profile_viewer_open_height',
     ]);
 
+    // Metrics that should be ~0 at baseline. The standard ratio check is useless
+    // when base.value===0 (ratio always 1). Instead we check abs(current) <= tolerance.
+    // 4px tolerance allows for sub-pixel rounding; anything beyond is a real shift.
+    const NEAR_ZERO_METRICS = new Set([
+        'drawer_bottom_viewport_distance',
+        'mobile_drawer_bottom_viewport_distance',
+    ]);
+    const NEAR_ZERO_TOL_PX = 4;
+
     for (const [sectionName, measurements] of Object.entries(current.sections)) {
         const baseSection = baseline.sections[sectionName];
         if (!baseSection) {
@@ -410,6 +528,24 @@ function compareToBaseline(current, baseline) {
 
             if (base.value === null) {
                 warnings.push(`${sectionName} / ${m.name}: baseline value was null`);
+                continue;
+            }
+
+            // Near-zero metrics: ratio is meaningless when baseline ≈ 0.
+            // Fail if |current| exceeds tolerance — catches off-screen positioning.
+            if (NEAR_ZERO_METRICS.has(m.name)) {
+                if (Math.abs(m.value) > NEAR_ZERO_TOL_PX) {
+                    failures.push({
+                        section:  sectionName,
+                        name:     m.name,
+                        reason:   `expected ~0px but got ${m.value}px (tolerance ±${NEAR_ZERO_TOL_PX}px)`,
+                        baseline: base.value,
+                        current:  m.value,
+                        delta:    parseFloat((m.value - base.value).toFixed(2))
+                    });
+                } else {
+                    passed.push(`${sectionName}/${m.name}`);
+                }
                 continue;
             }
 
@@ -535,14 +671,17 @@ function _printHint(label) {
     console.groupCollapsed('%c📐 UI Contracts — no baseline found', 'color:#e5c07b; font-weight:bold;');
     console.log(
         `Looked for: ui-baseline-${label}.json  (viewport: ${W}×${H})\n\n` +
-        `For a stable fixed-size window, run:\n` +
-        `  window.open(location.href, '_blank', 'width=1024,height=768')\n` +
-        `then undock DevTools before measuring.\n\n` +
-        `To capture a baseline:\n` +
-        `  await window.ui_contracts('capture', '1024x768')  ← saves ui-baseline-1024x768.json\n\n` +
-        `To check against a specific baseline:\n` +
+        `Prerequisite — generate the fixture file once:\n` +
+        `  Load smide-machine.json + smide-services.js → Test → Save Results\n` +
+        `  Commit as app/test/smide-test-results.json\n\n` +
+        `Then capture a baseline (opens a 1024×768 popup automatically):\n` +
+        `  await window.ui_full('capture')  ← recommended\n\n` +
+        `Or manually in a 1024×768 window with DevTools undocked:\n` +
+        `  await window.ui_contracts('capture', '1024x768')\n\n` +
+        `To check against the baseline:\n` +
+        `  await window.ui_full()           ← recommended\n` +
         `  await window.ui_contracts('check', '1024x768')\n\n` +
-        `To auto-detect (uses current ${W}×${H} as label):\n` +
+        `To auto-detect viewport (uses current ${W}×${H} as label):\n` +
         `  await window.ui_contracts()`
     );
     console.groupEnd();
@@ -585,22 +724,16 @@ async function ui_contracts(mode, label) {
         );
         console.log(json);
 
-        if (window.showSaveFilePicker) {
-            try {
-                const fh = await window.showSaveFilePicker({
-                    suggestedName: filename,
-                    types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }]
-                });
-                const writable = await fh.createWritable();
-                await writable.write(json);
-                await writable.close();
-                console.log(`💾 Saved directly to ${filename} via File System Access API`);
-            } catch (e) {
-                if (e.name !== 'AbortError') {
-                    console.warn('⚠️  File System Access API save failed:', e.message);
-                }
-            }
-        }
+        const blob = new Blob([json], { type: 'application/json' });
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href     = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        console.log(`💾 Downloading ${filename}…`);
 
         console.groupEnd();
         return data;
@@ -645,6 +778,11 @@ async function ui_contracts(mode, label) {
 const UI_FULL_W = 1024;
 const UI_FULL_H = 768;
 
+// Always resolves to the app/ entry point (app/index.html) regardless of the
+// current browser URL. import.meta.url is the URL of this module file
+// (app/test/ui-contracts.js), so '../' reliably points to app/.
+const APP_URL = new URL('../', import.meta.url).href;
+
 async function _waitFor(predicate, timeoutMs = 6000, intervalMs = 100) {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
@@ -654,33 +792,146 @@ async function _waitFor(predicate, timeoutMs = 6000, intervalMs = 100) {
     return false;
 }
 
+// ── Fixture loader ────────────────────────────────────────────────────────────
+//
+// Loads app/test/smide-test-results.json, which puts the IDE in results_ready
+// state — the only state where all toolbar buttons (including Save Flow) are
+// visible. This replicates what loadTestResults() does but via fetch so it can
+// be called programmatically without a user file-picker gesture.
+
+async function _loadFixture(win = window) {
+    console.log('  _loadFixture: fetching smide-test-results.json…');
+    const res = await fetch('./test/smide-test-results.json', { cache: 'no-store' });
+    if (!res.ok) throw new Error(
+        `Cannot load fixture (HTTP ${res.status}).\n` +
+        `Generate it: Load smide-machine.json + smide-services.js → Test → Save Results\n` +
+        `then commit the file as app/test/smide-test-results.json.`
+    );
+    const results = await res.json();
+    console.log(`  _loadFixture: fixture parsed (flowId=${results.flowId}, cases=${results.cases?.length})`);
+    console.log(`  _loadFixture: smide state before load = ${win._smideState ?? '(unknown)'}`);
+    win._testResults = results;
+    if (results.servicesSource && win._reloadServicesFromSource) {
+        console.log('  _loadFixture: reloading services from source…');
+        await win._reloadServicesFromSource(results.servicesSource, `${results.flowId}-services.js`);
+        console.log(`  _loadFixture: services reloaded | smide = ${win._smideState}`);
+    }
+    if (results.config && win._restartRuntime) {
+        console.log('  _loadFixture: restarting runtime…');
+        win._restartRuntime(results.config);
+        console.log(`  _loadFixture: runtime restarted | smide = ${win._smideState}`);
+    }
+    // Reset pane offset and panel open states so saved uiPrefs don't affect measurements.
+    win._resetPanePrefs?.();
+    console.log('  _loadFixture: showing results drawer…');
+    win._showResultsDrawer?.(results, win._replayTrace);
+    console.log(`  _loadFixture: drawer shown | smide = ${win._smideState}`);
+    console.log('  _loadFixture: setting smide state → results_ready');
+    win._setSmideState?.('results_ready');
+    console.log(`  _loadFixture: done | smide = ${win._smideState}`);
+}
+
+// Stable reference to the popup — avoids re-navigating it on repeated ui_full() calls.
+// window.open(url, name) navigates the named window even when url is unchanged,
+// which resets the page mid-test. Holding a direct reference and skipping
+// window.open() on reuse prevents this.
+let _uiTestPopup = null;
+
 async function ui_full(mode, label = `${UI_FULL_W}x${UI_FULL_H}`) {
     const rightSize = () => window.innerWidth === UI_FULL_W && window.innerHeight === UI_FULL_H;
 
     if (!rightSize()) {
-        const w = window.open(location.href, 'ui-test', `width=${UI_FULL_W},height=${UI_FULL_H},left=100,top=100`);
-        if (!w) { console.error('❌ Popup blocked — allow popups for this page and retry'); return null; }
+        let w;
+        if (_uiTestPopup && !_uiTestPopup.closed) {
+            w = _uiTestPopup;
+            console.log('ℹ️  ui_full: reusing existing popup (no navigation)');
+        } else {
+            console.log(`🪟 ui_full: opening popup ${UI_FULL_W}×${UI_FULL_H} → ${APP_URL}`);
+            w = window.open(APP_URL, 'ui-test', `width=${UI_FULL_W},height=${UI_FULL_H},left=100,top=100`);
+            if (!w) { console.error('❌ Popup blocked — allow popups for this page and retry'); return null; }
+            _uiTestPopup = w;
+        }
 
-        await new Promise(r => w.addEventListener('load', r, { once: true }));
+        if (w.document.readyState !== 'complete') {
+            console.log('⏳ ui_full: waiting for popup load event…');
+            await new Promise(r => w.addEventListener('load', r, { once: true }));
+            console.log('✅ ui_full: popup load event fired');
+        }
 
-        const booted = await _waitFor(() => typeof w._loadFlowFromUrl === 'function');
-        if (!booted) { console.error('❌ App boot timeout in popup'); return null; }
+        console.log('⏳ ui_full: waiting for app to boot (_restartRuntime + smide stable state)…');
+        const TRANSIENT = ['render_ui', 'booting', 'restoring_flow'];
+        const booted = await _waitFor(
+            () => typeof w._restartRuntime === 'function' &&
+                  typeof w._setSmideState  === 'function' &&
+                  typeof w._smideState     === 'string'   &&
+                  !TRANSIENT.includes(w._smideState),
+            8000
+        );
+        if (!booted) {
+            console.error('❌ App boot timeout — smide did not reach a stable state.', w._smideState ?? '(unknown)');
+            console.info('   Check popup DevTools for module import errors.');
+            return null;
+        }
+        console.log(`✅ ui_full: app booted | smide = ${w._smideState}`);
 
-        await w._loadFlowFromUrl('./test/smide-machine.json', './test/smide-services.js');
+        console.log('⏳ ui_full: loading fixture (smide-test-results.json)…');
+        try {
+            await _loadFixture(w);
+        } catch (e) {
+            console.error('❌ _loadFixture failed:', e.message);
+            return null;
+        }
+        console.log('✅ ui_full: fixture loaded');
 
-        const mounted = await _waitFor(() => !!w.document.getElementById('messages'));
-        if (!mounted) { console.error('❌ ChatUI mount timeout'); return null; }
+        // Wait for the machine to settle into results_ready with all toolbar
+        // buttons rendered (including Save Flow which is only visible here).
+        console.log('⏳ ui_full: waiting for UI ready (#input-area controls)…');
+        const ready = await _waitFor(
+            () => !!w.document.querySelector('#input-area button, #input-area input'),
+            8000
+        );
+        if (!ready) {
+            console.error('❌ UI ready timeout — machine did not reach a stable state with #input-area controls.');
+            console.info('   Current smide state:', w._smideState ?? '(unknown)');
+            return null;
+        }
+        console.log('✅ ui_full: UI ready');
 
+        // ui_contracts is assigned at module evaluation time; by the time the app
+        // has booted it must exist — but guard to give a clear error if not.
+        if (typeof w.ui_contracts !== 'function') {
+            console.error('❌ w.ui_contracts is not a function — ui-contracts.js may not have loaded in the popup.');
+            return null;
+        }
+
+        console.log(`▶️  ui_full: running ui_contracts('${mode ?? 'auto'}', '${label}') in popup…`);
         return await w.ui_contracts(mode, label);
     }
 
-    if (!window._config) {
-        if (!window._loadFlowFromUrl) { console.error('❌ _loadFlowFromUrl not available'); return null; }
-        await window._loadFlowFromUrl('./test/smide-machine.json', './test/smide-services.js');
-        const mounted = await _waitFor(() => !!document.getElementById('messages'));
-        if (!mounted) { console.error('❌ ChatUI mount timeout'); return null; }
+    // Already the right size — run in-place.
+    console.log('ℹ️  ui_full: viewport is already 1024×768 — running in current window');
+    console.log('⏳ ui_full: loading fixture…');
+    try {
+        await _loadFixture(window);
+    } catch (e) {
+        console.error('❌ _loadFixture failed:', e.message);
+        return null;
     }
+    console.log('✅ ui_full: fixture loaded');
 
+    console.log('⏳ ui_full: waiting for UI ready…');
+    const ready = await _waitFor(
+        () => !!document.querySelector('#input-area button, #input-area input'),
+        8000
+    );
+    if (!ready) {
+        console.error('❌ UI ready timeout — machine did not reach a stable state with #input-area controls.');
+        console.info('   Current smide state:', window._smideState ?? '(unknown)');
+        return null;
+    }
+    console.log('✅ ui_full: UI ready');
+
+    console.log(`▶️  ui_full: running ui_contracts('${mode ?? 'auto'}', '${label}')…`);
     return await window.ui_contracts(mode, label);
 }
 

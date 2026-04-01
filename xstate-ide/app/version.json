@@ -1,9 +1,114 @@
 {
   "major": 0,
   "minor": 12,
-  "patch": 40,
+  "patch": 62,
   "label": "",
   "history": [
+    {
+      "version": "0.12.62",
+      "date": "2026-04-01",
+      "note": "Feature: Share flow as compressed URL — app/share.js uses fflate deflateSync/inflateSync + base64url; buildShareUrl 3-tier graceful degradation (machine+services+results → machine+services → machine only → tooLarge); app/config.js holds CANONICAL_BASE_URL; Share button in toolbar opens popover with copy link + included summary or tooLarge message; boot-time #flow= hash detection auto-loads payload when smide reaches no_flow; share-btn added to smide-machine toolbar for all flow-loaded states"
+    },
+    {
+      "version": "0.12.61",
+      "date": "2026-03-31",
+      "note": "Fix: stopped-test restore shows all rows — store allPaths:traces in results so showResultsDrawer can render pending rows for untested paths (caseMap by path-1 index, pending rows from allPaths); resume: runAllTracesHeadless accepts priorResults option, pre-populates cases+caseMap, skips completed indices in loop; summary shows · K not run when tests were stopped; main.js passes window._testResults as priorResults so Test button resumes partial results"
+    },
+    {
+      "version": "0.12.60",
+      "date": "2026-03-31",
+      "note": "Fix: stopped-test results showed N/N denominator on restore — add pathCount field (full trace count) to results object in both runAllTraces and runAllTracesHeadless; showResultsDrawer uses pathCount ?? total as denominator so stopped runs display correctly as M/N"
+    },
+    {
+      "version": "0.12.59",
+      "date": "2026-03-31",
+      "note": "Persist test results in browser Cache API (xstate-ide-v1 cache, /xstate-ide/results) — cacheResults() called after runAllTracesHeadless and loadTestResults; on restore, checkPersistedState checks cache for hasResults, restorePersistedState loads cached results and shows drawer; clearResultsCache called on Start Fresh and on Load Flow (new flow invalidates prior results)"
+    },
+    {
+      "version": "0.12.58",
+      "date": "2026-03-31",
+      "note": "IDE LOG: observer-viewer background changed from --chat-bg to #282c34 (matches profile-viewer); fix &amp; rendering as literal text in htm templates — CONTEXT & STATE and Apply & Restart now use bare & character"
+    },
+    {
+      "version": "0.12.57",
+      "date": "2026-03-31",
+      "note": "uiPrefs persistence — xstate-ide:uiPrefs in localStorage stores paneOffset/drawerHeight/profileOpen/observerOpen; _persistUIPrefs(patch) merges; _applyUIPrefs() called after mountPaneUI restores all four; index.html exposes window._applyPaneOffset + saves paneOffset on mouseup/_endDrag; toggleProfile/toggleObserver wrapped to persist after rAF; drawer height restored in _onDrawerAdded; drawer touchend saves height"
+    },
+    {
+      "version": "0.12.56",
+      "date": "2026-03-31",
+      "note": "IDE LOG: wire CHAT_INPUT/RESTART/REPLAY smide events — ChatUI accepts onUserInput callback (fires on submit+choice, not on replay steps); onRestart toolbar + onApplyCtx send RESTART; _replayTrace sends REPLAY before _restartRuntime; _restartRuntime accepts _isReplay flag to suppress LOAD_FLOW when replay drives a config switch"
+    },
+    {
+      "version": "0.12.55",
+      "date": "2026-03-31",
+      "note": "Fix: _showBlankSlate/_showRestorePrompt guarded by stateId change — XState5 fires snapshot on ignored events (no transition), causing prompt_restore to wipe ChatUI when _restartRuntime sends LOAD_FLOW; fix checks stateId !== _obsPrevStateId before calling these functions"
+    },
+    {
+      "version": "0.12.54",
+      "date": "2026-03-31",
+      "note": "ui-contracts: add observer section measurements (observer_toggle_height, observer_viewer_open_maxHeight, observer_viewer_closed_height); expose window.toggleObserver from main.js; PaneUI.mountPaneUI returns toggleObserver; baseline recapture required"
+    },
+    {
+      "version": "0.12.53",
+      "date": "2026-03-31",
+      "note": "Task 6.5: smide observer chat pane — SmideObserverSection in PaneUI.js renders IDE LOG accordion between CONTEXT & STATE and replay bar; three message classes: user bubble (right, blue) for user-sent smide events, system label (centred italic) for onDone/onError, bot bubble (left, grey) for destination state meta.chat; smide-machine.json gains meta.chat + meta.onDone + meta.onError on all states; main.js wraps smideRuntime.send() to capture _pendingSmideEvent (XState5 snapshot.event is not exposed); onDone/onError detected structurally via prev state invoke + target state; #observer-mount added to index.html; observer styles in ide-theme.css reuse chat-theme .msg classes; ref on #observer-viewer for correct auto-scroll"
+    },
+    {
+      "version": "0.12.52",
+      "date": "2026-03-31",
+      "note": "Task 5: smide-machine as live Runtime — smideRuntime (headless) drives toolbar/pane via onSnapshot; production services inline in main.js (checkPersistedState reads localStorage, restorePersistedState calls _activateFlow); _setSmideState() removed, callers send XState events (LOAD_FLOW, RUN_TESTS, TESTS_COMPLETE, TESTS_STOP, LOAD_SERVICES); window._setSmideState shim maps legacy state IDs for generate-traces.js/ui-contracts.js; restore prompt and blank-slate driven from onSnapshot (prompt_restore/no_flow states); smide-machine gains LOAD_RESULTS on flow_idle/session_active/results_saved and LOAD_FLOW on load_error"
+    },
+    {
+      "version": "0.12.51",
+      "date": "2026-03-31",
+      "note": "Add smide-contracts regression tests — three suites: getAllTraces structural assertions + path count baseline (suite 1), Runtime driven through 8 named boot/interaction paths with inline service variants (suite 2), static structure check of all state targets and guard references (suite 3, no baseline, always runs); smide-baseline.json to be captured and committed on first run; index.html loads smide-contracts.js; main.js quick-start renamed to 'Regression contracts' and now lists ui_full + runtime_contracts + smide_contracts"
+    },
+    {
+      "version": "0.12.49",
+      "date": "2026-03-31",
+      "note": "ui-contracts: add drawer Y-position coverage — drawer_top + drawer_bottom_viewport_distance in results_drawer section (NEAR_ZERO_METRICS absolute check catches off-screen positioning); mobile_drawer_bottom_viewport_distance + mobile_drawer_header_top_in_viewport via _measureDrawerInMobile() called inside snapshotMobileLayout(); diagram_pane_right + right_pane_left added to default section to verify in-flow pane alignment"
+    },
+    {
+      "version": "0.12.48",
+      "date": "2026-03-31",
+      "note": "Fix: results drawer no longer goes off-screen after window resize across 700px mobile/desktop threshold — isMobile is now reactive state updated by resize listener; collapse effect deps include isMobile so correct branch runs on mode switch; each branch clears the other's stale styles (bottom/height/overflow vs transform); onMouseUp always snaps to bottom:0 so no negative bottom can survive a mode switch; add drawerDump() and drawerReset() console debug helpers"
+    },
+    {
+      "version": "0.12.47",
+      "date": "2026-03-31",
+      "note": "Add runtime-contracts regression tests — two suites: inline machine (text input, guard validation, choice events, updateContext, final state) and realtor machine (async services via fromPromise, always-transient route_by_timing, onDone/onError, recordService, two divergent paths); realtor-machine.json + realtor-services.js copied into app/test/ for server accessibility; runtime-baseline.json committed at v0.12.47; index.html loads runtime-contracts.js alongside ui-contracts.js"
+    },
+    {
+      "version": "0.12.46",
+      "date": "2026-03-30",
+      "note": "Fix: pack prod — preact/hooks and htm/preact CDN URLs now use ?external=preact so esm.sh emits bare 'preact' specifiers instead of /preact?target=es2022 root-relative imports; bare specifiers resolve via importmap to ./preact.js, eliminating the query-string path that static servers can't serve and the version conflict from following the redirect"
+    },
+    {
+      "version": "0.12.45",
+      "date": "2026-03-30",
+      "note": "Fix: pack prod — fetchModuleTree now sanitizes query-string import paths (e.g. /preact?target=es2022) by following the esm.sh redirect and storing files at the final pathname; rewrites those import specifiers in source so static servers can serve them (superseded by 0.12.46)"
+    },
+    {
+      "version": "0.12.44",
+      "date": "2026-03-30",
+      "note": "Task 3e: Preact results drawer — ResultsDrawerUI.js replaces imperative _createDrawerShell/_td/showResultsDrawer in generate-traces.js; mountResultsDrawer() Preact component owns header/subheader/table/drag/collapse/resize; runAllTracesHeadless + showResultsDrawer use drawerHandle.updateRow/setSummary/setRows/selectRow; _restoreCase uses window._setChatMessages + window._restoreStateView instead of direct DOM writes; _dismissDrawer() replaces document.getElementById().remove() pattern"
+    },
+    {
+      "version": "0.12.43",
+      "date": "2026-03-30",
+      "note": "Task 3d: Preact pane UI — titlebar, profile section (CONTEXT & STATE toggle + ctx-edit panel), and replay bar migrated to PaneUI.js; mountPaneUI() replaces static HTML; _updatePane patch fn drives all updates; window.toggleProfile/window._showReplayBar/window._clearReplayBar re-exposed via PaneUI; _restoreCase in generate-traces uses _showReplayBar + _activeReplayConfig instead of direct onclick override"
+    },
+    {
+      "version": "0.12.42",
+      "date": "2026-03-29",
+      "note": "Task 3+4: Preact toolbar — toolbar migrated to Preact/htm component (ToolbarUI.js); mountToolbar() replaces static HTML; _setSmideState/_setTestRunning update state via _updateToolbar patch function; test button click logic moves to onTest callback; importmap gains preact/preact/hooks/htm/preact entries. Task 4: prod bundle now offline-ready — xstate.js and fflate.js fetched from CDN at pack time and bundled locally; importmap uses ./xstate.js and ./fflate.js instead of CDN URLs"
+    },
+    {
+      "version": "0.12.41",
+      "date": "2026-03-30",
+      "note": "Fix: ui-contracts — ui_full now loads smide-test-results.json fixture (results_ready state) so all toolbar buttons including Save Flow are visible during capture/check; _loadFixture() helper replicates loadTestResults programmatically via fetch; capture uses blob download instead of showSaveFilePicker (no user-gesture requirement); popup URL derived from import.meta.url not location.href; _waitFor checks #input-area controls not just #messages; hidden toolbar buttons skipped in measureToolbarButtons; console help and docblock updated"
+    },
     {
       "version": "0.12.40",
       "date": "2026-03-29",

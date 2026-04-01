@@ -1,5 +1,5 @@
 {
-  "id": "realtor_bot",
+  "id": "realtor",
   "initial": "ask_email",
   "context": {
     "user_email": "",

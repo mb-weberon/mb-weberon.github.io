@@ -6,9 +6,12 @@
     <title>SM-IDE</title>
     <script type="importmap">
         { "imports": {
-            "xstate":  "https://unpkg.com/xstate@5/dist/xstate.esm.js",
-            "mermaid": "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs",
-            "fflate":  "https://cdn.jsdelivr.net/npm/fflate@0.8.2/esm/browser.js"
+            "xstate":       "https://unpkg.com/xstate@5/dist/xstate.esm.js",
+            "mermaid":      "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs",
+            "fflate":       "https://cdn.jsdelivr.net/npm/fflate@0.8.2/esm/browser.js",
+            "preact":       "https://esm.sh/preact@10.25.4",
+            "preact/hooks": "https://esm.sh/preact@10.25.4/hooks",
+            "htm/preact":   "https://esm.sh/htm@3.1.1/preact"
         }}
     </script>
     <link rel="stylesheet" href="./ide-theme.css">
@@ -36,22 +39,10 @@
 
     <div id="app">
 
-        <!-- ── Diagram pane ───────────────────────────────────────────────── -->
-        <div id="diagram-pane">
-            <h2>Live State Machine
-                <button id="dir-toggle" title="Toggle graph direction" onclick="window.toggleGraphDir()">⇄</button>
-            </h2>
-            <div id="diagram-viewport">
-                <div id="diagram-canvas">
-                    <div id="mermaid-container"></div>
-                </div>
-                <div id="zoom-controls">
-                    <button onclick="window.diagramZoom(0.2)"  title="Zoom in">+</button>
-                    <button onclick="window.diagramZoom(-0.2)" title="Zoom out">−</button>
-                    <button onclick="window.diagramReset()"    title="Reset zoom" style="font-size:11px;">⊙</button>
-                </div>
-            </div>
-        </div>
+        <!-- ── Diagram pane — mounted by Preact (DiagramUI.js) via main.js mountDiagramPane().
+             display:contents makes this wrapper transparent to #app's flex layout,
+             so #diagram-pane (rendered inside by Preact) is a direct flex child. -->
+        <div id="diagram-mount" style="display:contents"></div>
 
         <!-- ── Right pane ─────────────────────────────────────────────────── -->
         <div id="right-pane">
@@ -63,13 +54,8 @@
             <!-- Everything else is offset right of the handle -->
             <div id="pane-content">
 
-                <!-- App title + version -->
-                <div id="app-titlebar">
-                    <span id="app-title">SM-IDE</span>
-                    <span id="version-badge"><span id="version-label">—</span></span>
-                    <button id="fs-exit-btn" title="Exit fullscreen"
-                            onclick="document.exitFullscreen?.(); this.closest('body').classList.remove('in-fullscreen');">⛶</button>
-                </div>
+                <!-- Titlebar — mounted by Preact (PaneUI.js) via main.js mountPaneUI() -->
+                <div id="titlebar-mount"></div>
 
                 <!-- Chat UI mount point — fills all available space between titlebar and bottom tools -->
                 <div id="chat-mount" style="display:flex; flex-direction:column; flex:1; overflow:hidden; min-width:0;"></div>
@@ -84,76 +70,21 @@
                     <span id="pane-tab-arrow">›</span>
                 </div>
 
-                <!-- Context viewer (collapsed by default) -->
-                <div id="profile-toggle" onclick="window.toggleProfile()">
-                    <span>CONTEXT &amp; STATE</span>
-                    <span id="test-progress"></span>
-                    <span id="profile-toggle-arrow">▼</span>
-                </div>
-                <div id="profile-viewer">
-                    <div id="profile-viewer-inner">
-                        <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
-                            <strong>CONTEXT (REAL-TIME)</strong>
-                            <div style="display:flex; gap:4px;">
-                                <button onclick="window.openCtxEdit()"
-                                        title="Override initial context values"
-                                        style="font-size:10px; padding:2px 6px; background:#444;">⚙ Initial</button>
-                                <button id="copy-btn" onclick="window.copyTrace()"
-                                        style="font-size:10px; padding:2px 6px; background:#444;">📋 Copy Trace</button>
-                            </div>
-                        </div>
+                <!-- Profile section (toggle + viewer) — mounted by Preact (PaneUI.js).
+                     display:contents makes this div invisible to #pane-content's flex
+                     layout, so #profile-toggle and #profile-viewer are direct flex children. -->
+                <div id="profile-mount" style="display:contents"></div>
 
-                        <!-- Initial context override panel (hidden by default) -->
-                        <div id="ctx-edit-panel" style="display:none; margin-bottom:8px;">
-                            <div style="font-size:10px; color:#aaa; margin-bottom:4px;">
-                                Edit initial context — applies on restart. Internal fields (_trace, trace) excluded.
-                            </div>
-                            <textarea id="ctx-edit-area" spellcheck="false" style="
-                                width:100%; box-sizing:border-box;
-                                height:120px; resize:vertical;
-                                background:#1a1d23; color:#61dafb;
-                                border:1px solid #444; border-radius:4px;
-                                font-family:'Courier New',monospace; font-size:11px;
-                                padding:6px; outline:none;
-                            "></textarea>
-                            <div id="ctx-edit-error" style="font-size:10px; color:#f66; min-height:14px; margin:2px 0;"></div>
-                            <div style="display:flex; gap:6px;">
-                                <button onclick="window.applyCtxEdit()" style="
-                                    flex:1; background:#0084ff; color:#fff;
-                                    border:none; border-radius:4px;
-                                    padding:4px 8px; font-size:11px; cursor:pointer;">Apply &amp; Restart</button>
-                                <button onclick="window.cancelCtxEdit()" style="
-                                    background:#444; color:#ccc;
-                                    border:none; border-radius:4px;
-                                    padding:4px 8px; font-size:11px; cursor:pointer;">Cancel</button>
-                            </div>
-                        </div>
+                <!-- IDE Log observer section — mounted by Preact (PaneUI.js).
+                     display:contents keeps #observer-toggle and #observer-viewer as
+                     direct flex children of #pane-content. -->
+                <div id="observer-mount" style="display:contents"></div>
 
-                        <pre id="profile-view">{}</pre>
-                        <div id="state-id" style="font-size:10px; color:#888; margin-top:4px;">State: loading…</div>
-                    </div>
-                </div>
+                <!-- Replay bar — mounted by Preact (PaneUI.js) -->
+                <div id="replay-mount"></div>
 
-                <!-- Replay bar -->
-                <div id="replay-bar">
-                    <button id="replay-go-btn" onclick="window._replayTrace(document.getElementById('replay-input').value)" title="Replay trace">▶</button>
-                    <button id="replay-clear-btn" onclick="window._clearReplayBar()" title="Clear and hide replay bar">✕</button>
-                    <input type="text" id="replay-input" placeholder="Replay string…">
-                </div>
-
-                <!-- Toolbar — large touch-friendly buttons -->
-                <div id="toolbar">
-                    <button id="test-btn"        title="Auto-generate all paths and run as tests">🧪<br>Test</button>
-                    <button id="restart-btn"    onclick="window._restartRuntime()" class="restart-btn" title="Restart conversation">🔄<br>Restart</button>
-                    <button id="load-results-btn" onclick="document.getElementById('load-results').click()" title="Load a previously saved test results JSON">📋<br>Load<br>Results</button>
-                    <button id="save-flow-btn"  onclick="window.downloadPair()" title="Save state machine and services as a ZIP file">💾<br>Save<br>Flow</button>
-                    <button id="load-flow-btn"  onclick="document.getElementById('upload').click()" title="Load state machine (.json), services (.js), or both as a ZIP">📂<br>Load<br>Flow</button>
-                    <button id="pack-prod-btn"  onclick="window.downloadProductionBundle()" title="Pack and download standalone production bundle (no IDE)">📦<br>Pack<br>Prod</button>
-                    <input type="file" id="upload"       style="display:none" accept=".zip,.json,.js" multiple
-                           onchange="window.loadPair(this.files); this.value='';">
-                    <input type="file" id="load-results" style="display:none" accept=".json"
-                           onchange="window.loadTestResults && window.loadTestResults(this.files[0]); this.value='';">
-                </div>
+                <!-- Toolbar — mounted by Preact (ToolbarUI.js) via main.js mountToolbar() -->
+                <div id="toolbar-mount"></div>
 
             </div><!-- end #pane-content -->
 
@@ -248,105 +179,6 @@
     </script>
 
     <script type="module">
-        import mermaid from 'mermaid';
-        mermaid.initialize({ startOnLoad: false, theme: 'neutral' });
-        console.log('✅ Mermaid initialised');
-
-        // ── Profile viewer toggle ─────────────────────────────────────────────
-        window.toggleProfile = () => {
-            const viewer = document.getElementById('profile-viewer');
-            const arrow  = document.getElementById('profile-toggle-arrow');
-            const toggle = document.getElementById('profile-toggle');
-            const isOpen = viewer.classList.toggle('open');
-            arrow.style.transform = isOpen ? 'rotate(180deg)' : '';
-            toggle.classList.toggle('open', isOpen);
-        };
-
-        // ── Zoom / pan state ──────────────────────────────────────────────────
-        let _scale = 1, _tx = 0, _ty = 0;
-        const canvas = () => document.getElementById('diagram-canvas');
-
-        const applyTransform = () => {
-            const c = canvas();
-            if (c) c.style.transform = `translate(${_tx}px, ${_ty}px) scale(${_scale})`;
-        };
-
-        window.diagramZoom = (delta) => {
-            _scale = Math.min(4, Math.max(0.2, _scale + delta));
-            applyTransform();
-        };
-
-        window.diagramReset = () => {
-            _scale = 1; _tx = 0; _ty = 0;
-            const c = canvas();
-            if (c) c.style.transform = '';
-        };
-
-        // ── Diagram pan (mouse) ───────────────────────────────────────────────
-        const vp = document.getElementById('diagram-viewport');
-        let _panning = false, _px = 0, _py = 0;
-
-        vp.addEventListener('mousedown', (e) => {
-            if (e.button !== 0) return;
-            _panning = true; _px = e.clientX - _tx; _py = e.clientY - _ty;
-            vp.style.cursor = 'grabbing';
-        });
-        document.addEventListener('mousemove', (e) => {
-            if (!_panning) return;
-            _tx = e.clientX - _px; _ty = e.clientY - _py;
-            applyTransform();
-        });
-        document.addEventListener('mouseup', () => {
-            if (!_panning) return;
-            _panning = false; vp.style.cursor = 'grab';
-        });
-
-        // ── Diagram pan + pinch-zoom (touch) ─────────────────────────────────
-        let _tpanning = false, _tpx = 0, _tpy = 0;
-        let _pinching = false, _pinchDist0 = 0, _pinchScale0 = 1;
-
-        const _touchDist = (e) => Math.hypot(
-            e.touches[0].clientX - e.touches[1].clientX,
-            e.touches[0].clientY - e.touches[1].clientY
-        );
-
-        vp.addEventListener('touchstart', (e) => {
-            if (e.touches.length === 2) {
-                _tpanning    = false;
-                _pinching    = true;
-                _pinchDist0  = _touchDist(e);
-                _pinchScale0 = _scale;
-            } else if (e.touches.length === 1) {
-                _pinching = false;
-                _tpanning = true;
-                _tpx = e.touches[0].clientX - _tx;
-                _tpy = e.touches[0].clientY - _ty;
-            }
-        }, { passive: true });
-
-        vp.addEventListener('touchmove', (e) => {
-            if (_pinching && e.touches.length === 2) {
-                _scale = Math.min(4, Math.max(0.2, _pinchScale0 * (_touchDist(e) / _pinchDist0)));
-                applyTransform();
-            } else if (_tpanning && e.touches.length === 1) {
-                _tx = e.touches[0].clientX - _tpx;
-                _ty = e.touches[0].clientY - _tpy;
-                applyTransform();
-            }
-        }, { passive: true });
-
-        vp.addEventListener('touchend', () => {
-            _tpanning = false;
-            _pinching = false;
-        }, { passive: true });
-
-        // ── Wheel zoom ────────────────────────────────────────────────────────
-        vp.addEventListener('wheel', (e) => {
-            e.preventDefault();
-            _scale = Math.min(4, Math.max(0.2, _scale - e.deltaY * 0.001));
-            applyTransform();
-        }, { passive: false });
-
         // ── Slide handle / pane tab — translateX overlay model ────────────────
         //
         // Desktop (> 700px):
@@ -370,10 +202,11 @@
         const paneTab      = document.getElementById('pane-tab');
         const paneTabGhost = document.getElementById('pane-tab-ghost');
 
-        const HANDLE_W  = parseInt(getComputedStyle(document.documentElement)
-                              .getPropertyValue('--handle-w')) || 18;
-        const TAB_W     = 44;   // must match #pane-tab width in ide-theme.css
-        const MIN_VISIBLE = 80; // px — snap closed if chat narrower than this
+        const HANDLE_W      = parseInt(getComputedStyle(document.documentElement)
+                                  .getPropertyValue('--handle-w')) || 9;
+        const PANE_DEFAULT_W = 460; // must match #right-pane width in ide-theme.css
+        const TAB_W          = 44;  // must match #pane-tab width in ide-theme.css
+        const MIN_VISIBLE    = 80;  // px — snap closed if chat narrower than this
 
         const isMobileLayout = () =>
             window.innerWidth <= 700 ||
@@ -381,16 +214,29 @@
 
         let _panOffset = 0;
 
+        // Desktop: offset maps to width reduction (max = full collapse to handle only).
+        // Mobile: offset maps to translateX (max = 90% of viewport off-screen).
         const maxOffset = () =>
-            isMobileLayout() ? window.innerWidth * 0.9 : window.innerWidth - HANDLE_W;
+            isMobileLayout() ? window.innerWidth * 0.9 : PANE_DEFAULT_W - HANDLE_W;
+
+        window._applyPaneOffset = (offset) => _applyOffset(offset, false);
 
         function _applyOffset(offset, animated) {
             _panOffset = Math.max(0, Math.min(maxOffset(), offset));
             rightPane._panOffset = _panOffset;
-            rightPane.style.transition = animated ? 'transform 0.3s ease' : 'none';
-            rightPane.style.transform  = `translateX(${_panOffset}px)`;
-            rightPane.style.setProperty('--visible-pane-w',
-                (window.innerWidth - _panOffset) + 'px');
+            if (isMobileLayout()) {
+                rightPane.style.transition = animated ? 'transform 0.3s ease' : 'none';
+                rightPane.style.transform  = `translateX(${_panOffset}px)`;
+                rightPane.style.width      = '';
+                rightPane.style.setProperty('--visible-pane-w',
+                    (window.innerWidth - _panOffset) + 'px');
+            } else {
+                const paneW = Math.max(HANDLE_W, PANE_DEFAULT_W - _panOffset);
+                rightPane.style.transition = animated ? 'width 0.3s ease' : 'none';
+                rightPane.style.width      = paneW + 'px';
+                rightPane.style.transform  = '';
+                rightPane.style.setProperty('--visible-pane-w', paneW + 'px');
+            }
 
             // Desktop handle arrow
             const arrow = document.getElementById('handle-arrow');
@@ -477,6 +323,7 @@
             _dragging = false;
             document.body.style.cursor     = '';
             document.body.style.userSelect = '';
+            window._persistUIPrefs?.({ paneOffset: _panOffset });
         });
 
         // ── Touch drag on slide-handle (mobile) ───────────────────────────────
@@ -530,6 +377,7 @@
             _dragging = false;
             document.body.style.userSelect = '';
             rightPane.style.transition     = '';
+            window._persistUIPrefs?.({ paneOffset: _panOffset });
         }
 
         document.addEventListener('touchend',    _endDrag);
@@ -551,115 +399,13 @@
             });
         }).observe(document.body, { childList: true });
 
-        // ── Diagram render ────────────────────────────────────────────────────
-        // Direction: LR on mobile landscape, TD everywhere else — unless the
-        // user has manually toggled via the ⇄ button.
-        let _dirOverride = null; // null | 'LR' | 'TD'
-
-        const _graphDir = () => {
-            if (_dirOverride) return _dirOverride;
-            const mobile    = window.innerWidth <= 700 ||
-                              document.body.classList.contains('force-mobile-layout');
-            const landscape = window.innerWidth > window.innerHeight;
-            return (mobile && landscape) ? 'LR' : 'TD';
-        };
-
-        window.toggleGraphDir = () => {
-            const current  = _graphDir();
-            _dirOverride   = current === 'LR' ? 'TD' : 'LR';
-            const btn      = document.getElementById('dir-toggle');
-            if (btn) btn.textContent = _dirOverride === 'LR' ? '↕' : '⇄';
-            if (_lastRenderArgs) {
-                const { config, current: cur, visitedEdges } = _lastRenderArgs;
-                window.renderDiagram(config, cur, visitedEdges).catch(() => {});
-            }
-        };
-
-        // Cache last args so orientation changes can re-render automatically.
-        let _lastRenderArgs = null;
-
-        window.renderDiagram = async (config, current, visitedEdges = new Set()) => {
-            _lastRenderArgs = { config, current, visitedEdges };
-            let graph = `graph ${_graphDir()}\n`;
-
-            Object.keys(config.states).forEach(id => {
-                const style = id === current ? `:::activeNode` : '';
-                graph += `  ${id}["${id}"]${style}\n`;
-
-                if (config.states[id].on) {
-                    Object.entries(config.states[id].on).forEach(([ev, transition]) => {
-                        const entries = Array.isArray(transition) ? transition : [transition];
-                        const targets = new Set();
-                        entries.forEach(t => {
-                            const tId = typeof t === 'string' ? t : t?.target;
-                            if (tId && tId !== id) targets.add(tId);
-                        });
-                        targets.forEach(tId => {
-                            const visited = visitedEdges.has(`${id}|${ev}`);
-                            graph += `  ${id} -- "${visited ? '✅ ' : ''}${ev}" --> ${tId}\n`;
-                        });
-                    });
-                }
-
-                if (config.states[id].always) {
-                    const targets = Array.isArray(config.states[id].always)
-                        ? config.states[id].always : [config.states[id].always];
-                    targets.forEach(t => {
-                        const tId = t.target || t;
-                        graph += `  ${id} -- "${visitedEdges.has(`${id}|auto`) ? '✅ ' : ''}auto" --> ${tId}\n`;
-                    });
-                }
-
-                if (config.states[id].invoke) {
-                    const inv = config.states[id].invoke;
-                    const onDones = Array.isArray(inv.onDone) ? inv.onDone : (inv.onDone ? [inv.onDone] : []);
-                    onDones.forEach(branch => {
-                        if (!branch?.target) return;
-                        const visited = visitedEdges.has(`${id}|done`);
-                        graph += `  ${id} -. "${visited ? '✅ ' : ''}done" .-> ${branch.target}\n`;
-                    });
-                    if (inv.onError?.target) {
-                        const visited = visitedEdges.has(`${id}|error`);
-                        graph += `  ${id} -. "${visited ? '✅ ' : ''}error" .-> ${inv.onError.target}\n`;
-                    }
-                }
-            });
-
-            graph += `\nclassDef activeNode fill:#0084ff,stroke:#0051ff,stroke-width:4px,color:#fff;`;
-
-            console.log('🗺️  Mermaid source:\n' + graph);
-
-            try {
-                const { svg } = await mermaid.render('mermaid-svg-' + Date.now(), graph);
-                document.getElementById('mermaid-container').innerHTML = svg;
-                console.log('✅ Diagram rendered');
-            } catch (e) {
-                console.error('❌ mermaid.render() threw:', e.message);
-                document.getElementById('mermaid-container').innerHTML =
-                    `<pre style="color:red;font-size:11px;">Diagram error:\n${e.message}</pre>`;
-            }
-        };
-
-        // Re-render when orientation changes (TD ↔ LR).
-        // Also reset pan/zoom so the re-rendered diagram is centered in the new viewport.
-        screen.orientation?.addEventListener('change', () => {
-            window.diagramReset();
-            if (_lastRenderArgs) {
-                const { config, current, visitedEdges } = _lastRenderArgs;
-                window.renderDiagram(config, current, visitedEdges).catch(() => {});
-            }
-        });
     </script>
 
     <script type="module" src="./main.js"></script>
 
-    <script>
-        (function() {
-            const el = document.getElementById('version-label');
-            if (el && el.textContent === '—') el.textContent = 'v0.10.3';
-        })();
-    </script>
     <script type="module" src="./test/ui-contracts.js"></script>
+    <script type="module" src="./test/runtime-contracts.js"></script>
+    <script type="module" src="./test/smide-contracts.js"></script>
 
 </body>
 </html>

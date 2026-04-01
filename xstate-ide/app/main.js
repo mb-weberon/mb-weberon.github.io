@@ -1,5 +1,8 @@
 import { Runtime }          from './Runtime.js';
 import { ChatUI }            from './ChatUI.js';
+import { mountToolbar }      from './ToolbarUI.js';
+import { mountPaneUI }       from './PaneUI.js';
+import { mountDiagramPane }  from './DiagramUI.js';
 
 // Tracks the currently active services — starts empty until the user loads a flow.
 // Replaced by reloadServices() whenever a .js file is loaded dynamically.
@@ -7,6 +10,8 @@ let activeServices = {};
 import { loadVersion }       from './version.js';
 import { consoleLogger }     from './logger.js';
 import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
+import { buildShareUrl, loadFromHash } from './share.js';
+import { CANONICAL_BASE_URL }          from './config.js';
 
 const BASE = new URL('.', import.meta.url).href;
 const fetchLocal = (file) => fetch(BASE + file);
@@ -14,7 +19,7 @@ const fetchLocal = (file) => fetch(BASE + file);
 // ── Toast notifications ────────────────────────────────────────────────────────
 
 function showToast(message, type = 'error') {
-    const bg = type === 'warn' ? '#b45309' : '#c0392b';
+    const bg = type === 'warn' ? '#b45309' : type === 'info' ? '#1a7a3f' : '#c0392b';
     const toast = document.createElement('div');
     toast.style.cssText = `
         position:fixed; bottom:80px; left:50%; transform:translateX(-50%);
@@ -39,12 +44,14 @@ async function boot() {
     console.log('🎬 Boot started');
     console.log('📦 App:', document.title, '| Built:', new Date().toISOString().slice(0,10));
 
+    // ── Diagram pane — mount first so #mermaid-container exists for blank-slate ─
+    const diagramMount = document.getElementById('diagram-mount');
+    if (diagramMount) mountDiagramPane(diagramMount);
+
     // ── Version ───────────────────────────────────────────────────────────────
-    const version   = await loadVersion(BASE);
-    const versionEl = document.getElementById('version-label');
-    if (version && versionEl) {
-        versionEl.textContent = version;
-        window._appVersion    = version;
+    const version = await loadVersion(BASE);
+    if (version) {
+        window._appVersion = version;
         console.log('🏷️  Version:', version, '| URL:', window.location.href);
     }
 
@@ -58,59 +65,10 @@ async function boot() {
     // "save-results-btn" is a virtual ID meaning the load-results-btn should
     // show as "💾 Save Results" instead of "📋 Load Results".
     const smideMachine = await fetch(BASE + 'test/smide-machine.json').then(r => r.json());
-    const ALL_TOOLBAR_BTNS = ['test-btn', 'restart-btn', 'load-results-btn', 'save-flow-btn', 'load-flow-btn', 'pack-prod-btn'];
-    let _smideState = 'no_flow';
-
-    function _setSmideState(stateId) {
-        _smideState = stateId;
-        const meta    = smideMachine.states[stateId]?.meta ?? {};
-        const toolbar = meta.toolbar ?? [];
-        const saveMode = toolbar.includes('save-results-btn');
-
-        ALL_TOOLBAR_BTNS.forEach(id => {
-            const el = document.getElementById(id);
-            if (!el) return;
-            // load-results-btn is enabled for both load-mode and save-mode
-            const enabled = toolbar.includes(id) || (id === 'load-results-btn' && saveMode);
-            // save-flow-btn is only relevant when a flow is embedded in loaded results —
-            // hide it entirely rather than greying it out to avoid toolbar noise.
-            if (id === 'save-flow-btn') {
-                el.style.display = enabled ? '' : 'none';
-                el.disabled = !enabled;
-                return;
-            }
-            el.disabled      = !enabled;
-            el.style.opacity = enabled ? '' : '0.4';
-            el.style.cursor  = enabled ? '' : 'not-allowed';
-        });
-
-        // Load Results ↔ Save Results label
-        const lrBtn = document.getElementById('load-results-btn');
-        if (lrBtn) {
-            if (saveMode) {
-                lrBtn.innerHTML = '💾<br>Save<br>Results';
-                lrBtn.title     = 'Save test results as JSON';
-                lrBtn.onclick   = () => {
-                    window.downloadTestResults?.();
-                    _setSmideState('results_saved');
-                };
-            } else {
-                lrBtn.innerHTML = '📋<br>Load<br>Results';
-                lrBtn.title     = 'Load a previously saved test results JSON';
-                lrBtn.onclick   = () => document.getElementById('load-results').click();
-            }
-        }
-
-        // Copy Trace button (inside profile viewer, not toolbar)
-        const copyBtn = document.getElementById('copy-btn');
-        if (copyBtn) {
-            const hasFlow = !['no_flow', 'booting', 'prompt_restore', 'restoring_flow', 'load_error', 'render_ui'].includes(stateId);
-            copyBtn.disabled      = !hasFlow;
-            copyBtn.style.opacity = hasFlow ? '' : '0.4';
-        }
-
-        console.log('🗂️  smide state:', stateId, '| toolbar:', toolbar.join(', ') || '(none)');
-    }
+    const ALL_TOOLBAR_BTNS = ['test-btn', 'restart-btn', 'load-results-btn', 'save-flow-btn', 'load-flow-btn', 'pack-prod-btn', 'share-btn'];
+    let _updateToolbar = null;
+    let _updatePane    = null;
+    let smideRuntime   = null;
 
     // ── Pre-load generate-traces.js so its exports are ready when needed ──────
     const tracesModule = await import('./generate-traces.js');
@@ -124,10 +82,43 @@ async function boot() {
             console.warn('⚠️  No flow loaded — use Load Flow first');
             return Promise.resolve();
         }
-        return tracesModule.runAllTracesHeadless(config, activeServices, { pauseMs, servicesSource: window._loadedServicesSource });
+        return tracesModule.runAllTracesHeadless(config, activeServices, { pauseMs, servicesSource: window._loadedServicesSource, priorResults: window._testResults });
     };
-    window.loadTestResults = (file) =>
-        tracesModule.loadTestResults(file);
+    window.loadTestResults       = (file) => tracesModule.loadTestResults(file);
+    window._loadResultsFromCache = tracesModule.loadResultsFromCache;
+    window._clearResultsCache    = tracesModule.clearResultsCache;
+    window.drawerReset = tracesModule.drawerReset;
+    window.drawerDump  = () => {
+        const drawer  = document.getElementById('test-results-drawer');
+        const rp      = document.getElementById('right-pane');
+        const diagram = document.getElementById('diagram-pane');
+        const get = (el) => el ? {
+            rect:    el.getBoundingClientRect(),
+            inline:  el.getAttribute('style') ?? '',
+            computed: {
+                position:  getComputedStyle(el).position,
+                bottom:    getComputedStyle(el).bottom,
+                top:       getComputedStyle(el).top,
+                left:      getComputedStyle(el).left,
+                right:     getComputedStyle(el).right,
+                width:     getComputedStyle(el).width,
+                height:    getComputedStyle(el).height,
+                overflow:  getComputedStyle(el).overflow,
+                transform: getComputedStyle(el).transform,
+                display:   getComputedStyle(el).display,
+                zIndex:    getComputedStyle(el).zIndex,
+            },
+        } : null;
+        const dump = {
+            viewport:      { w: window.innerWidth, h: window.innerHeight },
+            bodyClasses:   document.body.className,
+            drawer:        get(drawer),
+            rightPane:     get(rp),
+            diagramPane:   get(diagram),
+        };
+        console.log('🔍 drawerDump:', JSON.stringify(dump, null, 2));
+        return dump;
+    };
 
     // ── Visited edge tracking (IDE only) ──────────────────────────────────────
     const visitedEdges   = new Set();
@@ -175,14 +166,12 @@ async function boot() {
                 font-size:13px; text-align:center; padding:24px;
             ">No flow loaded</div>`;
 
-        const profile = document.getElementById('profile-view');
-        const stateDisplay = document.getElementById('state-id');
-        if (profile) profile.innerText = '(no flow loaded)';
-        if (stateDisplay) stateDisplay.innerText = 'State: —';
+        _updatePane?.({ profileText: '(no flow loaded)', stateId: '—' });
     }
 
     // ── Session persistence ───────────────────────────────────────────────────
     const PERSIST_KEY = 'xstate-ide:flow';
+    const PREFS_KEY   = 'xstate-ide:uiPrefs';
 
     function _persistFlow(machineJson, servicesSource, ctxOverrides) {
         try {
@@ -194,6 +183,7 @@ async function boot() {
 
     function _clearPersistedFlow() {
         try { localStorage.removeItem(PERSIST_KEY); } catch (_) {}
+        window._clearResultsCache?.();
     }
 
     function _loadPersistedFlow() {
@@ -203,11 +193,136 @@ async function boot() {
         } catch (_) { return null; }
     }
 
-    // ── Blank-slate or restore prompt ─────────────────────────────────────────
-    const persisted = _loadPersistedFlow();
+    function _loadUIPrefs() {
+        try {
+            const raw = localStorage.getItem(PREFS_KEY);
+            return raw ? JSON.parse(raw) : {};
+        } catch (_) { return {}; }
+    }
 
-    if (persisted) {
-        // Show restore prompt instead of blank slate
+    function _persistUIPrefs(patch) {
+        try {
+            localStorage.setItem(PREFS_KEY, JSON.stringify({ ..._loadUIPrefs(), ...patch }));
+        } catch (e) {
+            console.warn('⚠️  Could not persist UI prefs:', e.message);
+        }
+    }
+    window._persistUIPrefs = _persistUIPrefs;
+
+    function _applyUIPrefs() {
+        const prefs = _loadUIPrefs();
+        _updatePane?.({
+            profileOpen:  !!prefs.profileOpen,
+            observerOpen: !!prefs.observerOpen,
+        });
+        window._applyPaneOffset?.(prefs.paneOffset ?? 0);
+    }
+
+    // ── Narrow-pane input layout ──────────────────────────────────────────────
+    // pane-narrow is toggled by _applyOffset in index.html whenever _panOffset > 0.
+    // No ResizeObserver needed — the slide offset is the canonical signal.
+
+    // ── Preact pane UI mount (titlebar + profile section + observer + replay bar) ─
+    const titlebarMount  = document.getElementById('titlebar-mount');
+    const profileMount   = document.getElementById('profile-mount');
+    const observerMount  = document.getElementById('observer-mount');
+    const replayMount    = document.getElementById('replay-mount');
+    if (titlebarMount || profileMount || observerMount || replayMount) {
+        const { update, toggle, toggleObserver } = mountPaneUI(
+            { titlebar: titlebarMount, profile: profileMount, observer: observerMount, replay: replayMount },
+            {
+                version:     version || '—',
+                profileText: '(no flow loaded)',
+                stateId:     '—',
+                getCtxEditValue: () => {
+                    if (!config?.context) return '{}';
+                    const { _trace, trace, ...editable } = { ...config.context, ...(contextOverrides ?? {}) };
+                    return JSON.stringify(editable, null, 2);
+                },
+                onApplyCtx: (parsed) => {
+                    contextOverrides = parsed;
+                    _persistFlow(config, window._loadedServicesSource ?? null, contextOverrides);
+                    smideRuntime?.send('RESTART');
+                    window._restartRuntime();
+                },
+                onReplay: (str) => { if (str) window._replayTrace(str, window._activeReplayConfig); },
+            }
+        );
+        _updatePane = update;
+        window.toggleProfile = () => {
+            toggle();
+            requestAnimationFrame(() =>
+                _persistUIPrefs({ profileOpen: !!document.getElementById('profile-viewer')?.classList.contains('open') })
+            );
+        };
+        window.toggleObserver = () => {
+            toggleObserver();
+            requestAnimationFrame(() =>
+                _persistUIPrefs({ observerOpen: !!document.getElementById('observer-viewer')?.classList.contains('open') })
+            );
+        };
+        _applyUIPrefs();
+        window._resetPanePrefs = () => {
+            _updatePane({ profileOpen: false, observerOpen: false });
+            window._applyPaneOffset?.(0);
+        };
+        window._showReplayBar   = (str) => _updatePane({ replayVisible: true,  replayValue: str ?? '' });
+        window._clearReplayBar  = ()    => _updatePane({ replayVisible: false, replayValue: '' });
+        window._restoreStateView = ({ profileText, stateId }) => _updatePane({ profileText, stateId });
+    }
+
+    // ── Preact toolbar mount ──────────────────────────────────────────────────
+    const toolbarMount = document.getElementById('toolbar-mount');
+    if (toolbarMount) {
+        _updateToolbar = mountToolbar(toolbarMount, {
+            onTest: () => {
+                if (_testRunning) {
+                    window.stopAllTraces?.();
+                } else {
+                    if (!config || !window.currentRuntime) {
+                        console.warn('⚠️  No flow loaded — use Load Flow first');
+                        return;
+                    }
+                    _setTestRunning(true);
+                    _startProgressPolling();
+                    window.runAllTraces().then(() => {
+                        _stopProgressPolling();
+                        _setTestRunning(false, /* hadResults */ true);
+                    }).catch(() => {
+                        _stopProgressPolling();
+                        _setTestRunning(false, /* hadResults */ !!window._testResults);
+                    });
+                }
+            },
+            onRestart:     () => { smideRuntime?.send('RESTART'); window._restartRuntime(); },
+            onLoadResults: () => document.getElementById('load-results').click(),
+            onSaveFlow:    () => window.downloadPair(),
+            onLoadFlow:    () => document.getElementById('upload').click(),
+            onPackProd:    () => window.downloadProductionBundle(),
+            onShare: () => {
+                if (!config) return;
+                const result = buildShareUrl(
+                    CANONICAL_BASE_URL,
+                    config,
+                    window._loadedServicesSource || null,
+                    window._testResults || null
+                );
+                _updateToolbar?.({ shareResult: result });
+            },
+            onShareClose: () => _updateToolbar?.({ shareResult: null }),
+            onShareCopy:  (url) => {
+                navigator.clipboard?.writeText(url).catch(() => {});
+                _updateToolbar?.({ shareResult: null });
+                showToast('Link copied!', 'info');
+            },
+        });
+    }
+
+    // ── smide Runtime — boots the machine, drives toolbar/pane via onSnapshot ──
+    // _showRestorePrompt is called from onSnapshot when state is prompt_restore.
+    // It reads persisted data to show the machine id and wires buttons to smide events.
+    function _showRestorePrompt() {
+        const p = _loadPersistedFlow();
         chatMount.innerHTML = `
             <div id="no-flow-placeholder" style="
                 flex:1; display:flex; flex-direction:column;
@@ -218,8 +333,8 @@ async function boot() {
                 <div style="font-size:36px;">🔄</div>
                 <div style="font-size:15px; font-weight:600; color:#555;">Restore last session?</div>
                 <div style="font-size:13px; color:#888;">
-                    <strong style="color:#61dafb;">${persisted.machineJson?.id ?? 'unknown'}</strong>
-                    ${persisted.servicesSource ? '+ services' : '(no services)'}
+                    <strong style="color:#61dafb;">${p?.machineJson?.id ?? 'unknown'}</strong>
+                    ${p?.servicesSource ? '+ services' : '(no services)'}
                 </div>
                 <div style="display:flex; gap:10px;">
                     <button id="restore-btn" style="
@@ -237,38 +352,173 @@ async function boot() {
                     font-size:12px; color:#61dafb; text-decoration:none; opacity:0.8;
                 ">📖 Help &amp; examples</a>
             </div>`;
-
-        document.getElementById('restore-btn').onclick = async () => {
-            if (persisted.servicesSource) {
-                await reloadServices(persisted.servicesSource, 'restored-services.js');
-            } else {
-                activeServices = {};
-            }
-            contextOverrides = persisted.ctxOverrides ?? null;
-            _activateFlow(persisted.machineJson, /* keepOverrides */ true);
-        };
-
-        document.getElementById('fresh-btn').onclick = () => {
-            _clearPersistedFlow();
-            _showBlankSlate();
-        };
-
         const mc = document.getElementById('mermaid-container');
         if (mc) mc.innerHTML = `
             <div style="
                 color:#666; font-family:'Segoe UI',sans-serif;
                 font-size:13px; text-align:center; padding:24px;
             ">No flow loaded</div>`;
-    } else {
-        _showBlankSlate();
+        document.getElementById('restore-btn').onclick = () => smideRuntime?.send('RESTORE');
+        document.getElementById('fresh-btn').onclick  = () => { _clearPersistedFlow(); smideRuntime?.send('START_FRESH'); };
     }
 
-    // ── Narrow-pane input layout ──────────────────────────────────────────────
-    // pane-narrow is toggled by _applyOffset in index.html whenever _panOffset > 0.
-    // No ResizeObserver needed — the slide offset is the canonical signal.
+    {
+        // Production services close over main.js variables — must be defined here
+        // so they share the same contextOverrides, activeServices, and reloadServices.
+        let _hashPayload       = null;
+        let _hashPayloadLoaded = false;
 
-    // Apply initial toolbar state — no flow loaded yet.
-    _setSmideState('no_flow');
+        const smideProductionServices = {
+            checkPersistedState: async () => {
+                const p = _loadPersistedFlow();
+                if (!p?.machineJson) return { hasFlow: false, hasResults: false, hasSession: false };
+                const hasSession = !!(p.ctxOverrides && Object.keys(p.ctxOverrides).length > 0);
+                const cached = await window._loadResultsFromCache?.();
+                return { hasFlow: true, hasResults: !!cached, hasSession };
+            },
+            restorePersistedState: async () => {
+                const p = _loadPersistedFlow();
+                if (!p?.machineJson) throw new Error('No persisted flow found');
+                if (p.servicesSource) {
+                    await reloadServices(p.servicesSource, 'restored-services.js');
+                } else {
+                    activeServices = {};
+                }
+                contextOverrides = p.ctxOverrides ?? null;
+                // _activateFlow does NOT send LOAD_FLOW here — the smide machine
+                // routes to flow_idle/session_active/results_ready via onDone guards.
+                _activateFlow(p.machineJson, /* keepOverrides */ true);
+                const hasSession = !!(p.ctxOverrides && Object.keys(p.ctxOverrides).length > 0);
+                const cached = await window._loadResultsFromCache?.();
+                if (cached) {
+                    window._testResults = cached;
+                    window._showResultsDrawer?.(cached, window._replayTrace);
+                }
+                return { hasResults: !!cached, hasSession };
+            },
+            guards: {
+                hasPersistedFlow:    ({ event }) => event.output?.hasFlow    === true,
+                hasPersistedResults: ({ event }) => event.output?.hasResults === true,
+                hasPersistedSession: ({ event }) => event.output?.hasSession === true,
+            },
+        };
+
+        smideRuntime = new Runtime(smideMachine, smideProductionServices, undefined, { headless: true });
+
+        // ── Observer state — narrates smide-machine transitions in IDE LOG ──────
+        let _obsPrevStateId      = null;
+        let _obsMessages         = [];
+        let _pendingSmideEvent   = null;   // set before each send(), cleared in onSnapshot
+
+        // Wrap send() so we know which user event triggered each snapshot.
+        // XState5's subscribe snapshot does not expose .event, so we capture it here.
+        const _origSmideSend = smideRuntime.send.bind(smideRuntime);
+        smideRuntime.send = (type) => { _pendingSmideEvent = type; _origSmideSend(type); };
+
+        smideRuntime.onSnapshot = (snap) => {
+            const { stateId } = snap;
+            const meta    = smideMachine.states[stateId]?.meta ?? {};
+            const toolbar = meta.toolbar ?? [];
+            const saveMode = toolbar.includes('save-results-btn');
+
+            const enabledBtns = ALL_TOOLBAR_BTNS.filter(id =>
+                toolbar.includes(id) || (id === 'load-results-btn' && saveMode)
+            );
+            const onLoadResults = saveMode
+                ? () => { window.downloadTestResults?.(); smideRuntime.send('SAVE_RESULTS'); }
+                : () => document.getElementById('load-results').click();
+            _updateToolbar?.({ enabledBtns, saveMode, onLoadResults });
+
+            const hasFlow = !['no_flow', 'booting', 'prompt_restore', 'restoring_flow', 'load_error', 'render_ui'].includes(stateId);
+            _updatePane?.({ copyBtnEnabled: hasFlow });
+
+            if (stateId !== _obsPrevStateId) {
+                if (stateId === 'no_flow' || stateId === 'load_error') {
+                    _showBlankSlate();
+                } else if (stateId === 'prompt_restore') {
+                    _showRestorePrompt();
+                }
+            }
+
+            // ── Load from hash payload when machine reaches no_flow ───────────
+            if (stateId === 'no_flow' && _hashPayload && !_hashPayloadLoaded) {
+                _hashPayloadLoaded = true;
+                const p = _hashPayload;
+                _hashPayload = null;
+                (async () => {
+                    if (p.services) {
+                        await reloadServices(p.services, `${p.machine?.id || 'flow'}-services.js`);
+                    } else {
+                        activeServices = {};
+                    }
+                    if (p.results) {
+                        window._testResults = p.results;
+                        if (p.results.config) window._setActiveConfig(p.results.config);
+                        _activateFlow(p.results.config || p.machine);
+                        window._showResultsDrawer?.(p.results, window._replayTrace);
+                        smideRuntime.send('LOAD_RESULTS');
+                    } else {
+                        _activateFlow(p.machine);
+                        smideRuntime.send('LOAD_FLOW');
+                    }
+                    if (p.ui?.diagramDir) window.setDiagramDir?.(p.ui.diagramDir);
+                })();
+            }
+
+            // ── IDE LOG observer messages ─────────────────────────────────────
+            {
+                const pendingEvent = _pendingSmideEvent;
+                _pendingSmideEvent = null;   // consume immediately
+
+                const prevStateDef = _obsPrevStateId ? smideMachine.states[_obsPrevStateId] : null;
+                const prevMeta     = prevStateDef?.meta ?? null;
+                const stateChng    = stateId !== _obsPrevStateId;
+                const isInitial    = !_obsPrevStateId;
+
+                // onDone/onError: no pending user event, prev state had invoke, state changed
+                const isInvokeEnd  = !pendingEvent && !!prevStateDef?.invoke && stateChng;
+                const isOnError    = isInvokeEnd && stateId === 'load_error';
+                const isOnDone     = isInvokeEnd && !isOnError;
+
+                const msgs = [];
+
+                if (isOnDone) {
+                    msgs.push({ type: 'system', text: prevMeta?.onDone || '✓ done' });
+                } else if (isOnError) {
+                    msgs.push({ type: 'system', text: prevMeta?.onError || '✗ error' });
+                } else if (pendingEvent && !isInitial) {
+                    msgs.push({ type: 'user', text: pendingEvent });
+                }
+
+                if (stateChng) {
+                    const botText = meta.chat || meta.text;
+                    if (botText) msgs.push({ type: 'bot', text: botText });
+                }
+
+                if (msgs.length) {
+                    _obsMessages = [..._obsMessages, ...msgs];
+                    _updatePane?.({ observerMessages: _obsMessages });
+                }
+
+                _obsPrevStateId = stateId;
+            }
+
+            window._smideState = stateId;
+            console.log('🗂️  smide state:', stateId, '| toolbar:', toolbar.join(', ') || '(none)');
+        };
+
+        // ── Hash payload detection — load from #flow= URL if present ─────────
+        _hashPayload = loadFromHash();
+        if (_hashPayload) {
+            // Clear persisted session so smide boots to no_flow
+            try { localStorage.removeItem(PERSIST_KEY); } catch (_) {}
+            // Remove hash from URL to prevent reload loops
+            history.replaceState(null, '', window.location.pathname + window.location.search);
+            console.log('🔗 Hash payload detected — will load after boot');
+        }
+
+        smideRuntime.start();
+    }
 
     // ── IDE rendering ─────────────────────────────────────────────────────────
     function renderIDE(snap) {
@@ -281,21 +531,17 @@ async function boot() {
         }
         _lastStateId = stateId;
 
-        const profile      = document.getElementById('profile-view');
-        const stateDisplay = document.getElementById('state-id');
-        if (profile) {
-            const { _trace, ...rest } = context;
-            const traceRows = (_trace?.steps ?? []).map((s, i) => {
-                if (s.service)         return `  [${i}] ⚙️  ${s.service} ok=${s.ok} (${s.ms}ms)`;
-                if (s.valid === false)  return `  [${i}] ❌ ${s.stateId} "${s.value}" (${s.ms}ms)`;
-                return                        `  [${i}] ✅ ${s.stateId} "${s.value}" (${s.ms}ms)`;
-            }).join('\n');
-            const traceHeader = _trace
-                ? `_trace: session=${_trace.sessionId?.slice(0,8)}… flow=${_trace.flowId}@${_trace.flowVersion}\n${traceRows || '  (no steps yet)'}`
-                : '_trace: null';
-            profile.innerText = traceHeader + '\n\n' + JSON.stringify(rest, null, 2);
-        }
-        if (stateDisplay) stateDisplay.innerText = `State: ${stateId}`;
+        const { _trace, ...rest } = context;
+        const traceRows = (_trace?.steps ?? []).map((s, i) => {
+            if (s.service)         return `  [${i}] ⚙️  ${s.service} ok=${s.ok} (${s.ms}ms)`;
+            if (s.valid === false)  return `  [${i}] ❌ ${s.stateId} "${s.value}" (${s.ms}ms)`;
+            return                        `  [${i}] ✅ ${s.stateId} "${s.value}" (${s.ms}ms)`;
+        }).join('\n');
+        const traceHeader = _trace
+            ? `_trace: session=${_trace.sessionId?.slice(0,8)}… flow=${_trace.flowId}@${_trace.flowVersion}\n${traceRows || '  (no steps yet)'}`
+            : '_trace: null';
+        const profileText = traceHeader + '\n\n' + JSON.stringify(rest, null, 2);
+        _updatePane?.({ profileText, stateId });
 
         if (window.renderDiagram) {
             window.renderDiagram(config, stateId, visitedEdges).catch(e =>
@@ -311,6 +557,9 @@ async function boot() {
     let chatUI = null;
     let contextOverrides = null;  // user-supplied initial context overrides; reset on new flow load
 
+    // Exposed for _restoreCase in generate-traces.js — replaces direct innerHTML mutation
+    window._setChatMessages = (msgs) => chatUI?._update({ messages: msgs ?? [] });
+
     function _activateFlow(newConfig, keepOverrides = false) {
         // Accept a fresh config object (not necessarily the same reference)
         if (!newConfig) return;
@@ -322,20 +571,32 @@ async function boot() {
         config = newConfig;
         window._config = config;
 
-        // Tear down old runtime + ChatUI if present
+        // Tear down old runtime if present
         if (window.currentRuntime) {
             try { window.currentRuntime.actor?.stop(); } catch (_) {}
         }
-        // Clear chat area before mounting new ChatUI
-        chatMount.innerHTML = '';
 
         visitedEdges.clear();
         _lastStateId = null;
+        window._activeReplayConfig = null;   // cleared on new flow; _restoreCase sets per-case
 
+        // Create the new runtime before wiring the chat area to it.
         window.currentRuntime = new Runtime(config, activeServices, consoleLogger);
         window.currentRuntime.contextOverrides = contextOverrides ?? {};
-        chatUI = new ChatUI(window.currentRuntime, chatMount);
-        chatUI.mount();
+
+        // Wire the chat area to the new runtime.
+        // reset() reuses the live Preact tree — avoids render(null,...) which wipes
+        // Preact hook state and causes __H errors on the next render.
+        // For the first load, clear the static blank-slate placeholder instead.
+        if (chatUI) {
+            chatUI.reset(window.currentRuntime);
+        } else {
+            chatMount.innerHTML = '';
+            chatUI = new ChatUI(window.currentRuntime, chatMount, {
+                onUserInput: () => smideRuntime?.send('CHAT_INPUT'),
+            });
+            chatUI.mount();
+        }
 
         // Wire IDE rendering on top of ChatUI's snapshot handler
         const baseSnapshot = window.currentRuntime.onSnapshot;
@@ -359,17 +620,19 @@ async function boot() {
             }).observe(_messagesEl);
         }
 
-        _setSmideState('flow_idle');
     }
 
     // ── Restart ───────────────────────────────────────────────────────────────
     // With no arguments: restart the currently loaded flow to its initial state.
     // With a newConfig argument: load the new config and restart (used by
     // loadTestResults to restore the config that was active during the test run).
-    window._restartRuntime = (overrideConfig) => {
+    // _isReplay: when true, suppress the LOAD_FLOW smide send so a preceding
+    // REPLAY event (sent by _replayTrace) is not clobbered by LOAD_FLOW.
+    window._restartRuntime = (overrideConfig, _isReplay = false) => {
         if (overrideConfig && overrideConfig !== config) {
             // Config is changing — re-activate with the new config
             _activateFlow(overrideConfig);
+            if (!_isReplay) smideRuntime?.send('LOAD_FLOW');
             return;  // _activateFlow calls start(), so we're done
         }
         if (!config || !window.currentRuntime) {
@@ -384,55 +647,13 @@ async function boot() {
         // Replay bar intentionally NOT cleared — useful for comparison after restart.
     };
 
-    // ── Initial context override ──────────────────────────────────────────────
-    // Opens the edit panel pre-filled with the effective initial context
-    // (machine defaults merged with any existing overrides, minus internal fields).
-    window.openCtxEdit = () => {
-        if (!config?.context) return;
-        const panel = document.getElementById('ctx-edit-panel');
-        const area  = document.getElementById('ctx-edit-area');
-        const err   = document.getElementById('ctx-edit-error');
-        if (!panel || !area) return;
-
-        const { _trace, trace, ...editable } = { ...config.context, ...(contextOverrides ?? {}) };
-        area.value = JSON.stringify(editable, null, 2);
-        err.textContent = '';
-        panel.style.display = 'block';
-        area.focus();
-    };
-
-    window.cancelCtxEdit = () => {
-        const panel = document.getElementById('ctx-edit-panel');
-        if (panel) panel.style.display = 'none';
-    };
-
-    window.applyCtxEdit = () => {
-        const area = document.getElementById('ctx-edit-area');
-        const err  = document.getElementById('ctx-edit-error');
-        if (!area) return;
-        let parsed;
-        try {
-            parsed = JSON.parse(area.value);
-        } catch (e) {
-            err.textContent = `Invalid JSON: ${e.message}`;
-            return;
-        }
-        if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-            err.textContent = 'Must be a JSON object';
-            return;
-        }
-        contextOverrides = parsed;
-        _persistFlow(config, window._loadedServicesSource ?? null, contextOverrides);
-        window.cancelCtxEdit();
-        window._restartRuntime();
-    };
-
     // Replay: restart the runtime, then after one tick pass the trace string
     // to Runtime.replay(). delayMs > 0 gives smooth step-by-step UI for manual
     // replays; automated test runs pass 0 to stay fast.
     window._replayTrace = (traceString, overrideConfig, delayMs = 350) => {
         if (!traceString) return;
-        window._restartRuntime(overrideConfig);
+        smideRuntime?.send('REPLAY');
+        window._restartRuntime(overrideConfig, /* _isReplay */ true);
         setTimeout(() => window.currentRuntime?.replay(traceString, { delayMs }), 50);
     };
 
@@ -493,9 +714,14 @@ async function boot() {
         }
 
         if (newConfig) {
+            window._clearResultsCache?.();
+            window._testResults = null;
+            document.getElementById('test-results-drawer')?.remove();
             _activateFlow(newConfig);
+            smideRuntime?.send('LOAD_FLOW');
         } else if (config) {
             // Services-only reload — hot-patch and restart with existing config
+            smideRuntime?.send('LOAD_SERVICES');
             window._restartRuntime();
         }
     };
@@ -510,7 +736,11 @@ async function boot() {
         try { newConfig = JSON.parse(machineText); }
         catch (e) { const m = `Invalid machine JSON: ${e.message}`; console.error('❌', m); showToast(m); return; }
         await reloadServices(servicesText, servicesUrl.split('/').pop());
+        window._clearResultsCache?.();
+        window._testResults = null;
+        document.getElementById('test-results-drawer')?.remove();
         _activateFlow(newConfig);
+        smideRuntime?.send('LOAD_FLOW');
     };
 
     // Used by loadTestResults to restore services source from a saved results file.
@@ -569,34 +799,9 @@ async function boot() {
         }
         if (!values.length) { console.warn('copyTrace: nothing to copy'); return; }
         const str = JSON.stringify(values);
-        _showReplayBar(str);
-        // Close the context panel so the replay bar is immediately visible
-        const viewer = document.getElementById('profile-viewer');
-        if (viewer?.classList.contains('open')) {
-            window.toggleProfile?.();
-        }
+        // Show replay bar and close the context panel so it's immediately visible
+        _updatePane?.({ replayVisible: true, replayValue: str, profileOpen: false });
     };
-
-    // ── Replay bar show / hide ────────────────────────────────────────────────
-    window._showReplayBar = _showReplayBar;
-    window._clearReplayBar = _clearReplayBar;
-
-    function _showReplayBar(str) {
-        const bar   = document.getElementById('replay-bar');
-        const input = document.getElementById('replay-input');
-        if (!bar || !input) return;
-        if (str !== undefined) input.value = str;
-        bar.classList.add('visible');
-        // Focus input so user can immediately hit ▶ or edit
-        setTimeout(() => input.focus(), 50);
-    }
-
-    function _clearReplayBar() {
-        const bar   = document.getElementById('replay-bar');
-        const input = document.getElementById('replay-input');
-        if (input) input.value = '';
-        if (bar)   bar.classList.remove('visible');
-    }
 
     // ─────────────────────────────────────────────────────────────────────────
     // Test button + results drawer management
@@ -608,24 +813,16 @@ async function boot() {
     //    so the user can save before the results are lost to the next run).
     // ─────────────────────────────────────────────────────────────────────────
 
-    const testBtn        = document.getElementById('test-btn');
-    const loadResultsBtn = document.getElementById('load-results-btn');
-    const progressEl     = document.getElementById('test-progress');
-    let _testRunning     = false;
+    let _testRunning = false;
 
     function _setTestRunning(running, hadResults) {
         _testRunning = running;
+        _updateToolbar?.({ testRunning: running });
         if (running) {
-            testBtn.innerHTML = '⏹<br>Stop';
-            testBtn.title     = 'Stop the running tests';
-            testBtn.classList.add('test-btn-stop');
-            _setSmideState('tests_running');
+            smideRuntime?.send('RUN_TESTS');
         } else {
-            testBtn.innerHTML = '🧪<br>Test';
-            testBtn.title     = 'Auto-generate all paths and run as tests';
-            testBtn.classList.remove('test-btn-stop');
-            if (progressEl) progressEl.textContent = '';
-            _setSmideState(hadResults ? 'results_unsaved' : 'flow_idle');
+            _updatePane?.({ testProgress: '' });
+            smideRuntime?.send(hadResults ? 'TESTS_COMPLETE' : 'TESTS_STOP');
         }
     }
 
@@ -643,10 +840,10 @@ async function boot() {
     function _startProgressPolling() {
         _progressInterval = setInterval(() => {
             const badge = document.getElementById('test-status-badge');
-            if (!badge || !progressEl) return;
+            if (!badge) return;
             _pinBadge(badge);
             const text = badge.querySelector('span')?.innerText ?? badge.innerText ?? '';
-            if (text) progressEl.textContent = text;
+            if (text) _updatePane?.({ testProgress: text });
         }, 200);
     }
 
@@ -654,27 +851,6 @@ async function boot() {
         clearInterval(_progressInterval);
         _progressInterval = null;
     }
-
-    // ── Test button click ─────────────────────────────────────────────────────
-    testBtn.addEventListener('click', () => {
-        if (_testRunning) {
-            window.stopAllTraces?.();
-        } else {
-            if (!config || !window.currentRuntime) {
-                console.warn('⚠️  No flow loaded — use Load Flow first');
-                return;
-            }
-            _setTestRunning(true);
-            _startProgressPolling();
-            window.runAllTraces().then(() => {
-                _stopProgressPolling();
-                _setTestRunning(false, /* hadResults */ true);
-            }).catch(() => {
-                _stopProgressPolling();
-                _setTestRunning(false, /* hadResults */ !!window._testResults);
-            });
-        }
-    });
 
     // ── Portrait mobile helpers ───────────────────────────────────────────────
     const isMobile   = () => window.innerWidth <= 700;
@@ -901,6 +1077,9 @@ async function boot() {
 
             header.addEventListener('touchend', () => {
                 drawer.style.transition = '';
+                if (drawer.dataset.userResized && drawer.style.height) {
+                    _persistUIPrefs({ drawerHeight: drawer.style.height });
+                }
             }, { passive: true });
         }
 
@@ -940,11 +1119,30 @@ async function boot() {
 
     // Expose so generate-traces.js can call it after snap-collapse
     window._fitDiagramAboveDrawer = _fitDiagramAboveDrawer;
-    // Expose so generate-traces.js can drive toolbar state
-    window._setSmideState = _setSmideState;
+    // Expose for generate-traces.js and ui-contracts.js — maps legacy state IDs to smide events.
+    // Only 'results_ready' is called externally today; others included for completeness.
+    window._setSmideState = (stateId) => {
+        const eventMap = {
+            results_ready:   'LOAD_RESULTS',
+            flow_idle:       'LOAD_FLOW',
+            tests_running:   'RUN_TESTS',
+            results_unsaved: 'TESTS_COMPLETE',
+            results_saved:   'SAVE_RESULTS',
+            load_error:      'LOAD_ERROR',
+        };
+        const event = eventMap[stateId];
+        if (event) smideRuntime?.send(event);
+        else console.warn('⚠️  _setSmideState: no event mapping for', stateId);
+    };
 
     window._onDrawerAdded = (drawer) => {
         _setupDrawer(drawer);
+        const savedH = _loadUIPrefs().drawerHeight;
+        if (savedH) {
+            drawer.style.height        = savedH;
+            drawer.style.maxHeight     = savedH;
+            drawer.dataset.userResized = '1';
+        }
         // Wait one rAF so the drawer is painted and offsetHeight is real
         requestAnimationFrame(() => _setToolbarDrawerClearance(drawer));
     };
@@ -986,16 +1184,21 @@ window.addEventListener('load', () => {
     boot();
     const W = window.innerWidth, H = window.innerHeight;
     console.log(`📐 Inner viewport: ${W} × ${H} px`);
-    console.groupCollapsed('%c📐 UI Contracts — quick start', 'color:#61dafb; font-weight:bold;');
+    console.groupCollapsed('%c🧪 Regression contracts — quick start', 'color:#61dafb; font-weight:bold;');
     console.log(
-        `Current viewport: ${W}×${H}\n\n` +
-        `For a stable fixed-size window, run:\n` +
+        `── UI Contracts (current viewport: ${W}×${H}) ──\n` +
+        `For a stable fixed-size window:\n` +
         `  window.open(location.href, '_blank', 'width=1024,height=768')\n` +
         `then undock DevTools before measuring.\n\n` +
-        `First time (or after intentional layout changes):\n` +
-        `  await window.ui_contracts('capture', '1024x768')  ← saves ui-baseline-1024x768.json\n\n` +
-        `Before / after every change:\n` +
-        `  await window.ui_contracts('check', '1024x768')    ← checks against that baseline`
+        `  await window.ui_full()            — check (or capture) at 1024×768\n` +
+        `  await window.ui_full('capture')   — force capture baseline\n\n` +
+        `── Runtime Contracts ──\n` +
+        `  await window.runtime_contracts()           — check (or capture)\n` +
+        `  await window.runtime_contracts('capture')  — force capture baseline\n\n` +
+        `── Smide Contracts ──\n` +
+        `  await window.smide_contracts()           — check (or capture)\n` +
+        `  await window.smide_contracts('capture')  — force capture baseline\n\n` +
+        `Workflow: run ('capture') once → commit *-baseline.json → run () before/after every change.`
     );
     console.groupEnd();
 });
@@ -1021,6 +1224,51 @@ window.downloadProductionBundle = async () => {
     const servicesFile = `${flowId}-services.js`;
 
     console.log('📦 Fetching production files…');
+    // esm.sh's ?bundle is a thin proxy with bare `import "/pkg@ver/..."` statements
+    // (root-relative) that only resolve on the esm.sh domain.  The sub-modules in
+    // turn use relative `import "./..."` chains.  Fix: walk the full module graph
+    // and store every file at its correct path in the ZIP so root-relative imports
+    // resolve naturally when the bundle is served from any static-file root.
+    const ESM_SH = 'https://esm.sh';
+    const XSTATE_CDN = `${ESM_SH}/xstate@5?bundle`;
+    const FFLATE_CDN = `${ESM_SH}/fflate@0.8.2?bundle`;
+
+    async function fetchModuleTree(entryUrl, entryLocalName) {
+        const files = {};
+        const queue = [{ url: entryUrl, local: entryLocalName }];
+        const seen  = new Set();
+        while (queue.length) {
+            const { url, local } = queue.shift();
+            if (seen.has(url)) continue;
+            seen.add(url);
+            const r = await fetch(url);
+            if (!r.ok) throw new Error(`HTTP ${r.status}: ${url}`);
+            const finalUrl = r.url;   // resolved URL after any redirect
+            files[local] = await r.text();
+            // Parse import/export specifiers (handles bare `import "..."`,
+            // `from "..."`, and minified `from"..."` without space).
+            const re = /(?:from|import)\s*["']([^"']+)["']/g;
+            let m;
+            while ((m = re.exec(files[local])) !== null) {
+                const spec = m[1];
+                let childUrl, childLocal;
+                if (spec.startsWith('/')) {
+                    // Root-relative: "/xstate@5.30.0/es2022/actors.mjs"
+                    childUrl   = ESM_SH + spec;
+                    childLocal = spec.slice(1);   // strip leading /
+                } else if (spec.startsWith('.')) {
+                    // Relative: "./actors.mjs" or "../dist/foo.mjs"
+                    childUrl   = new URL(spec, finalUrl).href;
+                    childLocal = new URL(spec, finalUrl).pathname.slice(1);
+                } else {
+                    continue;   // bare specifier — handled by importmap
+                }
+                if (!seen.has(childUrl)) queue.push({ url: childUrl, local: childLocal });
+            }
+        }
+        return files;   // { 'localPath': 'source text', ... }
+    }
+
     const [runtime, chatui, chatcss, logger_, versionjs] =
         await Promise.all([
             fetchText('Runtime.js'),
@@ -1029,6 +1277,19 @@ window.downloadProductionBundle = async () => {
             fetchText('logger.js'),
             fetchText('version.js'),
         ]);
+
+    const PREACT_CDN      = `${ESM_SH}/preact@10.25.4?bundle`;
+    const PREACT_HOOKS_CDN = `${ESM_SH}/preact@10.25.4/hooks?bundle&external=preact`;
+    const HTM_PREACT_CDN  = `${ESM_SH}/htm@3.1.1/preact?bundle&external=preact`;
+
+    console.log('📦 Fetching xstate + fflate + preact module trees (offline-capable)…');
+    const [xstateFiles, fflateFiles, preactFiles, preactHooksFiles, htmPreactFiles] = await Promise.all([
+        fetchModuleTree(XSTATE_CDN, 'xstate.js'),
+        fetchModuleTree(FFLATE_CDN, 'fflate.js'),
+        fetchModuleTree(PREACT_CDN, 'preact.js'),
+        fetchModuleTree(PREACT_HOOKS_CDN, 'preact/hooks.js'),
+        fetchModuleTree(HTM_PREACT_CDN, 'htm/preact.js'),
+    ]);
 
     const minimalHtml = `<!DOCTYPE html>
 <html lang="en">
@@ -1039,8 +1300,11 @@ window.downloadProductionBundle = async () => {
   <link rel="stylesheet" href="./chat-theme.css">
   <script type="importmap">
       { "imports": {
-          "xstate": "https://unpkg.com/xstate@5/dist/xstate.esm.js",
-          "fflate": "https://cdn.jsdelivr.net/npm/fflate@0.8.2/esm/browser.js"
+          "xstate":       "./xstate.js",
+          "fflate":       "./fflate.js",
+          "preact":       "./preact.js",
+          "preact/hooks": "./preact/hooks.js",
+          "htm/preact":   "./htm/preact.js"
       }}
   </script>
   <style>
@@ -1138,6 +1402,11 @@ window.downloadProductionBundle = async () => {
 </body>
 </html>`;
 
+    const xstateFileList    = Object.keys(xstateFiles).map(p => `  ${p}`).join('\n');
+    const fflateFileList    = Object.keys(fflateFiles).map(p => `  ${p}`).join('\n');
+    const preactFileList    = Object.keys(preactFiles).map(p => `  ${p}`).join('\n');
+    const preactHooksList   = Object.keys(preactHooksFiles).map(p => `  ${p}`).join('\n');
+    const htmPreactFileList = Object.keys(htmPreactFiles).map(p => `  ${p}`).join('\n');
     const manifest = [
         `flow:      ${flowId}`,
         `version:   ${version}`,
@@ -1148,25 +1417,46 @@ window.downloadProductionBundle = async () => {
         `  Runtime.js`,
         `  ChatUI.js`,
         `  chat-theme.css`,
-        `  ${machineFile}   (in-memory config at pack time)`,
+        `  ${machineFile}`,
         `  ${servicesFile}`,
         `  logger.js`,
         `  version.js`,
         `  MANIFEST.txt           (this file)`,
+        ``,
+        `xstate module tree (${Object.keys(xstateFiles).length} files, from ${XSTATE_CDN}):`,
+        xstateFileList,
+        ``,
+        `fflate module tree (${Object.keys(fflateFiles).length} files, from ${FFLATE_CDN}):`,
+        fflateFileList,
+        ``,
+        `preact module tree (${Object.keys(preactFiles).length} files, from ${PREACT_CDN}):`,
+        preactFileList,
+        ``,
+        `preact/hooks module tree (${Object.keys(preactHooksFiles).length} files, from ${PREACT_HOOKS_CDN}):`,
+        preactHooksList,
+        ``,
+        `htm/preact module tree (${Object.keys(htmPreactFiles).length} files, from ${HTM_PREACT_CDN}):`,
+        htmPreactFileList,
     ].join('\n');
 
     const { zipSync, strToU8 } = await import('fflate');
-    const zipped = zipSync({
-        'index.html':              strToU8(minimalHtml),
-        'Runtime.js':              strToU8(runtime),
-        'ChatUI.js':               strToU8(chatui),
-        'chat-theme.css':          strToU8(chatcss),
-        [machineFile]:             strToU8(JSON.stringify(config, null, 2)),
-        [servicesFile]:            strToU8(services),
-        'logger.js':               strToU8(logger_),
-        'version.js':              strToU8(versionjs),
-        'MANIFEST.txt':            strToU8(manifest),
-    });
+    const zipEntries = {
+        'index.html':     strToU8(minimalHtml),
+        'Runtime.js':     strToU8(runtime),
+        'ChatUI.js':      strToU8(chatui),
+        'chat-theme.css': strToU8(chatcss),
+        [machineFile]:    strToU8(JSON.stringify(config, null, 2)),
+        [servicesFile]:   strToU8(services),
+        'logger.js':      strToU8(logger_),
+        'version.js':     strToU8(versionjs),
+        'MANIFEST.txt':   strToU8(manifest),
+    };
+    for (const [path, src] of Object.entries(xstateFiles))    zipEntries[path] = strToU8(src);
+    for (const [path, src] of Object.entries(fflateFiles))    zipEntries[path] = strToU8(src);
+    for (const [path, src] of Object.entries(preactFiles))    zipEntries[path] = strToU8(src);
+    for (const [path, src] of Object.entries(preactHooksFiles)) zipEntries[path] = strToU8(src);
+    for (const [path, src] of Object.entries(htmPreactFiles)) zipEntries[path] = strToU8(src);
+    const zipped = zipSync(zipEntries);
 
     const blob = new Blob([zipped], { type: 'application/zip' });
     const a    = document.createElement('a');
@@ -1175,6 +1465,7 @@ window.downloadProductionBundle = async () => {
     a.click();
     URL.revokeObjectURL(a.href);
 
+    const totalFiles = Object.keys(zipEntries).length;
     console.log(`✅ Production bundle downloaded: ${a.download}`);
-    console.log(`   Files: 10 | Flow: ${flowId} | Version: ${version}`);
+    console.log(`   Files: ${totalFiles} | Flow: ${flowId} | Version: ${version} | Offline-ready`);
 };

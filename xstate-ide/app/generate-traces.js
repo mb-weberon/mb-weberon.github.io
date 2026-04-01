@@ -1,4 +1,5 @@
-import { Runtime } from './Runtime.js';
+import { Runtime }             from './Runtime.js';
+import { mountResultsDrawer } from './ResultsDrawerUI.js';
 
 /**
  * generate-traces.js
@@ -35,6 +36,37 @@ const SAMPLE_INPUTS = {
     upgrade_plan_check:   'Pro',
     downgrade_plan_check: 'Starter',
 };
+
+
+// ── Results cache (Cache API) ─────────────────────────────────────────────────
+const _RESULTS_CACHE = 'xstate-ide-v1';
+const _RESULTS_URL   = '/xstate-ide/results';
+
+export async function cacheResults(results) {
+    try {
+        const cache = await caches.open(_RESULTS_CACHE);
+        await cache.put(_RESULTS_URL, new Response(JSON.stringify(results), {
+            headers: { 'Content-Type': 'application/json' },
+        }));
+    } catch (e) {
+        console.warn('⚠️  Could not cache results:', e.message);
+    }
+}
+
+export async function loadResultsFromCache() {
+    try {
+        const cache = await caches.open(_RESULTS_CACHE);
+        const resp  = await cache.match(_RESULTS_URL);
+        return resp ? await resp.json() : null;
+    } catch (_) { return null; }
+}
+
+export async function clearResultsCache() {
+    try {
+        const cache = await caches.open(_RESULTS_CACHE);
+        await cache.delete(_RESULTS_URL);
+    } catch (_) {}
+}
 
 
 // ── Path enumeration ──────────────────────────────────────────────────────────
@@ -169,6 +201,16 @@ function captureBubbles() {
 let _interrupted            = false;
 let _skipCurrent            = false;
 let _currentHeadlessRuntime = null;
+let _drawerHandle           = null;
+
+function _dismissDrawer() {
+    if (_drawerHandle) {
+        _drawerHandle.remove();
+        _drawerHandle = null;
+    }
+    // Fallback: remove any leftover drawer DOM (e.g. from a previous session)
+    document.getElementById('test-results-drawer')?.remove();
+}
 
 export function stopAllTraces() {
     _interrupted = true;
@@ -254,11 +296,12 @@ export async function runAllTraces(config, replayFn, getTrace, getStateId, pause
     console.groupEnd();
 
     const results = {
-        runAt:   new Date().toISOString(),
-        flowId:  config.id,
-        total:   cases.length,
-        passed:  passCount,
-        failed:  failCount,
+        runAt:     new Date().toISOString(),
+        flowId:    config.id,
+        pathCount: total,
+        total:     cases.length,
+        passed:    passCount,
+        failed:    failCount,
         config,
         cases,
     };
@@ -286,114 +329,85 @@ export async function runAllTraces(config, replayFn, getTrace, getStateId, pause
 //   runAllTraces()       — headless, instant (default)
 //   runAllTraces(500)    — headless with 500ms pause between paths (for watching)
 
-export async function runAllTracesHeadless(config, services, { pauseMs = 0, servicesSource = null } = {}) {
+export async function runAllTracesHeadless(config, services, { pauseMs = 0, servicesSource = null, priorResults = null } = {}) {
     _interrupted = false;
     _skipCurrent = false;
-    document.getElementById('test-results-drawer')?.remove();
-    const diagPane = document.getElementById('diagram-pane');
-    if (diagPane) diagPane.style.paddingBottom = '';
+    _dismissDrawer();
 
     const traces = getAllTraces(config, services.SAMPLE_INPUTS ?? {});
     const total  = traces.length;
-    const cases  = [];
     const runAt  = new Date().toISOString();
 
-    // ── Build live drawer with all N rows before tests start ──────────────────
-    const { summarySpan, tbody, isMobile } =
-        _createDrawerShell(config, `Running… 0 / ${total}`, runAt);
+    // Resume mode: prior partial results for the same flow that have pending rows
+    const isResume = !!(priorResults &&
+        priorResults.flowId === config.id &&
+        priorResults.allPaths &&
+        priorResults.total < priorResults.pathCount);
+    const cases   = isResume ? [...priorResults.cases] : [];
+    const caseMap = new Map(cases.map(c => [c.path - 1, c]));
 
-    const p  = isMobile ? '8px' : '5px';
-    const fs = isMobile ? '13px' : '11px';
+    // ── Build live Preact drawer with all N rows before tests start ───────────
+    // onRerun uses drawerHandle, so declare it before the mount call.
+    let drawerHandle;
+    const onRerun = (i, expected, cfg) => {
+        window._replayTrace?.(JSON.stringify(expected), cfg, 350);
+        // Hook onReplayDone at 100ms — after _replayTrace's own setTimeout(50)
+        // has already called replay(), so there is no race on the assignment.
+        setTimeout(() => {
+            const rt = window.currentRuntime;
+            if (!rt) return;
+            const prev = rt.onReplayDone;
+            rt.onReplayDone = () => {
+                if (prev) prev();
+                const snap         = rt.actor.getSnapshot();
+                const finalStateId = typeof snap.value === 'string' ? snap.value : Object.keys(snap.value)[0];
+                const actual       = normaliseActualTrace(rt.getTrace());
+                const { passed, diffs } = compareTraces(expected, actual);
+                drawerHandle.updateRow(i, passed ? 'pass' : 'fail', {
+                    passed, skipped: false, diffs, finalStateId,
+                    finalContext: snap.context, expected, bubbles: [], visitedEdges: [],
+                });
+            };
+        }, 100);
+    };
 
-    // One DOM ref per path row for live status updates
-    const rowRefs = traces.map((expected, i) => {
-        const tr = document.createElement('tr');
-        tr.style.cssText = `border-bottom:1px solid #2c313a;`;
+    const pendingCount = total - caseMap.size;
+    const initSummary  = isResume
+        ? `Resuming… ${caseMap.size} / ${total} done`
+        : `Running… 0 / ${total}`;
 
-        const numCell    = _td(String(i + 1), `padding:${p} 8px; color:#666; width:28px;`);
-        const statusCell = _td('⬜', `padding:${p} 8px; font-size:${isMobile ? '16px' : '13px'}; width:20px;`);
-        const traceCell  = _td(expected.join(' → '), `padding:${p} 8px; color:#555; max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:${fs};`);
-        traceCell.title  = expected.join(' → ');
-        const stateCell  = _td('—', `padding:${p} 8px; color:#555; font-size:${fs};`);
-        const actionCell = _td('', `padding:${p} 4px; width:52px;`);
-
-        tr.append(numCell, statusCell, traceCell, stateCell, actionCell);
-        tbody.appendChild(tr);
-        return { tr, statusCell, stateCell, actionCell, expected };
+    drawerHandle = mountResultsDrawer(config, initSummary, runAt, {
+        onRowSelect: (i, row) => _restoreCase(row.case, config),
+        onRerun,
     });
+    _drawerHandle = drawerHandle;
 
-    function updateRow(i, status, c = null) {
-        const { tr, statusCell, stateCell, actionCell, expected: exp } = rowRefs[i];
-        const icons  = { pending: '⬜', running: '⏳', pass: '✅', fail: '❌', skipped: '⏭' };
-        const colors = { pending: '#555', running: '#61dafb', pass: '#98c379', fail: '#e06c75', skipped: '#e5c07b' };
-        statusCell.textContent = icons[status] ?? '?';
-        if (c?.finalStateId) {
-            stateCell.textContent = c.finalStateId;
-            stateCell.style.color = colors[status];
-        }
-        actionCell.innerHTML = '';
-        // If this is a re-run result for a previously-skipped row (no onclick yet),
-        // wire up the click handler and diffRow now.
-        if (status === 'fail' && c?.diffs?.length && !tr.onclick) {
-            const p  = isMobile ? '8px' : '5px';
-            const fs = isMobile ? '13px' : '11px';
-            const diffRow = document.createElement('tr');
-            diffRow.style.cssText = `display:none; background:#2c1e1e;`;
-            diffRow.innerHTML = `<td colspan="5" style="padding:${p} 12px; color:#e06c75; font-size:${fs}; line-height:1.6;">${c.diffs.map(d => `⚠ ${d}`).join('<br>')}</td>`;
-            tr.insertAdjacentElement('afterend', diffRow);
-            tr.style.cursor = 'pointer';
-            tr.onclick = () => {
-                diffRow.style.display = diffRow.style.display === 'none' ? '' : 'none';
-            };
-        }
-        if (status === 'running') {
-            const btn = document.createElement('button');
-            btn.textContent = 'Skip';
-            btn.title = 'Skip this path and continue with the next';
-            btn.style.cssText = `background:#3a3a2a; border:1px solid #666; color:#e5c07b; font-size:10px; padding:2px 6px; border-radius:3px; cursor:pointer;`;
-            btn.onclick = (e) => { e.stopPropagation(); window.skipCurrentTrace?.(); };
-            actionCell.appendChild(btn);
-        } else if (status === 'fail' || status === 'skipped') {
-            const btn = document.createElement('button');
-            btn.textContent = '▶';
-            btn.title = 'Re-run in foreground (logs to console)';
-            btn.style.cssText = `background:#2a3a3a; border:1px solid #666; color:#61dafb; font-size:10px; padding:2px 6px; border-radius:3px; cursor:pointer;`;
-            btn.onclick = (e) => {
-                e.stopPropagation();
-                window._replayTrace?.(JSON.stringify(exp), config, 350);
-                // Hook onReplayDone at 100ms — after _replayTrace's own setTimeout(50)
-                // has already called replay(), so there is no race on the assignment.
-                setTimeout(() => {
-                    const rt = window.currentRuntime;
-                    if (!rt) return;
-                    const prev = rt.onReplayDone;
-                    rt.onReplayDone = () => {
-                        if (prev) prev();
-                        const snap         = rt.actor.getSnapshot();
-                        const finalStateId = typeof snap.value === 'string' ? snap.value : Object.keys(snap.value)[0];
-                        const actual       = normaliseActualTrace(rt.getTrace());
-                        const { passed, diffs } = compareTraces(exp, actual);
-                        updateRow(i, passed ? 'pass' : 'fail', { passed, skipped: false, diffs, finalStateId, finalContext: snap.context });
-                    };
-                }, 100);
-            };
-            actionCell.appendChild(btn);
-        }
-    }
+    drawerHandle.setRows(traces.map((expected, i) => {
+        const c = caseMap.get(i);
+        if (c) return {
+            path:   i + 1,
+            status: c.skipped ? 'skipped' : (c.passed ? 'pass' : 'fail'),
+            expected,
+            case:   c,
+        };
+        return { path: i + 1, status: 'pending', expected, case: null };
+    }));
 
-    showStatusBadge(`Running 0 / ${total}…`, true);
-    console.group(`▶▶ Running all ${total} paths (headless)`);
+    showStatusBadge(isResume ? `Resuming… ${pendingCount} remaining` : `Running 0 / ${total}…`, true);
+    console.group(`▶▶ ${isResume ? 'Resuming' : 'Running all'} ${total} paths (headless)`);
 
     for (let i = 0; i < total; i++) {
+        if (caseMap.has(i)) continue; // already completed — skip in resume mode
+
         if (_interrupted) {
-            console.warn(`⛔ Stopped after ${i} of ${total} paths`);
+            console.warn(`⛔ Stopped after ${cases.length} of ${total} paths`);
             break;
         }
 
         const expected = traces[i];
-        showStatusBadge(`Running ${i + 1} / ${total}…`, true);
+        showStatusBadge(`Running ${cases.length + 1} / ${total}…`, true);
         console.log(`\n▶ Path ${i + 1} / ${total}: ${JSON.stringify(expected)}`);
-        updateRow(i, 'running');
+        drawerHandle.updateRow(i, 'running', null);
 
         const runtime      = new Runtime(config, services, undefined, { headless: true });
         const bubbles      = [];
@@ -421,7 +435,7 @@ export async function runAllTracesHeadless(config, services, { pauseMs = 0, serv
             console.warn(`  ⏭ SKIP  (skipped by user)`);
             const c = { path: i + 1, passed: false, skipped: true, expected, actual: [], diffs: ['skipped by user'], finalStateId: '—', finalContext: {}, bubbles: [], visitedEdges: [] };
             cases.push(c);
-            updateRow(i, 'skipped', c);
+            drawerHandle.updateRow(i, 'skipped', c);
             if (pauseMs > 0) await new Promise(r => setTimeout(r, pauseMs));
             continue;
         }
@@ -449,7 +463,7 @@ export async function runAllTracesHeadless(config, services, { pauseMs = 0, serv
 
         const c = { path: i + 1, passed, skipped: false, expected, actual, diffs, finalStateId, finalContext, bubbles, visitedEdges };
         cases.push(c);
-        updateRow(i, passed ? 'pass' : 'fail', c);
+        drawerHandle.updateRow(i, passed ? 'pass' : 'fail', c);
 
         if (pauseMs > 0) await new Promise(r => setTimeout(r, pauseMs));
     }
@@ -470,50 +484,29 @@ export async function runAllTracesHeadless(config, services, { pauseMs = 0, serv
     console.groupEnd();
 
     // Finalize drawer header summary
-    const passColor = failCount === 0 ? '#98c379' : '#e06c75';
-    summarySpan.style.color = passColor;
-    let summaryText = `${passCount}/${total} passed`;
-    if (skipCount) summaryText += ` · ${skipCount} skipped`;
-    summarySpan.textContent = summaryText;
-
-    // Wire up row-click handlers now that all cases are complete
-    let selectedRow = null;
-    cases.forEach((c, i) => {
-        if (c.skipped) return;
-        const { tr } = rowRefs[i];
-        tr.style.cursor = 'pointer';
-        let diffRow = null;
-        if (!c.passed) {
-            diffRow = document.createElement('tr');
-            diffRow.style.cssText = `display:none; background:#2c1e1e;`;
-            diffRow.innerHTML = `<td colspan="5" style="padding:5px 12px; color:#e06c75; font-size:10px; line-height:1.6;">${c.diffs.map(d => `⚠ ${d}`).join('<br>')}</td>`;
-            tr.after(diffRow);
-        }
-        tr.onmouseenter = () => { if (tr !== selectedRow) tr.style.background = '#2c313a'; };
-        tr.onmouseleave = () => { if (tr !== selectedRow) tr.style.background = ''; };
-        tr.onclick = () => {
-            if (selectedRow) { selectedRow.style.background = ''; selectedRow.style.outline = ''; }
-            selectedRow = tr;
-            tr.style.background = '#2d3a4a';
-            tr.style.outline    = '1px solid #0084ff';
-            if (diffRow) diffRow.style.display = diffRow.style.display === 'none' ? '' : 'none';
-            _restoreCase(c, config);
-        };
-    });
+    const notRunCount = total - cases.length;
+    const passColor   = failCount === 0 ? '#98c379' : '#e06c75';
+    let summaryText   = `${passCount}/${total} passed`;
+    if (skipCount)       summaryText += ` · ${skipCount} skipped`;
+    if (notRunCount > 0) summaryText += ` · ${notRunCount} not run`;
+    drawerHandle.setSummary(summaryText, passColor);
 
     const results = {
         runAt,
-        flowId:  config.id,
-        total:   cases.length,
-        passed:  passCount,
-        failed:  failCount,
-        skipped: skipCount,
+        flowId:    config.id,
+        pathCount: total,
+        total:     cases.length,
+        passed:    passCount,
+        failed:    failCount,
+        skipped:   skipCount,
         config,
         servicesSource,
+        allPaths:  traces,
         cases,
     };
 
     window._testResults = results;
+    cacheResults(results);
     hideStatusBadge();
 
     console.log('💾 Results saved to window._testResults');
@@ -522,38 +515,18 @@ export async function runAllTracesHeadless(config, services, { pauseMs = 0, serv
 
 // ── Drawer helpers ─────────────────────────────────────────────────────────────
 
-function _td(text, cssText) {
-    const td = document.createElement('td');
-    td.style.cssText = cssText;
-    td.textContent   = text;
-    return td;
-}
-
-/** Restore chat bubbles, context viewer, replay bar, and diagram for a case. */
+/** Restore chat bubbles, profile view, replay bar, and diagram for a case. */
 function _restoreCase(c, config) {
-    const replayInput = document.getElementById('replay-input');
-    if (replayInput) {
-        replayInput.value = JSON.stringify(c.expected);
-        const replayBar = document.getElementById('replay-bar');
-        if (replayBar) replayBar.classList.add('visible');
-        const replayBtn = document.getElementById('replay-go-btn');
-        if (replayBtn) replayBtn.onclick = () => window._replayTrace(replayInput.value, config);
-    }
-    const messages = document.getElementById('messages');
-    if (messages && c.bubbles?.length) {
-        messages.innerHTML = '';
-        c.bubbles.forEach(b => {
-            const d     = document.createElement('div');
-            d.className = `msg ${b.side}`;
-            d.innerText = b.text;
-            messages.appendChild(d);
-        });
-        messages.scrollTop = messages.scrollHeight;
-    }
-    const profile      = document.getElementById('profile-view');
-    const stateDisplay = document.getElementById('state-id');
-    if (profile)      profile.innerText      = JSON.stringify(c.finalContext, null, 2);
-    if (stateDisplay) stateDisplay.innerText = `State: ${c.finalStateId}`;
+    // _activeReplayConfig carries the per-case config so the Preact replay button
+    // calls _replayTrace with the right machine config even when loaded results
+    // differ from the currently-open flow.
+    window._activeReplayConfig = config ?? null;
+    window._showReplayBar?.(JSON.stringify(c.expected));
+    window._setChatMessages?.(c.bubbles ?? []);
+    window._restoreStateView?.({
+        profileText: JSON.stringify(c.finalContext, null, 2),
+        stateId:     `State: ${c.finalStateId}`,
+    });
     if (window.renderDiagram) {
         window.renderDiagram(
             config ?? window._config,
@@ -563,409 +536,81 @@ function _restoreCase(c, config) {
     }
 }
 
-/**
- * Create the drawer shell: header, sub-header, table, positioning,
- * collapse/expand, and drag. Appends to document.body.
- * Returns live DOM references needed by callers.
- */
-function _createDrawerShell(config, summaryText, runAt) {
-    const isMobile = window.innerWidth <= 700;
-    const HEADER_H = isMobile ? 52 : 36;
-    let collapsed  = false;
-
-    // ── Drawer container ──────────────────────────────────────────────────────
-    const drawer = document.createElement('div');
-    drawer.id = 'test-results-drawer';
-    drawer.style.cssText = `
-        position: fixed;
-        bottom: 0;
-        ${isMobile ? 'left:0; right:0; width:100%;' : 'width:400px;'}
-        background: #1c1e21;
-        color: #abb2bf;
-        font-family: 'Courier New', monospace;
-        font-size: 12px;
-        border: 2px solid #444;
-        border-bottom: none;
-        display: flex;
-        flex-direction: column;
-        z-index: 1000;
-        box-shadow: -4px -4px 16px rgba(0,0,0,0.4);
-        border-radius: 6px 6px 0 0;
-        transition: transform 0.3s ease;
-    `;
-
-    // ── Header ────────────────────────────────────────────────────────────────
-    const header = document.createElement('div');
-    header.style.cssText = `
-        padding: ${isMobile ? '14px 16px' : '7px 10px'};
-        background: #282c34;
-        border-bottom: 1px solid #444;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        cursor: ${isMobile ? 'pointer' : 'grab'};
-        border-radius: 4px 4px 0 0;
-        flex-shrink: 0;
-        user-select: none;
-        min-height: ${HEADER_H}px;
-        box-sizing: border-box;
-    `;
-
-    const titleSpan = document.createElement('span');
-    titleSpan.style.cssText = `color:#61dafb; font-weight:bold; flex:1; font-size:${isMobile ? '14px' : '11px'};`;
-    titleSpan.innerText = `🧪 ${config.id}`;
-
-    const summarySpan = document.createElement('span');
-    summarySpan.style.cssText = `color:#888; font-weight:bold; font-size:${isMobile ? '14px' : '11px'};`;
-    summarySpan.innerText = summaryText;
-
-    const collapseArrow = document.createElement('span');
-    collapseArrow.style.cssText = `color:#888; font-size:${isMobile ? '14px' : '11px'}; padding:0 2px; pointer-events:none;`;
-    collapseArrow.textContent = '▲';
-
-    header.appendChild(titleSpan);
-    header.appendChild(summarySpan);
-    header.appendChild(collapseArrow);
-
-    // ── Sub-header ────────────────────────────────────────────────────────────
-    const subHeader = document.createElement('div');
-    subHeader.style.cssText = `
-        padding: 3px 10px;
-        background: #282c34;
-        border-bottom: 1px solid #333;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        flex-shrink: 0;
-        font-size: 10px;
-        color: #666;
-    `;
-    subHeader.innerHTML = `<span>Run at ${new Date(runAt).toLocaleTimeString()}</span>`;
-
-    // ── Table ─────────────────────────────────────────────────────────────────
-    const tableWrap = document.createElement('div');
-    tableWrap.style.cssText = `overflow-y:auto; flex:1; max-height:${isMobile ? '50vh' : '40vh'};`;
-
-    const table = document.createElement('table');
-    table.style.cssText = `width:100%; border-collapse:collapse; font-size:${isMobile ? '13px' : '11px'};`;
-    table.innerHTML = `
-        <thead>
-            <tr style="background:#2c313a; color:#61dafb; text-align:left; position:sticky; top:0;">
-                <th style="padding:${isMobile ? '8px' : '5px'} 8px; width:28px;">#</th>
-                <th style="padding:${isMobile ? '8px' : '5px'} 8px; width:20px;"></th>
-                <th style="padding:${isMobile ? '8px' : '5px'} 8px;">Trace</th>
-                <th style="padding:${isMobile ? '8px' : '5px'} 8px; width:90px;">Final state</th>
-                <th style="padding:${isMobile ? '8px' : '5px'} 8px; width:52px;"></th>
-            </tr>
-        </thead>
-    `;
-
-    const tbody = document.createElement('tbody');
-    table.appendChild(tbody);
-    tableWrap.appendChild(table);
-
-    drawer.appendChild(header);
-    drawer.appendChild(subHeader);
-    drawer.appendChild(tableWrap);
-    document.body.appendChild(drawer);
-
-    // ── Pin drawer to diagram area ────────────────────────────────────────────
-    let _rpObserver = null;
-    function _fitTodiagramPane() {
-        const landscape = window.innerWidth > window.innerHeight;
-        const mobileLay = document.body.classList.contains('force-mobile-layout') || window.innerWidth <= 700;
-        const dp = document.getElementById('diagram-pane');
-
-        if (!landscape) {
-            drawer.style.left     = '0';
-            drawer.style.right    = '0';
-            drawer.style.width    = '';
-            drawer.style.minWidth = '';
-            if (dp) dp.style.paddingBottom = `${HEADER_H}px`;
-            return;
-        }
-
-        if (dp) dp.style.paddingBottom = '';
-        const rp = document.getElementById('right-pane');
-        if (!rp) return;
-        const rpRect  = rp.getBoundingClientRect();
-        const diagW   = rpRect.left;
-
-        drawer.style.left     = '0';
-        drawer.style.right    = (window.innerWidth - rpRect.left) + 'px';
-        drawer.style.width    = '';
-        drawer.style.minWidth = mobileLay ? '' : Math.max(diagW, 360) + 'px';
-    }
-    _fitTodiagramPane();
-    const rp_el = document.getElementById('right-pane');
-    if (rp_el && window.ResizeObserver) {
-        _rpObserver = new ResizeObserver(_fitTodiagramPane);
-        _rpObserver.observe(rp_el);
-    }
-    window.addEventListener('resize', _fitTodiagramPane);
-    window._onPanOffsetChange = _fitTodiagramPane;
-
-    const _origRemove = drawer.remove.bind(drawer);
-    drawer.remove = () => {
-        _rpObserver?.disconnect();
-        window.removeEventListener('resize', _fitTodiagramPane);
-        if (window._onPanOffsetChange === _fitTodiagramPane) window._onPanOffsetChange = null;
-        _origRemove();
-    };
-
-    // ── Collapse / expand ─────────────────────────────────────────────────────
-    function _toolbarClearance() {
-        const toolbar = document.getElementById('toolbar');
-        return toolbar ? toolbar.offsetHeight : 0;
-    }
-
-    function applyCollapsed() {
-        collapseArrow.textContent = collapsed ? '▼' : '▲';
-        if (isMobile) {
-            drawer.style.bottom    = '0';
-            drawer.style.transform = collapsed
-                ? `translateY(calc(100% - ${HEADER_H}px))`
-                : 'translateY(0)';
-        } else {
-            if (collapsed) {
-                const fullH   = drawer.scrollHeight;
-                const headerH = header.offsetHeight;
-                drawer.style.height    = fullH + 'px';
-                drawer.style.bottom    = (headerH - fullH) + 'px';
-                drawer.style.transform = '';
-                subHeader.style.display = 'none';
-                tableWrap.style.display = 'none';
-            } else {
-                subHeader.style.display = '';
-                tableWrap.style.display = '';
-                drawer.style.height    = '';
-                drawer.style.bottom    = '0';
-                drawer.style.transform = '';
-            }
-        }
-    }
-
-    requestAnimationFrame(() => applyCollapsed());
-
-    // ── Header tap/drag ───────────────────────────────────────────────────────
-    let _headerDragOccurred = false;
-    let _touchDragStartY    = 0;
-    let _touchDragStartMaxH = 0;
-
-    header.addEventListener('touchstart', (e) => {
-        if (e.target.tagName === 'BUTTON') return;
-        _headerDragOccurred = false;
-        _touchDragStartY    = e.touches[0].clientY;
-        _touchDragStartMaxH = tableWrap.offsetHeight || parseInt(tableWrap.style.maxHeight) || 0;
-        drawer.style.transition = 'none';
-        e.stopPropagation();
-    }, { passive: true });
-
-    header.addEventListener('touchmove', (e) => {
-        const dy = _touchDragStartY - e.touches[0].clientY;
-        if (Math.abs(dy) < 6) return;
-        _headerDragOccurred = true;
-        if (collapsed) {
-            collapsed = false;
-            drawer.style.transition = 'none';
-            applyCollapsed();
-        }
-        const maxAllowed = window.innerHeight * 0.9 - header.offsetHeight - _toolbarClearance();
-        const minAllowed = 40;
-        const newH = Math.max(minAllowed, Math.min(maxAllowed, _touchDragStartMaxH + dy));
-        tableWrap.style.maxHeight = newH + 'px';
-        e.stopPropagation();
-    }, { passive: true });
-
-    header.addEventListener('touchend', (e) => {
-        drawer.style.transition = '';
-        if (!collapsed && parseInt(tableWrap.style.maxHeight) < 30) {
-            collapsed = true;
-            applyCollapsed();
-        }
-        e.stopPropagation();
-    }, { passive: true });
-
-    header.onclick = (e) => {
-        if (e.target.tagName === 'BUTTON') return;
-        if (_headerDragOccurred) { _headerDragOccurred = false; return; }
-        collapsed = !collapsed;
-        applyCollapsed();
-        requestAnimationFrame(() => window._fitDiagramAboveDrawer?.(drawer));
-        drawer.addEventListener('transitionend',
-            () => window._fitDiagramAboveDrawer?.(drawer),
-            { once: true });
-    };
-
-    // ── Desktop drag to move ──────────────────────────────────────────────────
-    if (!isMobile) {
-        let dragging = false, dragOffX = 0, dragOffY = 0;
-        let _pendingDrag = false, _pendingX = 0, _pendingY = 0, _pendingRect = null;
-        const DRAG_THRESHOLD = 5;
-
-        header.addEventListener('mousedown', (e) => {
-            if (e.target.tagName === 'BUTTON') return;
-            _pendingDrag = true;
-            _pendingX = e.clientX;
-            _pendingY = e.clientY;
-            _pendingRect = drawer.getBoundingClientRect();
-            e.preventDefault();
-        });
-
-        document.addEventListener('mousemove', (e) => {
-            if (_pendingDrag) {
-                const dx = Math.abs(e.clientX - _pendingX);
-                const dy = Math.abs(e.clientY - _pendingY);
-                if (dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD) {
-                    _pendingDrag = false;
-                    dragging = true;
-                    const rect = _pendingRect;
-                    dragOffX = _pendingX - rect.left;
-                    dragOffY = _pendingY - rect.top;
-                    drawer.style.top    = `${rect.top}px`;
-                    drawer.style.left   = `${rect.left}px`;
-                    drawer.style.right  = 'auto';
-                    drawer.style.bottom = 'auto';
-                    header.style.cursor = 'grabbing';
-                    _headerDragOccurred = true;
-                }
-            }
-            if (!dragging) return;
-            drawer.style.left = `${e.clientX - dragOffX}px`;
-            drawer.style.top  = `${e.clientY - dragOffY}px`;
-        });
-
-        document.addEventListener('mouseup', () => {
-            _pendingDrag = false;
-            if (!dragging) return;
-            dragging = false;
-            header.style.cursor = 'grab';
-            const rect = drawer.getBoundingClientRect();
-            drawer.style.top  = '';
-            drawer.style.left = '';
-            _fitTodiagramPane();
-            const snapBottom = window.innerHeight - rect.bottom;
-            const minBottom  = _toolbarClearance() + header.offsetHeight - drawer.scrollHeight;
-            drawer.style.bottom = Math.min(0, Math.max(minBottom, snapBottom)) + 'px';
-        });
-    }
-
-    return { drawer, titleSpan, summarySpan, subHeader, tableWrap, tbody, isMobile, HEADER_H };
-}
-
 // ── Results drawer ────────────────────────────────────────────────────────────
 // Used when loading saved results from file (Load Results button).
 
 export function showResultsDrawer(results, replayFn) {
-    document.getElementById('test-results-drawer')?.remove();
+    _dismissDrawer();
 
-    const { cases, passed, failed, total, runAt, flowId, config } = results;
+    const { cases, passed, failed, total, pathCount, allPaths, runAt, flowId, config } = results;
     replayFn = replayFn ?? window._replayTrace;
 
-    const passColor = failed === 0 ? '#98c379' : '#e06c75';
-    const summary   = `${passed}/${total} passed`;
-    const skipCount = cases.filter(c => c.skipped).length;
-    const summaryWithSkip = skipCount ? `${summary} · ${skipCount} skipped` : summary;
+    const effectiveTotal = pathCount ?? total;
+    const notRunCount    = effectiveTotal - cases.length;
+    const passColor      = failed === 0 ? '#98c379' : '#e06c75';
+    const skipCount      = cases.filter(c => c.skipped).length;
+    let   summaryStr     = `${passed}/${effectiveTotal} passed`;
+    if (skipCount)    summaryStr += ` · ${skipCount} skipped`;
+    if (notRunCount > 0) summaryStr += ` · ${notRunCount} not run`;
 
-    const { summarySpan, tbody, isMobile } =
-        _createDrawerShell({ id: flowId }, summaryWithSkip, runAt);
-    summarySpan.style.color = passColor;
+    // Build index → case map so pending rows can be interleaved correctly
+    const caseMap = new Map(cases.map(c => [c.path - 1, c]));
 
-    const p  = isMobile ? '8px' : '5px';
-    const fs = isMobile ? '13px' : '11px';
-
-    let selectedRow = null;
-
-    const selectRow = (c, tr, diffRow) => {
-        if (selectedRow) { selectedRow.style.background = ''; selectedRow.style.outline = ''; }
-        selectedRow = tr;
-        tr.style.background = '#2d3a4a';
-        tr.style.outline    = '1px solid #0084ff';
-        if (diffRow) diffRow.style.display = diffRow.style.display === 'none' ? '' : 'none';
-        _restoreCase(c, config);
+    let drawerHandle;
+    const onRerun = (i, expected, cfg) => {
+        replayFn?.(JSON.stringify(expected), cfg, 350);
+        setTimeout(() => {
+            const rt = window.currentRuntime;
+            if (!rt) return;
+            const prev = rt.onReplayDone;
+            rt.onReplayDone = () => {
+                if (prev) prev();
+                const snap         = rt.actor.getSnapshot();
+                const finalStateId = typeof snap.value === 'string' ? snap.value : Object.keys(snap.value)[0];
+                const actual       = normaliseActualTrace(rt.getTrace());
+                const { passed: p, diffs } = compareTraces(expected, actual);
+                drawerHandle.updateRow(i, p ? 'pass' : 'fail', {
+                    ...caseMap.get(i), passed: p, diffs, finalStateId, finalContext: snap.context,
+                });
+            };
+        }, 100);
     };
 
-    let firstTr = null, firstCase = null;
+    drawerHandle = mountResultsDrawer({ id: flowId }, summaryStr, runAt, {
+        onRowSelect: (i, row) => _restoreCase(row.case, config),
+        onRerun,
+    });
+    _drawerHandle = drawerHandle;
 
-    cases.forEach((c) => {
-        const statusIcon = c.skipped ? '⏭' : (c.passed ? '✅' : '❌');
-        const stateColor = c.skipped ? '#e5c07b' : (c.passed ? '#98c379' : '#e06c75');
+    drawerHandle.setSummary(summaryStr, passColor);
 
-        const tr = document.createElement('tr');
-        tr.style.cssText = `cursor:pointer; border-bottom:1px solid #2c313a; transition:background 0.1s;`;
-
-        const numCell    = _td(String(c.path), `padding:${p} 8px; color:#666; width:28px;`);
-        const statusCell = _td(statusIcon, `padding:${p} 8px; font-size:${isMobile ? '16px' : '13px'}; width:20px;`);
-        const traceCell  = _td(c.expected.join(' → '), `padding:${p} 8px; color:#abb2bf; max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:${fs};`);
-        traceCell.title  = c.expected.join(' → ');
-        const stateCell  = _td(c.finalStateId, `padding:${p} 8px; color:${stateColor}; font-size:${fs};`);
-        const actionCell = _td('', `padding:${p} 4px; width:52px;`);
-
-        if (!c.passed || c.skipped) {
-            const btn = document.createElement('button');
-            btn.textContent = '▶';
-            btn.title = 'Re-run in foreground (logs to console)';
-            btn.style.cssText = `background:#2a3a3a; border:1px solid #666; color:#61dafb; font-size:10px; padding:2px 6px; border-radius:3px; cursor:pointer;`;
-            btn.onclick = (e) => {
-                e.stopPropagation();
-                window._replayTrace?.(JSON.stringify(c.expected), config, 350);
-                setTimeout(() => {
-                    const rt = window.currentRuntime;
-                    if (!rt) return;
-                    const prev = rt.onReplayDone;
-                    rt.onReplayDone = () => {
-                        if (prev) prev();
-                        const snap         = rt.actor.getSnapshot();
-                        const finalStateId = typeof snap.value === 'string' ? snap.value : Object.keys(snap.value)[0];
-                        const actual       = normaliseActualTrace(rt.getTrace());
-                        const { passed, diffs } = compareTraces(c.expected, actual);
-                        statusCell.textContent = passed ? '✅' : '❌';
-                        stateCell.textContent  = finalStateId;
-                        stateCell.style.color  = passed ? '#98c379' : '#e06c75';
-                        if (passed) {
-                            actionCell.innerHTML = '';
-                            if (diffRow) { diffRow.remove(); diffRow = null; }
-                        } else {
-                            if (!diffRow) {
-                                diffRow = document.createElement('tr');
-                                diffRow.style.cssText = `display:none; background:#2c1e1e;`;
-                                diffRow.innerHTML = `<td colspan="5" style="padding:5px 12px; color:#e06c75; font-size:10px; line-height:1.6;"></td>`;
-                                tr.insertAdjacentElement('afterend', diffRow);
-                            }
-                            diffRow.querySelector('td').innerHTML = diffs.map(d => `⚠ ${d}`).join('<br>');
-                        }
-                    };
-                }, 100);
+    const rowCount = allPaths ? allPaths.length : cases.length;
+    drawerHandle.setRows(
+        Array.from({ length: rowCount }, (_, i) => {
+            const c = caseMap.get(i);
+            if (c) return {
+                path:     c.path ?? i + 1,
+                status:   c.skipped ? 'skipped' : (c.passed ? 'pass' : 'fail'),
+                expected: c.expected,
+                case:     c,
             };
-            actionCell.appendChild(btn);
-        }
+            return {
+                path:     i + 1,
+                status:   'pending',
+                expected: allPaths[i],
+                case:     null,
+            };
+        }),
+        config
+    );
 
-        tr.append(numCell, statusCell, traceCell, stateCell, actionCell);
-
-        let diffRow = null;
-        if (!c.passed && !c.skipped) {
-            diffRow = document.createElement('tr');
-            diffRow.style.cssText = `display:none; background:#2c1e1e;`;
-            diffRow.innerHTML = `
-                <td colspan="5" style="padding:5px 12px; color:#e06c75; font-size:10px; line-height:1.6;">
-                    ${c.diffs.map(d => `⚠ ${d}`).join('<br>')}
-                </td>
-            `;
-        }
-
-        tr.onmouseenter = () => { if (tr !== selectedRow) tr.style.background = '#2c313a'; };
-        tr.onmouseleave = () => { if (tr !== selectedRow) tr.style.background = ''; };
-        tr.onclick = () => selectRow(c, tr, diffRow);
-
-        if (!firstTr) { firstTr = tr; firstCase = c; }
-
-        tbody.appendChild(tr);
-        if (diffRow) tbody.appendChild(diffRow);
-    });
-
-    requestAnimationFrame(() => {
-        if (firstTr && firstCase) selectRow(firstCase, firstTr, null);
-    });
+    // Auto-select first completed row to restore its chat/profile view
+    const firstCompleted = Array.from({ length: rowCount }, (_, i) => i).find(i => caseMap.has(i));
+    if (firstCompleted != null) {
+        requestAnimationFrame(() => {
+            drawerHandle.selectRow(firstCompleted);
+        });
+    }
 }
 
 // ── Status badge ──────────────────────────────────────────────────────────────
@@ -1012,6 +657,7 @@ export function loadTestResults(file) {
         try {
             const results = JSON.parse(e.target.result);
             window._testResults = results;
+            cacheResults(results);
             // Restore services so re-runs work
             if (results.servicesSource && window._reloadServicesFromSource) {
                 await window._reloadServicesFromSource(results.servicesSource, `${results.flowId}-services.js`);
@@ -1030,6 +676,49 @@ export function loadTestResults(file) {
         }
     };
     reader.readAsText(file);
+}
+
+// ── Debug helpers ─────────────────────────────────────────────────────────────
+
+/**
+ * Force the results drawer to a canonical visible state:
+ *   - expanded (not collapsed)
+ *   - anchored at bottom:0, left:0
+ *   - right edge = left edge of #right-pane (so it spans only the diagram pane)
+ *   - full-width if right-pane is covering nearly the whole screen
+ * If the drawer DOM node is missing but results are available, recreates it.
+ */
+export function drawerReset() {
+    let drawer = document.getElementById('test-results-drawer');
+    if (!drawer) {
+        if (window._testResults) {
+            showResultsDrawer(window._testResults, window._replayTrace);
+            drawer = document.getElementById('test-results-drawer');
+        }
+        if (!drawer) {
+            console.warn('drawerReset: no test results available — run tests or load a results file first');
+            return;
+        }
+    }
+
+    _drawerHandle?.forceExpand?.();
+
+    const rp     = document.getElementById('right-pane');
+    const rpLeft = rp ? Math.max(0, rp.getBoundingClientRect().left) : 0;
+    const fullWidth = rpLeft < 50; // right-pane covers nearly the whole screen
+
+    drawer.style.position  = 'fixed';
+    drawer.style.bottom    = '0';
+    drawer.style.top       = '';
+    drawer.style.left      = '0';
+    drawer.style.right     = fullWidth ? '0' : (window.innerWidth - rpLeft) + 'px';
+    drawer.style.width     = '';
+    drawer.style.minWidth  = '';
+    drawer.style.height    = '';
+    drawer.style.overflow  = '';
+    drawer.style.transform = '';
+    drawer.style.zIndex    = '1000';
+    console.log('✅ drawerReset complete');
 }
 
 // ── Download helper ───────────────────────────────────────────────────────────
