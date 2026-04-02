@@ -421,6 +421,61 @@
         immediately based on <code>context.timing</code> without user interaction.
     </p>
 
+    <!-- ── Built-in runtime actions ── -->
+    <h2>Built-in Runtime Actions</h2>
+    <p>
+        These actions are provided automatically by the IDE runtime — you do
+        <strong>not</strong> need to implement them in your services file.
+        Reference them by name in your machine JSON.
+    </p>
+    <table>
+        <tr><th>Action</th><th>Where to use</th><th>What it does</th></tr>
+        <tr>
+            <td><code>initTrace</code></td>
+            <td>Top-level <code>"entry"</code> on the machine</td>
+            <td>Initialises the <code>_trace</code> envelope on context (<code>flowId</code>,
+                <code>sessionId</code>, <code>startedAt</code>, empty <code>steps</code> array).
+                Required for session recording and test results.</td>
+        </tr>
+        <tr>
+            <td><code>record</code></td>
+            <td><code>"actions"</code> on transitions</td>
+            <td>Appends the current state + event to <code>_trace.steps</code>.
+                Add to every transition you want captured in the transcript.</td>
+        </tr>
+        <tr>
+            <td><code>updateContext</code></td>
+            <td><code>"actions"</code> on transitions (parameterised)</td>
+            <td>Merges the <code>params</code> object into context.
+                Use <code>mapValueTo</code> as a param key to store the submitted
+                event value into a named context field.</td>
+        </tr>
+    </table>
+
+    <h3>Example: enabling tracing and recording</h3>
+    <pre>{
+  <span class="key">"id"</span>: <span class="str">"my_bot"</span>,
+  <span class="key">"initial"</span>: <span class="str">"first_state"</span>,
+  <span class="key">"entry"</span>: [<span class="str">"initTrace"</span>],      <span class="cm">// ← initialise _trace when machine starts</span>
+  <span class="key">"context"</span>: { <span class="key">"user_email"</span>: <span class="str">""</span> },
+  <span class="key">"states"</span>: {
+    <span class="key">"first_state"</span>: {
+      <span class="key">"on"</span>: {
+        <span class="key">"SUBMIT"</span>: [
+          {
+            <span class="key">"guard"</span>: <span class="str">"isValidEmail"</span>,
+            <span class="key">"target"</span>: <span class="str">"next_state"</span>,
+            <span class="key">"actions"</span>: [
+              { <span class="key">"type"</span>: <span class="str">"updateContext"</span>, <span class="key">"params"</span>: { <span class="key">"mapValueTo"</span>: <span class="str">"user_email"</span> } },
+              <span class="str">"record"</span>         <span class="cm">// ← append step to _trace</span>
+            ]
+          }
+        ]
+      }
+    }
+  }
+}</pre>
+
     <!-- ── Running tests ── -->
     <h2>Running Tests</h2>
     <p>
@@ -513,10 +568,49 @@
             <td>Re-run a specific event sequence entered in the replay bar.</td></tr>
         <tr><td><strong>Copy Trace</strong></td>
             <td>Copy the current conversation trace as a JSON array to the clipboard.</td></tr>
+        <tr><td><strong>Analyze</strong></td>
+            <td>Run static analysis on the loaded flow. Detects unreachable states,
+                guard gaps (all branches guarded, no unguarded fallthrough), dead
+                transitions (shadowed by an earlier unguarded branch), and unresolved
+                guard names. Results are printed to the browser console with a toast
+                summary.</td></tr>
         <tr><td><strong>Pack Prod</strong></td>
             <td>Download a self-contained HTML file that runs the loaded flow with no
                 dependency on the IDE.</td></tr>
+        <tr><td><strong>Share</strong></td>
+            <td>Copy a shareable URL that encodes the current machine + services into
+                the URL hash so others can open it directly.</td></tr>
     </table>
+
+    <!-- ── TypeScript export ── -->
+    <h2>TypeScript Export (Stately VS Code Extension)</h2>
+    <p>
+        To edit a flow visually using the
+        <a href="https://marketplace.visualstudio.com/items?itemName=statelyai.stately-vscode"
+           style="color:#61dafb">Stately VS Code extension</a>,
+        export the loaded flow as a ready-to-open TypeScript project:
+    </p>
+    <pre>window.exportToTypeScript()</pre>
+    <p>
+        This downloads <code>{id}-xstate.zip</code> containing:
+    </p>
+    <ul>
+        <li><code>{id}-machine.ts</code> — <code>createMachine()</code> config with inferred context and event types</li>
+        <li><code>{id}-services.ts</code> — typed implementation stubs (or your existing services wrapped)</li>
+        <li><code>package.json</code> — <code>xstate ^5</code> + <code>typescript ^5</code> dependencies</li>
+        <li><code>tsconfig.json</code> — minimal TypeScript config for XState v5</li>
+    </ul>
+    <ol class="step-list">
+        <li>Unzip and run <code>npm install</code> in the folder.</li>
+        <li>Open the folder in VS Code — the Stately extension will detect and
+            visualise <code>{id}-machine.ts</code> automatically.</li>
+        <li>Fill in the <code>// TODO</code> stubs in <code>{id}-services.ts</code>.</li>
+    </ol>
+    <div class="callout">
+        To strip <code>meta</code> fields from the export (some Stately extension
+        versions warn about them), use:
+        <code>window.exportToTypeScript({ nometa: true })</code>
+    </div>
 
     <!-- ── Context viewer ── -->
     <h2>Context Viewer</h2>
@@ -529,6 +623,72 @@
         <li>❌ steps — validation failures (user stayed on the same state)</li>
         <li>⚙️ steps — async service calls and their results</li>
     </ul>
+
+    <!-- ── IDE Developer ── -->
+    <h2>IDE Developer</h2>
+    <p>
+        This section is for developers working on the IDE itself, not on flows.
+        All commands are run in the browser DevTools console.
+    </p>
+
+    <h3>Regression Contracts — quick start</h3>
+    <p>
+        Contracts are snapshot tests that verify the IDE's own UI, runtime
+        behaviour, toolbar DOM, and load routing.  Run them before and after
+        any change to catch regressions.
+    </p>
+    <div class="callout">
+        For stable UI measurements, open the IDE in a fixed-size window first:<br>
+        <code>window.open(location.href, '_blank', 'width=1024,height=768')</code><br>
+        then undock DevTools before running UI contracts.
+    </div>
+
+    <table>
+        <tr><th>Command</th><th>What it checks</th></tr>
+        <tr><td><code>await window.contracts.ui()</code></td>
+            <td>Layout snapshots at 1024×768 — toolbar, chat pane, diagram pane</td></tr>
+        <tr><td><code>await window.contracts.ui('capture')</code></td>
+            <td>Force-capture a new UI baseline</td></tr>
+        <tr><td><code>await window.contracts.runtime()</code></td>
+            <td>Runtime behaviour — state transitions, context updates, guard evaluation</td></tr>
+        <tr><td><code>await window.contracts.runtime('capture')</code></td>
+            <td>Force-capture a new runtime baseline</td></tr>
+        <tr><td><code>await window.contracts.smide()</code></td>
+            <td>SM-IDE machine contracts — toolbar state per machine state</td></tr>
+        <tr><td><code>await window.contracts.smide('capture')</code></td>
+            <td>Force-capture a new smide baseline</td></tr>
+        <tr><td><code>await window.contracts.load()</code></td>
+            <td>Toolbar DOM + load routing + ZIP round-trip</td></tr>
+    </table>
+
+    <p>Workflow:</p>
+    <ol class="step-list">
+        <li>Run <code>('capture')</code> once on a known-good state and commit
+            the resulting <code>*-baseline.json</code> files.</li>
+        <li>Run the plain <code>()</code> form before and after every change —
+            any deviation from the baseline is reported as a failure.</li>
+    </ol>
+
+    <h3>Static Analysis (console)</h3>
+    <table>
+        <tr><th>Command</th><th>What it does</th></tr>
+        <tr><td><code>window.analyzeFlow()</code></td>
+            <td>Detect unreachable states, guard gaps, dead transitions, and
+                unresolved guard names. Prints a report to the console and
+                shows a toast summary.</td></tr>
+        <tr><td><code>window._analysisReport</code></td>
+            <td>The last report object — inspect programmatically</td></tr>
+    </table>
+
+    <h3>TypeScript Export (console)</h3>
+    <table>
+        <tr><th>Command</th><th>What it does</th></tr>
+        <tr><td><code>window.exportToTypeScript()</code></td>
+            <td>Download <code>{id}-xstate.zip</code> — machine.ts, services.ts,
+                package.json, tsconfig.json</td></tr>
+        <tr><td><code>window.exportToTypeScript({&nbsp;nometa:&nbsp;true&nbsp;})</code></td>
+            <td>Same, with <code>meta</code> fields stripped</td></tr>
+    </table>
 
 </div>
 </body>

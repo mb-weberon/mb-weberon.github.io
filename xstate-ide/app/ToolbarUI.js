@@ -91,7 +91,7 @@ function Toolbar(props) {
         enabledBtns    = [],
         testRunning    = false,
         shareResult    = null,
-        onTest, onRestart, onSaveResults, onSaveFlow, onSaveFlowFiles, onLoad, onPackProd,
+        onTest, onRestart, onSaveResults, onSaveFlow, onSaveFlowFiles, onLoad, onAnalyze, onPackProd,
         onShare, onShareClose, onShareCopy,
     } = props;
 
@@ -141,6 +141,12 @@ function Toolbar(props) {
             title="Load flow (.zip, .json, .js) or test results (.zip, .json)"
             onClick=${onLoad}>📂<br/>Load</button>
 
+        <button id="analyze-btn"
+            disabled=${!en('analyze-btn')}
+            style=${st('analyze-btn')}
+            title="Static analysis — detect unreachable states, guard gaps, dead transitions"
+            onClick=${onAnalyze}>🔍<br/>Analyze</button>
+
         <button id="pack-prod-btn"
             disabled=${!en('pack-prod-btn')}
             style=${st('pack-prod-btn')}
@@ -175,6 +181,7 @@ export function mountToolbar(container, initialCallbacks = {}) {
         onSaveFlow:      () => {},
         onSaveFlowFiles: () => {},
         onLoad:          () => {},
+        onAnalyze:       () => {},
         onPackProd:      () => {},
         onShare:         () => {},
         onShareClose:    () => {},

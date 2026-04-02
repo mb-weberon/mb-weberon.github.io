@@ -96,13 +96,15 @@ async function boot() {
     // ── smide-machine — source of truth for toolbar button state ─────────────
     // Each state declares meta.toolbar: an array of enabled button IDs.
     const smideMachine = await fetch(BASE + 'test/smide-machine.json').then(r => r.json());
-    const ALL_TOOLBAR_BTNS = ['test-btn', 'restart-btn', 'save-results-btn', 'save-flow-btn', 'load-btn', 'pack-prod-btn', 'share-btn'];
+    const ALL_TOOLBAR_BTNS = ['test-btn', 'restart-btn', 'save-results-btn', 'save-flow-btn', 'load-btn', 'analyze-btn', 'pack-prod-btn', 'share-btn'];
     let _updateToolbar = null;
     let _updatePane    = null;
     let smideRuntime   = null;
 
     // ── Pre-load generate-traces.js so its exports are ready when needed ──────
-    const tracesModule = await import('./generate-traces.js');
+    const tracesModule  = await import('./generate-traces.js');
+    const analyzeModule = await import('./analyze-flow.js');
+    const exportModule  = await import('./export-typescript.js');
     window._showResultsDrawer  = tracesModule.showResultsDrawer;
     window.generateTraces      = () => config ? tracesModule.generateTraces(config) : [];
     window.downloadTestResults = tracesModule.downloadTestResults;
@@ -118,7 +120,15 @@ async function boot() {
     window.loadTestResults       = (file) => tracesModule.loadTestResults(file);
     window._loadResultsFromCache = tracesModule.loadResultsFromCache;
     window._clearResultsCache    = tracesModule.clearResultsCache;
-    window.drawerReset = tracesModule.drawerReset;
+    window.drawerReset  = tracesModule.drawerReset;
+    window.analyzeFlow  = () => {
+        if (!config) { console.warn('⚠️  No flow loaded — use Load first'); return null; }
+        return analyzeModule.analyzeFlow(config, activeServices);
+    };
+    window.exportToTypeScript = async ({ nometa = false } = {}) => {
+        if (!config) { console.warn('⚠️  No flow loaded — use Load first'); return null; }
+        return exportModule.exportToTypeScript(config, window._loadedServicesSource ?? null, { nometa });
+    };
     window.drawerDump  = () => {
         const drawer  = document.getElementById('test-results-drawer');
         const rp      = document.getElementById('right-pane');
@@ -330,6 +340,7 @@ async function boot() {
             onSaveFlow:      () => window.downloadPair(),
             onSaveFlowFiles: () => window.downloadFlowFiles(),
             onLoad:          () => document.getElementById('upload').click(),
+            onAnalyze:       () => window.analyzeFlow(),
             onPackProd:    () => window.downloadProductionBundle(),
             onShare: () => {
                 if (!config) return;
@@ -1290,6 +1301,19 @@ window.addEventListener('load', () => {
         `  await window.contracts.smide('capture')  — force capture baseline\n\n` +
         `── Load Contracts ──\n` +
         `  await window.contracts.load()            — toolbar DOM + load routing + ZIP round-trip\n\n` +
+        `── Built-in Runtime Actions (no services.js needed) ──\n` +
+        `  initTrace   — machine-level entry action; initialises _trace on context\n` +
+        `                (flowId, sessionId, startedAt, steps[]).  Add to top-level\n` +
+        `                "entry" in machine.json to enable session recording.\n` +
+        `  record      — state-level action; appends the current state + event to\n` +
+        `                _trace.steps.  Reference by name in transition "actions".\n` +
+        `  updateContext — parameterised action; merges params into context.\n\n` +
+        `── Static Analysis ──\n` +
+        `  window.analyzeFlow()                    — unreachable states, guard gaps, dead transitions\n` +
+        `  window._analysisReport                  — last report object\n\n` +
+        `── TypeScript Export ──\n` +
+        `  window.exportToTypeScript()             — download {id}-xstate.zip (machine.ts + services.ts + package.json + tsconfig.json)\n` +
+        `  window.exportToTypeScript({nometa:true}) — same, with meta stripped for Stately editor\n\n` +
         `Workflow: run ('capture') once → commit *-baseline.json → run () before/after every change.`
     );
     console.groupEnd();

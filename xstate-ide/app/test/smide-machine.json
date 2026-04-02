@@ -146,7 +146,7 @@
       "meta": {
         "text": "Flow loaded. Chat at initial state. Ready to converse or run tests.",
         "chat": "Flow loaded. Ready to chat or run tests.",
-        "toolbar": ["test-btn", "restart-btn", "load-btn", "pack-prod-btn", "share-btn"]
+        "toolbar": ["test-btn", "restart-btn", "load-btn", "analyze-btn", "pack-prod-btn", "share-btn"]
       },
       "on": {
         "LOAD_FLOW": {
@@ -184,7 +184,7 @@
       "meta": {
         "text": "Conversation in progress. Trace being recorded.",
         "chat": "Conversation active. Trace being recorded.",
-        "toolbar": ["test-btn", "restart-btn", "load-btn", "pack-prod-btn", "share-btn"]
+        "toolbar": ["test-btn", "restart-btn", "load-btn", "analyze-btn", "pack-prod-btn", "share-btn"]
       },
       "on": {
         "LOAD_FLOW": {
@@ -244,7 +244,7 @@
       "meta": {
         "text": "Tests done. Results are cached and will survive a reload. Save Results to download a copy before loading a new flow.",
         "chat": "Tests done. Results cached. Save a copy before loading a new flow.",
-        "toolbar": ["test-btn", "restart-btn", "save-results-btn", "pack-prod-btn", "share-btn"]
+        "toolbar": ["test-btn", "restart-btn", "save-results-btn", "analyze-btn", "pack-prod-btn", "share-btn"]
       },
       "on": {
         "SAVE_RESULTS": {
@@ -266,7 +266,7 @@
       "meta": {
         "text": "Results saved to disk. Load Flow re-enabled.",
         "chat": "Results saved. All options available.",
-        "toolbar": ["test-btn", "restart-btn", "load-btn", "pack-prod-btn", "share-btn"]
+        "toolbar": ["test-btn", "restart-btn", "load-btn", "analyze-btn", "pack-prod-btn", "share-btn"]
       },
       "on": {
         "LOAD_FLOW": {
@@ -304,7 +304,7 @@
       "meta": {
         "text": "Results loaded or restored from storage. Drawer shown. Flow active and re-loadable.",
         "chat": "Results ready. Flow active and re-loadable.",
-        "toolbar": ["test-btn", "restart-btn", "save-flow-btn", "load-btn", "pack-prod-btn", "share-btn"]
+        "toolbar": ["test-btn", "restart-btn", "save-flow-btn", "load-btn", "analyze-btn", "pack-prod-btn", "share-btn"]
       },
       "on": {
         "LOAD_FLOW": {

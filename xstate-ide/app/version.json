@@ -1,9 +1,19 @@
 {
   "major": 0,
   "minor": 12,
-  "patch": 65,
+  "patch": 67,
   "label": "",
   "history": [
+    {
+      "version": "0.12.67",
+      "date": "2026-04-01",
+      "note": "Feature: TypeScript export — app/export-typescript.js; window.exportToTypeScript() downloads {id}-machine.ts (createMachine config + inferred context/event types, types:{} as block for XState v5) and {id}-services.ts (wraps existing services.js with TS header, or generates typed stubs when no services loaded); wired in main.js alongside analyzeFlow; console help updated"
+    },
+    {
+      "version": "0.12.66",
+      "date": "2026-04-01",
+      "note": "Feature: Static analysis (Task 6) — app/analyze-flow.js; analyzeFlow(config, services) detects unreachable states, guard gaps (all branches guarded, no fallthrough), dead transitions (shadowed by earlier unguarded branch), unresolved guard names (when services loaded), missing event handlers (info); Analyze button in toolbar (analyze-btn) enabled in all flow-loaded states; window.analyzeFlow() exposed in console help; report stored in window._analysisReport"
+    },
     {
       "version": "0.12.62",
       "date": "2026-04-01",

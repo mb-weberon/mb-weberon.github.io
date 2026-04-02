@@ -354,26 +354,25 @@ body.in-fullscreen #fs-exit-btn { display: inline-flex; align-items: center; }
 
 /* ── Toolbar — pinned to bottom of pane-content ─────────────────────────────── */
 #toolbar {
-    padding: 10px 12px;
+    padding: 8px 10px;
     background: var(--dark);
     display: flex;
     align-items: stretch;
-    gap: 8px;
+    gap: 6px;
     flex-shrink: 0;
-    /* No flex-wrap: buttons must fit in a single row.
-       At 460px pane width (default) 5 buttons fit comfortably. */
+    /* No flex-wrap: buttons share width equally regardless of label length. */
 }
 
 #toolbar button {
-    flex: 1 1 auto;
-    padding: 10px 6px;
-    font-size: 12px;
+    flex: 1 1 0;
+    padding: 8px 4px;
+    font-size: 11px;
     border-radius: 10px;
     white-space: normal;
     font-weight: 600;
     line-height: 1.3;
     text-align: center;
-    min-width: 52px;
+    min-width: 40px;
 }
 
 /* ── Touch-friendly tooltip ─────────────────────────────────────────────────── */
