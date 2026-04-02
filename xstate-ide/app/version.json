@@ -1,9 +1,14 @@
 {
   "major": 0,
   "minor": 12,
-  "patch": 67,
+  "patch": 68,
   "label": "",
   "history": [
+    {
+      "version": "0.12.68",
+      "date": "2026-04-02",
+      "note": "Improvement: exportToTypeScript now downloads a zip containing machine.ts, services.ts, package.json (xstate^5), and tsconfig.json — unzip + npm install + open in VS Code is all that's needed; nometa option strips meta fields for Stately editor compatibility; save results ZIP now includes {id}-machine.json and {id}-services.js alongside results.json so user can edit services (e.g. add SAMPLE_INPUTS) and reload without knowing internals; sample inputs modal replaced with live input fields per missing state + Run Tests callback — no file editing required; help.html updated with built-in runtime actions, Analyze/Share toolbar entries, TypeScript export section, and IDE Developer section with regression contracts reference"
+    },
     {
       "version": "0.12.67",
       "date": "2026-04-01",

@@ -61,59 +61,73 @@ export async function clearResultsCache() {
 
 // ── Sample inputs modal ───────────────────────────────────────────────────────
 
-function _showSampleInputsModal(missingIds, snippet, isSkeleton) {
+function _showSampleInputsModal(missingIds, onSubmit, noServices) {
     const existing = document.getElementById('smide-sample-inputs-dialog');
     if (existing) existing.remove();
 
-    const rows   = snippet.split('\n').length + 1;
-    const title  = isSkeleton
-        ? 'Tests blocked — no services file loaded'
-        : 'Tests blocked — sample inputs missing';
-    const desc   = isSkeleton
-        ? 'Save the skeleton below as <code style="background:#f0f0f0;padding:1px 4px;border-radius:3px;">*-services.js</code>, fill in the sample values, then load it with Load Flow.'
-        : 'Add the following inside the services object in your <code style="background:#f0f0f0;padding:1px 4px;border-radius:3px;">*-services.js</code> file.';
+    const note = noServices
+        ? '<p style="margin:0 0 12px;font-size:12px;color:#b08800;background:#fffbe6;border-radius:4px;padding:6px 10px;">No services file loaded — guards will not run. You can still test states that only need sample inputs.</p>'
+        : '';
+
+    const fields = missingIds.map(id => `
+        <div style="margin-bottom:10px;">
+            <label style="display:block;font-size:12px;font-weight:600;color:#555;margin-bottom:3px;">${id}</label>
+            <input data-state="${id}" type="text" placeholder="sample value for ${id}" style="
+                width:100%;box-sizing:border-box;
+                font-family:monospace;font-size:13px;
+                border:1px solid #ccc;border-radius:4px;padding:6px 8px;
+            ">
+        </div>`).join('');
 
     const dialog = document.createElement('dialog');
     dialog.id = 'smide-sample-inputs-dialog';
     dialog.style.cssText = `
-        border: none; border-radius: 8px; padding: 0;
-        box-shadow: 0 8px 32px rgba(0,0,0,0.25);
-        max-width: 480px; width: 100%;
-        font-family: 'Segoe UI', sans-serif;
+        border:none; border-radius:8px; padding:0;
+        box-shadow:0 8px 32px rgba(0,0,0,0.25);
+        max-width:420px; width:100%;
+        font-family:'Segoe UI', sans-serif;
     `;
 
     dialog.innerHTML = `
-        <div style="padding:20px 24px 0">
-            <h3 style="margin:0 0 8px; font-size:15px; color:#1c1e21;">${title}</h3>
-            <p style="margin:0 0 12px; font-size:13px; color:#444;">${desc}</p>
-            <textarea id="smide-snippet-ta" readonly rows="${rows}" style="
-                width:100%; box-sizing:border-box;
-                font-family:monospace; font-size:12px;
-                background:#1e1e1e; color:#61dafb;
-                border:1px solid #444; border-radius:4px;
-                padding:10px; resize:vertical;
-            ">${snippet}</textarea>
+        <div style="padding:20px 24px 0;">
+            <h3 style="margin:0 0 8px;font-size:15px;color:#1c1e21;">Sample inputs needed</h3>
+            <p style="margin:0 0 12px;font-size:13px;color:#444;">
+                Enter a sample value for each text-input state.
+                These are used by the test runner to simulate user input and are applied for this session only.
+            </p>
+            ${note}
+            ${fields}
         </div>
-        <div style="display:flex; justify-content:flex-end; gap:8px; padding:12px 24px 16px;">
-            <button id="smide-snippet-copy" style="
-                padding:6px 14px; border-radius:5px; border:none; cursor:pointer;
-                background:#0084ff; color:#fff; font-size:13px;
-            ">Copy</button>
+        <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 24px 16px;">
+            <button id="smide-snippet-run" style="
+                padding:6px 14px;border-radius:5px;border:none;cursor:pointer;
+                background:#0084ff;color:#fff;font-size:13px;
+            ">Run Tests</button>
             <button id="smide-snippet-close" style="
-                padding:6px 14px; border-radius:5px; border:1px solid #ddd; cursor:pointer;
-                background:#fff; color:#333; font-size:13px;
-            ">Close</button>
+                padding:6px 14px;border-radius:5px;border:1px solid #ddd;cursor:pointer;
+                background:#fff;color:#333;font-size:13px;
+            ">Cancel</button>
         </div>
     `;
 
     document.body.appendChild(dialog);
     dialog.showModal();
+    dialog.querySelector('input')?.focus();
 
-    dialog.querySelector('#smide-snippet-copy').onclick = () => {
-        navigator.clipboard?.writeText(snippet).catch(() => {});
-        const btn = dialog.querySelector('#smide-snippet-copy');
-        btn.textContent = 'Copied!';
-        setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+    dialog.querySelector('#smide-snippet-run').onclick = () => {
+        const inputs = {};
+        dialog.querySelectorAll('input[data-state]').forEach(el => {
+            if (el.value.trim()) inputs[el.dataset.state] = el.value.trim();
+        });
+        const stillMissing = missingIds.filter(id => !inputs[id]);
+        if (stillMissing.length > 0) {
+            dialog.querySelectorAll('input[data-state]').forEach(el => {
+                el.style.borderColor = stillMissing.includes(el.dataset.state) ? '#e00' : '#ccc';
+            });
+            return;
+        }
+        dialog.close();
+        onSubmit(inputs);
     };
     dialog.querySelector('#smide-snippet-close').onclick = () => dialog.close();
     dialog.addEventListener('close', () => dialog.remove());
@@ -390,12 +404,11 @@ export async function runAllTracesHeadless(config, services, { pauseMs = 0, serv
         .filter(([id, s]) => s.meta?.input === 'text' && !sampleInputs[id])
         .map(([id]) => id);
     if (missingInputs.length > 0) {
-        const sampleBlock = `  SAMPLE_INPUTS: {\n${missingInputs.map(id => `    ${id}: 'your-sample-value',`).join('\n')}\n  },`;
-        const snippet = servicesSource
-            ? sampleBlock
-            : `export default {\n\n${sampleBlock}\n\n  guards: {\n    // guardName: ({ event, context }) => true,\n  },\n\n};`;
-        console.warn('⚠️  Tests blocked — no sample input for:', missingInputs.join(', '), '\n\n' + snippet);
-        _showSampleInputsModal(missingInputs, snippet, !servicesSource);
+        console.warn('⚠️  Tests blocked — no sample input for:', missingInputs.join(', '));
+        _showSampleInputsModal(missingInputs, (extraInputs) => {
+            services.SAMPLE_INPUTS = { ...sampleInputs, ...extraInputs };
+            runAllTracesHeadless(config, services, { pauseMs, servicesSource, priorResults });
+        }, !servicesSource);
         return;
     }
 
@@ -815,8 +828,13 @@ export function drawerReset() {
 export async function downloadTestResults() {
     const results = window._testResults;
     if (!results) { console.warn('No test results. Run runAllTraces() first.'); return false; }
-    const filename = `test-results-${results.flowId}-${results.runAt.slice(0, 10)}.zip`;
-    const zipped   = zipSync({ 'results.json': strToU8(JSON.stringify(results, null, 2)) });
+    const filename  = `test-results-${results.flowId}-${results.runAt.slice(0, 10)}.zip`;
+    const zipFiles  = { 'results.json': strToU8(JSON.stringify(results, null, 2)) };
+    if (results.config)
+        zipFiles[`${results.flowId}-machine.json`] = strToU8(JSON.stringify(results.config, null, 2));
+    if (results.servicesSource)
+        zipFiles[`${results.flowId}-services.js`] = strToU8(results.servicesSource);
+    const zipped = zipSync(zipFiles);
     const blob     = new Blob([zipped], { type: 'application/zip' });
 
     if ('showSaveFilePicker' in window) {
