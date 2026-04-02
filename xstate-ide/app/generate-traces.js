@@ -379,6 +379,24 @@ export async function runAllTraces(config, replayFn, getTrace, getStateId, pause
     return results;
 }
 
+// ── Sample inputs source patcher ─────────────────────────────────────────────
+
+/**
+ * Inject SAMPLE_INPUTS into a services JS source string.
+ * Inserts the block immediately after the opening { of the exported object.
+ * Returns the original string unchanged if the pattern is not found.
+ */
+function injectSampleInputs(source, inputs) {
+    const entries = Object.entries(inputs)
+        .map(([k, v]) => `    ${k}: ${JSON.stringify(v)},`)
+        .join('\n');
+    const block = `\n  SAMPLE_INPUTS: {\n${entries}\n  },\n`;
+    return source.replace(
+        /(\bexport\s+(?:default\s*\{|const\s+\w+\s*=\s*\{))/,
+        `$1${block}`
+    );
+}
+
 // ── Headless runner ───────────────────────────────────────────────────────────
 //
 // Runs all paths without touching the DOM during replay — no ChatUI rendering,
@@ -406,8 +424,34 @@ export async function runAllTracesHeadless(config, services, { pauseMs = 0, serv
     if (missingInputs.length > 0) {
         console.warn('⚠️  Tests blocked — no sample input for:', missingInputs.join(', '));
         _showSampleInputsModal(missingInputs, (extraInputs) => {
+            // 1. Patch in-memory services object
             services.SAMPLE_INPUTS = { ...sampleInputs, ...extraInputs };
-            runAllTracesHeadless(config, services, { pauseMs, servicesSource, priorResults });
+
+            // 2. Patch live services source so Save Results / Save Flow carry the fix forward
+            const entries = Object.entries(extraInputs)
+                .map(([k, v]) => `    ${k}: ${JSON.stringify(v)},`)
+                .join('\n');
+            const snippet = `  SAMPLE_INPUTS: {\n${entries}\n  },`;
+
+            if (window._loadedServicesSource) {
+                const patched = injectSampleInputs(window._loadedServicesSource, extraInputs);
+                if (patched !== window._loadedServicesSource) {
+                    window._loadedServicesSource = patched;
+                    console.group('💉 SAMPLE_INPUTS injected into loaded services source');
+                    console.info('Your services file has been updated for this session.\nTo make it permanent, add the following inside your services object:\n\n' + snippet);
+                    console.groupEnd();
+                    window.showToast?.('SAMPLE_INPUTS applied to session — see console for snippet to save permanently', 'info');
+                }
+            } else {
+                // No services loaded — educate only
+                console.group('💡 Add SAMPLE_INPUTS to your services file to avoid this prompt');
+                console.info('Create a services file with:\n\nexport default {\n\n' + snippet + '\n\n  guards: {\n    // guardName: ({ event, context }) => true,\n  },\n\n};');
+                console.groupEnd();
+                window.showToast?.('SAMPLE_INPUTS applied for this session — see console for services file snippet', 'info');
+            }
+
+            // 3. Re-run with updated source so results embed the patched services
+            runAllTracesHeadless(config, services, { pauseMs, servicesSource: window._loadedServicesSource ?? servicesSource, priorResults });
         }, !servicesSource);
         return;
     }

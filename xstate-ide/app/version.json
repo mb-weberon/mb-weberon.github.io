@@ -1,9 +1,14 @@
 {
   "major": 0,
   "minor": 12,
-  "patch": 68,
+  "patch": 69,
   "label": "",
   "history": [
+    {
+      "version": "0.12.69",
+      "date": "2026-04-02",
+      "note": "Fix: SAMPLE_INPUTS backward-compat — after modal entry, injectSampleInputs() patches window._loadedServicesSource so Save Results and Save Flow carry the fix forward; console snippet shown to educate user on permanent fix"
+    },
     {
       "version": "0.12.68",
       "date": "2026-04-02",
