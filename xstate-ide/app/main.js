@@ -10,7 +10,7 @@ let activeServices = {};
 import { loadVersion }       from './version.js';
 import { consoleLogger }     from './logger.js';
 import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
-import { buildShareUrl, loadFromHash } from './share.js';
+import { buildShareUrl, loadFromHash, extractFlowFragment, decodePayload } from './share.js';
 import { CANONICAL_BASE_URL }          from './config.js';
 
 const BASE = new URL('.', import.meta.url).href;
@@ -343,7 +343,10 @@ async function boot() {
             onAnalyze:       () => window.analyzeFlow(),
             onPackProd:    () => window.downloadProductionBundle(),
             onShare: () => {
-                if (!config) return;
+                if (!config) {
+                    _updateToolbar?.({ shareResult: { noFlow: true } });
+                    return;
+                }
                 const result = buildShareUrl(
                     CANONICAL_BASE_URL,
                     config,
@@ -357,6 +360,22 @@ async function boot() {
                 navigator.clipboard?.writeText(url).catch(() => {});
                 _updateToolbar?.({ shareResult: null });
                 showToast('Link copied!', 'info');
+            },
+            onShareLoad: (input) => {
+                const fragment = extractFlowFragment(input);
+                if (!fragment) {
+                    showToast('No valid shared link found in the pasted text', 'warn');
+                    return;
+                }
+                let payload;
+                try { payload = decodePayload(fragment); }
+                catch (e) {
+                    showToast('Could not decode shared link — it may be corrupted', 'error');
+                    return;
+                }
+                _updateToolbar?.({ shareResult: null });
+                _applyHashPayload(payload);
+                console.log('🔗 Loading flow from shared link');
             },
         });
     }
@@ -405,11 +424,32 @@ async function boot() {
         document.getElementById('fresh-btn').onclick  = () => { _clearPersistedFlow(); smideRuntime?.send('START_FRESH'); };
     }
 
+    let _applyHashPayload = null;  // assigned below once closure vars are in scope
+
     {
         // Production services close over main.js variables — must be defined here
         // so they share the same contextOverrides, activeServices, and reloadServices.
         let _hashPayload       = null;
         let _hashPayloadLoaded = false;
+
+        _applyHashPayload = async function(p) {
+            if (p.services) {
+                await reloadServices(p.services, `${p.machine?.id || 'flow'}-services.js`);
+            } else {
+                activeServices = {};
+            }
+            if (p.results) {
+                window._testResults = p.results;
+                if (p.results.config) window._setActiveConfig(p.results.config);
+                _activateFlow(p.results.config || p.machine);
+                window._showResultsDrawer?.(p.results, window._replayTrace);
+                smideRuntime.send('LOAD_RESULTS');
+            } else {
+                _activateFlow(p.machine);
+                smideRuntime.send('LOAD_FLOW');
+            }
+            if (p.ui?.diagramDir) window.setDiagramDir?.(p.ui.diagramDir);
+        }
 
         const smideProductionServices = {
             checkPersistedState: async () => {
@@ -481,24 +521,7 @@ async function boot() {
                 _hashPayloadLoaded = true;
                 const p = _hashPayload;
                 _hashPayload = null;
-                (async () => {
-                    if (p.services) {
-                        await reloadServices(p.services, `${p.machine?.id || 'flow'}-services.js`);
-                    } else {
-                        activeServices = {};
-                    }
-                    if (p.results) {
-                        window._testResults = p.results;
-                        if (p.results.config) window._setActiveConfig(p.results.config);
-                        _activateFlow(p.results.config || p.machine);
-                        window._showResultsDrawer?.(p.results, window._replayTrace);
-                        smideRuntime.send('LOAD_RESULTS');
-                    } else {
-                        _activateFlow(p.machine);
-                        smideRuntime.send('LOAD_FLOW');
-                    }
-                    if (p.ui?.diagramDir) window.setDiagramDir?.(p.ui.diagramDir);
-                })();
+                _applyHashPayload(p);
             }
 
             // ── IDE LOG observer messages ─────────────────────────────────────

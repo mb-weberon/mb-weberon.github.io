@@ -1,9 +1,14 @@
 {
   "major": 0,
   "minor": 12,
-  "patch": 69,
+  "patch": 70,
   "label": "",
   "history": [
+    {
+      "version": "0.12.70",
+      "date": "2026-04-02",
+      "note": "Feature: Share popover accepts shared URLs from any instance — paste a full URL, #flow= fragment, or bare flow= token; extractFlowFragment() strips foreign base URL; onShareLoad wired in main.js reusing extracted _applyHashPayload(); share-btn enabled in no_flow state so user can receive a shared link before loading any flow"
+    },
     {
       "version": "0.12.69",
       "date": "2026-04-02",

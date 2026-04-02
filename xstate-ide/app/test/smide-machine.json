@@ -124,7 +124,7 @@
       "meta": {
         "text": "No flow loaded. Use Load to open a flow or restore test results.",
         "chat": "Ready. Load a flow to get started.",
-        "toolbar": ["load-btn"]
+        "toolbar": ["load-btn", "share-btn"]
       },
       "on": {
         "LOAD_FLOW": {

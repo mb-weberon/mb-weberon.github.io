@@ -1,4 +1,6 @@
-import { html, render } from 'htm/preact';
+import { html } from 'htm/preact';
+import { render } from 'preact';
+import { useState } from 'preact/hooks';
 
 /**
  * ToolbarUI.js — Preact component for the IDE toolbar.
@@ -20,8 +22,10 @@ import { html, render } from 'htm/preact';
  *   updateToolbar({ shareResult: null });                 // hide share popover
  */
 
-function SharePopover({ shareResult, onShareClose, onShareCopy }) {
+function SharePopover({ shareResult, onShareClose, onShareCopy, onShareLoad }) {
     if (!shareResult) return null;
+
+    const [pasteVal, setPasteVal] = useState('');
 
     const style = {
         popover: `
@@ -31,23 +35,51 @@ function SharePopover({ shareResult, onShareClose, onShareCopy }) {
             box-shadow:0 4px 16px rgba(0,0,0,0.5);
             font-family:'Segoe UI',sans-serif; font-size:13px; color:#ccc;
         `,
-        title: `font-weight:600; color:#fff; margin-bottom:8px; font-size:13px;`,
-        sub:   `color:#aaa; font-size:12px; margin-bottom:10px;`,
-        url:   `
+        title:   `font-weight:600; color:#fff; margin-bottom:8px; font-size:13px;`,
+        sub:     `color:#aaa; font-size:12px; margin-bottom:10px;`,
+        url:     `
             background:#111; border:1px solid #333; border-radius:4px;
             padding:6px 8px; font-size:11px; font-family:'Courier New',monospace;
             color:#61dafb; word-break:break-all; margin-bottom:10px;
         `,
-        row:   `display:flex; gap:8px; justify-content:flex-end;`,
+        divider: `border:none; border-top:1px solid #333; margin:10px 0;`,
+        loadLabel: `color:#aaa; font-size:11px; margin-bottom:5px;`,
+        loadRow: `display:flex; gap:6px; margin-bottom:4px;`,
+        input:   `
+            flex:1; background:#111; border:1px solid #444; border-radius:4px;
+            padding:5px 8px; font-size:11px; font-family:'Courier New',monospace;
+            color:#ccc; min-width:0;
+        `,
+        row:     `display:flex; gap:8px; justify-content:flex-end;`,
         btnCopy: `
             background:#0084ff; color:#fff; border:none; border-radius:6px;
             padding:6px 14px; font-size:12px; cursor:pointer;
+        `,
+        btnLoad: `
+            background:#0084ff; color:#fff; border:none; border-radius:4px;
+            padding:5px 10px; font-size:11px; cursor:pointer; white-space:nowrap;
         `,
         btnClose: `
             background:#333; color:#ccc; border:none; border-radius:6px;
             padding:6px 12px; font-size:12px; cursor:pointer;
         `,
     };
+
+    const loadSection = html`
+        <hr style=${style.divider}/>
+        <div style=${style.loadLabel}>Load from shared link (any instance):</div>
+        <div style=${style.loadRow}>
+            <input style=${style.input}
+                placeholder="Paste URL here…"
+                value=${pasteVal}
+                onInput=${e => setPasteVal(e.target.value)}
+                onKeyDown=${e => { if (e.key === 'Enter' && pasteVal.trim()) { onShareLoad(pasteVal.trim()); setPasteVal(''); } }}
+            />
+            <button style=${style.btnLoad}
+                disabled=${!pasteVal.trim()}
+                onClick=${() => { onShareLoad(pasteVal.trim()); setPasteVal(''); }}>Load</button>
+        </div>
+    `;
 
     if (shareResult.tooLarge) {
         return html`
@@ -58,6 +90,19 @@ function SharePopover({ shareResult, onShareClose, onShareCopy }) {
                     download the flow ZIP and/or test results JSON<br/>
                     and send them directly.
                 </div>
+                ${loadSection}
+                <div style=${style.row}>
+                    <button style=${style.btnClose} onClick=${onShareClose}>Close</button>
+                </div>
+            </div>
+        `;
+    }
+
+    if (shareResult.noFlow) {
+        return html`
+            <div style=${style.popover}>
+                <div style=${style.title}>🔗 Load from shared link</div>
+                ${loadSection}
                 <div style=${style.row}>
                     <button style=${style.btnClose} onClick=${onShareClose}>Close</button>
                 </div>
@@ -82,6 +127,7 @@ function SharePopover({ shareResult, onShareClose, onShareCopy }) {
                 <button style=${style.btnCopy} onClick=${() => onShareCopy(url)}>Copy Link</button>
                 <button style=${style.btnClose} onClick=${onShareClose}>✕</button>
             </div>
+            ${loadSection}
         </div>
     `;
 }
@@ -92,7 +138,7 @@ function Toolbar(props) {
         testRunning    = false,
         shareResult    = null,
         onTest, onRestart, onSaveResults, onSaveFlow, onSaveFlowFiles, onLoad, onAnalyze, onPackProd,
-        onShare, onShareClose, onShareCopy,
+        onShare, onShareClose, onShareCopy, onShareLoad,
     } = props;
 
     const en = (id) => enabledBtns.includes(id);
@@ -164,7 +210,7 @@ function Toolbar(props) {
             onChange=${(e) => { window.loadPair?.(e.target.files); e.target.value = ''; }}/>
 
         ${shareResult && html`<div style="position:fixed; inset:0; z-index:999;" onClick=${onShareClose}/>`}
-        <${SharePopover} shareResult=${shareResult} onShareClose=${onShareClose} onShareCopy=${onShareCopy}/>
+        <${SharePopover} shareResult=${shareResult} onShareClose=${onShareClose} onShareCopy=${onShareCopy} onShareLoad=${onShareLoad}/>
 
     </div>`;
 }
@@ -186,6 +232,7 @@ export function mountToolbar(container, initialCallbacks = {}) {
         onShare:         () => {},
         onShareClose:    () => {},
         onShareCopy:     () => {},
+        onShareLoad:     () => {},
         ...initialCallbacks,
     };
 
