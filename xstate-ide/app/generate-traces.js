@@ -89,7 +89,7 @@ function _showSampleInputsModal(missingIds, onSubmit, noServices) {
     `;
 
     dialog.innerHTML = `
-        <div style="padding:20px 24px 0;">
+        <div id="smide-modal-body" style="padding:20px 24px 0;">
             <h3 style="margin:0 0 8px;font-size:15px;color:#1c1e21;">Sample inputs needed</h3>
             <p style="margin:0 0 12px;font-size:13px;color:#444;">
                 Enter a sample value for each text-input state.
@@ -126,9 +126,34 @@ function _showSampleInputsModal(missingIds, onSubmit, noServices) {
             });
             return;
         }
-        dialog.close();
-        onSubmit(inputs);
+
+        // Run tests and get back snippet + propagation info for the confirmation view
+        const { snippet, hasServices } = onSubmit(inputs);
+
+        // Replace input phase with confirmation phase — tests are already running
+        const propagationMsg = hasServices
+            ? '✅ Your session is already patched. <b>Save Results</b>, <b>Save Flow</b>, and <b>Share</b> will all carry this fix forward automatically — no extra steps needed. Note: Share includes the fix as long as the payload is not too large.'
+            : '⚠️ No services file is loaded, so this applies to this session only. To make it permanent, save the snippet below into a services file.';
+
+        dialog.querySelector('#smide-modal-body').innerHTML = `
+            <h3 style="margin:0 0 8px;font-size:15px;color:#1c1e21;">Tests are running…</h3>
+            <p style="margin:0 0 10px;font-size:13px;color:#444;">
+                To avoid this prompt in future, add the following inside your services object:
+            </p>
+            <textarea readonly rows="4" style="
+                width:100%;box-sizing:border-box;
+                font-family:monospace;font-size:12px;
+                background:#1e1e1e;color:#61dafb;
+                border:1px solid #444;border-radius:4px;
+                padding:10px;resize:vertical;margin-bottom:10px;
+            ">${snippet}</textarea>
+            <p style="margin:0;font-size:12px;color:#444;line-height:1.5;">${propagationMsg}</p>
+        `;
+
+        dialog.querySelector('#smide-snippet-run').style.display = 'none';
+        dialog.querySelector('#smide-snippet-close').textContent = 'Got it';
     };
+
     dialog.querySelector('#smide-snippet-close').onclick = () => dialog.close();
     dialog.addEventListener('close', () => dialog.remove());
 }
@@ -427,31 +452,27 @@ export async function runAllTracesHeadless(config, services, { pauseMs = 0, serv
             // 1. Patch in-memory services object
             services.SAMPLE_INPUTS = { ...sampleInputs, ...extraInputs };
 
-            // 2. Patch live services source so Save Results / Save Flow carry the fix forward
+            // 2. Build snippet for the confirmation view
             const entries = Object.entries(extraInputs)
                 .map(([k, v]) => `    ${k}: ${JSON.stringify(v)},`)
                 .join('\n');
             const snippet = `  SAMPLE_INPUTS: {\n${entries}\n  },`;
 
+            // 3. Patch live services source so Save Results / Save Flow / Share carry the fix forward
+            let hasServices = false;
             if (window._loadedServicesSource) {
                 const patched = injectSampleInputs(window._loadedServicesSource, extraInputs);
                 if (patched !== window._loadedServicesSource) {
                     window._loadedServicesSource = patched;
-                    console.group('💉 SAMPLE_INPUTS injected into loaded services source');
-                    console.info('Your services file has been updated for this session.\nTo make it permanent, add the following inside your services object:\n\n' + snippet);
-                    console.groupEnd();
-                    window.showToast?.('SAMPLE_INPUTS applied to session — see console for snippet to save permanently', 'info');
+                    hasServices = true;
                 }
-            } else {
-                // No services loaded — educate only
-                console.group('💡 Add SAMPLE_INPUTS to your services file to avoid this prompt');
-                console.info('Create a services file with:\n\nexport default {\n\n' + snippet + '\n\n  guards: {\n    // guardName: ({ event, context }) => true,\n  },\n\n};');
-                console.groupEnd();
-                window.showToast?.('SAMPLE_INPUTS applied for this session — see console for services file snippet', 'info');
             }
 
-            // 3. Re-run with updated source so results embed the patched services
+            // 4. Re-run with updated source so results embed the patched services
             runAllTracesHeadless(config, services, { pauseMs, servicesSource: window._loadedServicesSource ?? servicesSource, priorResults });
+
+            // 5. Return info for the modal confirmation view
+            return { snippet, hasServices };
         }, !servicesSource);
         return;
     }

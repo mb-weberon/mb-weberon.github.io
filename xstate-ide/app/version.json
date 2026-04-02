@@ -1,9 +1,14 @@
 {
   "major": 0,
   "minor": 12,
-  "patch": 70,
+  "patch": 71,
   "label": "",
   "history": [
+    {
+      "version": "0.12.71",
+      "date": "2026-04-02",
+      "note": "Improvement: SAMPLE_INPUTS modal now shows confirmation view after Run Tests — displays the snippet to add permanently, explains what was auto-patched (session, Save Results, Save Flow, Share), and notes the Share size caveat; no more console hunting"
+    },
     {
       "version": "0.12.70",
       "date": "2026-04-02",
