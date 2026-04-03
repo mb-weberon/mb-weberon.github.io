@@ -61,9 +61,11 @@ export async function clearResultsCache() {
 
 // ── Sample inputs modal ───────────────────────────────────────────────────────
 
-function _showSampleInputsModal(missingIds, onSubmit, noServices) {
+function _showSampleInputsModal(missingIds, onSubmit, noServices, onCancel, prefillValues = {}) {
     const existing = document.getElementById('smide-sample-inputs-dialog');
     if (existing) existing.remove();
+
+    const isCorrection = missingIds.some(id => prefillValues[id]);
 
     const note = noServices
         ? '<p style="margin:0 0 12px;font-size:12px;color:#b08800;background:#fffbe6;border-radius:4px;padding:6px 10px;">No services file loaded — guards will not run. You can still test states that only need sample inputs.</p>'
@@ -72,11 +74,11 @@ function _showSampleInputsModal(missingIds, onSubmit, noServices) {
     const fields = missingIds.map(id => `
         <div style="margin-bottom:10px;">
             <label style="display:block;font-size:12px;font-weight:600;color:#555;margin-bottom:3px;">${id}</label>
-            <input data-state="${id}" type="text" placeholder="sample value for ${id}" style="
-                width:100%;box-sizing:border-box;
+            <input data-state="${id}" type="text" placeholder="sample value for ${id}"
+                value="${(prefillValues[id] ?? '').replace(/"/g, '&quot;')}"
+                style="width:100%;box-sizing:border-box;
                 font-family:monospace;font-size:13px;
-                border:1px solid #ccc;border-radius:4px;padding:6px 8px;
-            ">
+                border:1px solid ${prefillValues[id] ? '#e00' : '#ccc'};border-radius:4px;padding:6px 8px;">
         </div>`).join('');
 
     const dialog = document.createElement('dialog');
@@ -90,11 +92,14 @@ function _showSampleInputsModal(missingIds, onSubmit, noServices) {
 
     dialog.innerHTML = `
         <div id="smide-modal-body" style="padding:20px 24px 0;">
-            <h3 style="margin:0 0 8px;font-size:15px;color:#1c1e21;">Sample inputs needed</h3>
-            <p style="margin:0 0 12px;font-size:13px;color:#444;">
-                Enter a sample value for each text-input state.
-                These are used by the test runner to simulate user input and are applied for this session only.
-            </p>
+            <h3 style="margin:0 0 8px;font-size:15px;color:#1c1e21;">${
+                isCorrection ? '⚠️ Inputs rejected by guards — correct and re-run' : 'Sample inputs needed'
+            }</h3>
+            <p style="margin:0 0 12px;font-size:13px;color:#444;">${
+                isCorrection
+                    ? 'The highlighted values were rejected by guards. Correct them below and re-run.'
+                    : 'Enter a sample value for each text-input state. These are used by the test runner to simulate user input.'
+            }</p>
             ${note}
             ${fields}
         </div>
@@ -114,6 +119,8 @@ function _showSampleInputsModal(missingIds, onSubmit, noServices) {
     dialog.showModal();
     dialog.querySelector('input')?.focus();
 
+    let _submitted = false;
+
     dialog.querySelector('#smide-snippet-run').onclick = () => {
         const inputs = {};
         dialog.querySelectorAll('input[data-state]').forEach(el => {
@@ -127,18 +134,20 @@ function _showSampleInputsModal(missingIds, onSubmit, noServices) {
             return;
         }
 
+        _submitted = true;
+
         // Run tests and get back snippet + propagation info for the confirmation view
         const { snippet, hasServices } = onSubmit(inputs);
 
-        // Replace input phase with confirmation phase — tests are already running
-        const propagationMsg = hasServices
-            ? '✅ Your session is already patched. <b>Save Results</b>, <b>Save Flow</b>, and <b>Share</b> will all carry this fix forward automatically — no extra steps needed. Note: Share includes the fix as long as the payload is not too large.'
-            : '⚠️ No services file is loaded, so this applies to this session only. To make it permanent, save the snippet below into a services file.';
+        // Replace input phase with confirmation phase — tests are already running.
+        // Source patching is deferred until the run completes without validation failures.
+        const propagationMsg = '⏳ If tests pass, your services file will be updated automatically. '
+            + 'If any inputs are rejected by guards, you will be prompted to correct them.';
 
         dialog.querySelector('#smide-modal-body').innerHTML = `
             <h3 style="margin:0 0 8px;font-size:15px;color:#1c1e21;">Tests are running…</h3>
             <p style="margin:0 0 10px;font-size:13px;color:#444;">
-                To avoid this prompt in future, add the following inside your services object:
+                To avoid this prompt in future, add or replace SAMPLE_INPUTS inside your services object:
             </p>
             <textarea readonly rows="4" style="
                 width:100%;box-sizing:border-box;
@@ -155,7 +164,7 @@ function _showSampleInputsModal(missingIds, onSubmit, noServices) {
     };
 
     dialog.querySelector('#smide-snippet-close').onclick = () => dialog.close();
-    dialog.addEventListener('close', () => dialog.remove());
+    dialog.addEventListener('close', () => { dialog.remove(); if (!_submitted) onCancel?.(); });
 }
 
 // ── Path enumeration ──────────────────────────────────────────────────────────
@@ -408,17 +417,42 @@ export async function runAllTraces(config, replayFn, getTrace, getStateId, pause
 
 /**
  * Inject SAMPLE_INPUTS into a services JS source string.
- * Inserts the block immediately after the opening { of the exported object.
- * Returns the original string unchanged if the pattern is not found.
+ * If a SAMPLE_INPUTS block already exists it is replaced in-place (brace-depth
+ * tracking handles nested values). Otherwise the block is inserted immediately
+ * after the opening { of the exported object.
+ * Returns the original string unchanged if neither pattern is found.
  */
 function injectSampleInputs(source, inputs) {
     const entries = Object.entries(inputs)
         .map(([k, v]) => `    ${k}: ${JSON.stringify(v)},`)
         .join('\n');
-    const block = `\n  SAMPLE_INPUTS: {\n${entries}\n  },\n`;
+    const newBlock = `  SAMPLE_INPUTS: {\n${entries}\n  },`;
+
+    // Replace an existing SAMPLE_INPUTS block in-place.
+    const keyMatch = /\bSAMPLE_INPUTS\s*:\s*\{/.exec(source);
+    if (keyMatch) {
+        const openBrace = source.indexOf('{', keyMatch.index);
+        let depth = 0, closePos = -1;
+        for (let i = openBrace; i < source.length; i++) {
+            if (source[i] === '{') depth++;
+            else if (source[i] === '}') { if (--depth === 0) { closePos = i; break; } }
+        }
+        if (closePos !== -1) {
+            // Find the start of the line containing SAMPLE_INPUTS.
+            let lineStart = keyMatch.index;
+            while (lineStart > 0 && source[lineStart - 1] !== '\n') lineStart--;
+            // Consume trailing comma and one newline after the closing brace.
+            let tail = closePos + 1;
+            if (source[tail] === ',') tail++;
+            if (source[tail] === '\n') tail++;
+            return source.slice(0, lineStart) + newBlock + '\n' + source.slice(tail);
+        }
+    }
+
+    // No existing block — insert after the export object's opening '{'.
     return source.replace(
         /(\bexport\s+(?:default\s*\{|const\s+\w+\s*=\s*\{))/,
-        `$1${block}`
+        `$1\n${newBlock}\n`
     );
 }
 
@@ -448,33 +482,48 @@ export async function runAllTracesHeadless(config, services, { pauseMs = 0, serv
         .map(([id]) => id);
     if (missingInputs.length > 0) {
         console.warn('⚠️  Tests blocked — no sample input for:', missingInputs.join(', '));
-        _showSampleInputsModal(missingInputs, (extraInputs) => {
-            // 1. Patch in-memory services object
-            services.SAMPLE_INPUTS = { ...sampleInputs, ...extraInputs };
+        return new Promise(resolve => {
+            _showSampleInputsModal(missingInputs, (extraInputs) => {
+                // 1. Patch in-memory services object
+                const mergedInputs = { ...sampleInputs, ...extraInputs };
+                services.SAMPLE_INPUTS = mergedInputs;
 
-            // 2. Build snippet for the confirmation view
-            const entries = Object.entries(extraInputs)
-                .map(([k, v]) => `    ${k}: ${JSON.stringify(v)},`)
-                .join('\n');
-            const snippet = `  SAMPLE_INPUTS: {\n${entries}\n  },`;
+                // 2. Build snippet for the confirmation view — show the full merged
+                //    set so the user can paste it and never see this prompt again.
+                const entries = Object.entries(mergedInputs)
+                    .map(([k, v]) => `    ${k}: ${JSON.stringify(v)},`)
+                    .join('\n');
+                const snippet = `  SAMPLE_INPUTS: {\n${entries}\n  },`;
 
-            // 3. Patch live services source so Save Results / Save Flow / Share carry the fix forward
-            let hasServices = false;
-            if (window._loadedServicesSource) {
-                const patched = injectSampleInputs(window._loadedServicesSource, extraInputs);
-                if (patched !== window._loadedServicesSource) {
-                    window._loadedServicesSource = patched;
-                    hasServices = true;
-                }
-            }
+                // 3. Compute patched source but do NOT apply yet — only persist after
+                //    the run completes without validation failures.
+                //    Use the full merged set so pre-existing partial SAMPLE_INPUTS are
+                //    not silently dropped from the injected source.
+                const patchedSource = window._loadedServicesSource
+                    ? injectSampleInputs(window._loadedServicesSource, mergedInputs)
+                    : null;
 
-            // 4. Re-run with updated source so results embed the patched services
-            runAllTracesHeadless(config, services, { pauseMs, servicesSource: window._loadedServicesSource ?? servicesSource, priorResults });
+                // 4. Re-run and resolve the outer promise only when the real run finishes
+                //    (including any correction cycles if guards reject the inputs).
+                //    Apply source patch only if the final run had no validation aborts.
+                //    Capture current source reference so a nested correction modal that
+                //    already applied a better patch is not overwritten here.
+                const sourceBeforeRun = window._loadedServicesSource;
+                runAllTracesHeadless(config, services, { pauseMs, servicesSource: patchedSource ?? servicesSource, priorResults })
+                    .then(results => {
+                        const anyAbort = results?.cases?.some(c => c.validationAborted);
+                        if (!anyAbort && patchedSource && window._loadedServicesSource === sourceBeforeRun) {
+                            window._loadedServicesSource = patchedSource;
+                            console.log('✅ Services source patched with SAMPLE_INPUTS');
+                        }
+                        resolve(results);
+                    });
 
-            // 5. Return info for the modal confirmation view
-            return { snippet, hasServices };
-        }, !servicesSource);
-        return;
+                // 5. Return info for the modal confirmation view.
+                //    Source patching is deferred so hasServices is not confirmed yet.
+                return { snippet, hasServices: false };
+            }, !servicesSource, resolve);  // onCancel: resolve immediately so toolbar resets
+        });
     }
 
     const traces = getAllTraces(config, sampleInputs);
@@ -536,8 +585,9 @@ export async function runAllTracesHeadless(config, services, { pauseMs = 0, serv
         return { path: i + 1, status: 'pending', expected, case: null };
     }));
 
-    showStatusBadge(isResume ? `Resuming… ${pendingCount} remaining` : `Running 0 / ${total}…`, true);
     console.group(`▶▶ ${isResume ? 'Resuming' : 'Running all'} ${total} paths (headless)`);
+
+    const _validationAbortedIds = new Set();
 
     for (let i = 0; i < total; i++) {
         if (caseMap.has(i)) continue; // already completed — skip in resume mode
@@ -548,7 +598,7 @@ export async function runAllTracesHeadless(config, services, { pauseMs = 0, serv
         }
 
         const expected = traces[i];
-        showStatusBadge(`Running ${cases.length + 1} / ${total}…`, true);
+        drawerHandle.setSummary(`Running ${cases.length + 1} / ${total}…`, '#888');
         console.log(`\n▶ Path ${i + 1} / ${total}: ${JSON.stringify(expected)}`);
         drawerHandle.updateRow(i, 'running', null);
 
@@ -569,8 +619,18 @@ export async function runAllTracesHeadless(config, services, { pauseMs = 0, serv
 
         runtime.start();
         _currentHeadlessRuntime = runtime;
+
+        // Warn in the drawer header if a path takes too long — likely a guard
+        // rejected the sample input and _waitForStateChange is polling indefinitely.
+        const _stuckTimer = setTimeout(() =>
+            drawerHandle.setSummary(`⚠️ Stop tests; invalid inputs`, '#e5c07b'),
+        5000);
+
         await runtime.replay(JSON.stringify(expected));
+        clearTimeout(_stuckTimer);
         _currentHeadlessRuntime = null;
+
+        if (runtime.validationAbortedAt) _validationAbortedIds.add(runtime.validationAbortedAt);
 
         if (_skipCurrent) {
             _skipCurrent = false;
@@ -604,11 +664,50 @@ export async function runAllTracesHeadless(config, services, { pauseMs = 0, serv
             diffs.forEach(d => console.warn(`     ${d}`));
         }
 
-        const c = { path: i + 1, passed, skipped: false, expected, actual, diffs, finalStateId, finalContext, bubbles, visitedEdges };
+        const c = { path: i + 1, passed, skipped: false, validationAborted: !!runtime.validationAbortedAt, expected, actual, diffs, finalStateId, finalContext, bubbles, visitedEdges };
         cases.push(c);
         drawerHandle.updateRow(i, passed ? 'pass' : 'fail', c);
 
         if (pauseMs > 0) await new Promise(r => setTimeout(r, pauseMs));
+    }
+
+    // ── Correction modal: re-prompt if any paths were blocked by guard rejection ─
+    if (_validationAbortedIds.size > 0) {
+        const currentInputs = services.SAMPLE_INPUTS ?? {};
+        drawerHandle.setSummary('⚠️ Stop tests; invalid inputs', '#e5c07b');
+        console.groupEnd();
+        return new Promise(resolve => {
+            _showSampleInputsModal(
+                [..._validationAbortedIds],
+                (correctedInputs) => {
+                    const mergedInputs = { ...currentInputs, ...correctedInputs };
+                    services.SAMPLE_INPUTS = mergedInputs;
+                    const entries = Object.entries(mergedInputs)
+                        .map(([k, v]) => `    ${k}: ${JSON.stringify(v)},`)
+                        .join('\n');
+                    const snippet = `  SAMPLE_INPUTS: {\n${entries}\n  },`;
+                    // Use the full merged set (pre-flight + correction) so the patched
+                    // source carries every input, not just the correction delta.
+                    const patchedSource = window._loadedServicesSource
+                        ? injectSampleInputs(window._loadedServicesSource, mergedInputs)
+                        : null;
+                    const sourceBeforeRun = window._loadedServicesSource;
+                    runAllTracesHeadless(config, services, { pauseMs, servicesSource: patchedSource ?? servicesSource, priorResults: null })
+                        .then(results => {
+                            const anyAbort = results?.cases?.some(c => c.validationAborted);
+                            if (!anyAbort && patchedSource && window._loadedServicesSource === sourceBeforeRun) {
+                                window._loadedServicesSource = patchedSource;
+                                console.log('✅ Services source patched with corrected SAMPLE_INPUTS');
+                            }
+                            resolve(results);
+                        });
+                    return { snippet, hasServices: false };
+                },
+                !servicesSource,
+                resolve,       // onCancel: resolve immediately, toolbar resets cleanly
+                currentInputs  // pre-fill current (bad) values highlighted in red
+            );
+        });
     }
 
     const passCount = cases.filter(c => c.passed).length;
@@ -650,7 +749,6 @@ export async function runAllTracesHeadless(config, services, { pauseMs = 0, serv
 
     window._testResults = results;
     cacheResults(results);
-    hideStatusBadge();
 
     console.log('💾 Results saved to window._testResults');
     return results;

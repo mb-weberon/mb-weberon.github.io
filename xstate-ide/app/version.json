@@ -1,9 +1,39 @@
 {
   "major": 0,
   "minor": 12,
-  "patch": 71,
+  "patch": 77,
   "label": "",
   "history": [
+    {
+      "version": "0.12.77",
+      "date": "2026-04-02",
+      "note": "Fix: three SAMPLE_INPUTS patching bugs — (1) injectSampleInputs now replaces an existing block in-place via brace-depth tracking instead of prepending (duplicate-key semantics caused original to silently win); (2) both modal paths inject the full merged input set so no keys are dropped; (3) pre-flight and correction modals capture sourceBeforeRun so a nested modal's patch is never overwritten by an outer modal's stale patchedSource"
+    },
+    {
+      "version": "0.12.76",
+      "date": "2026-04-02",
+      "note": "Fix: correction modal now patches window._loadedServicesSource with corrected SAMPLE_INPUTS after a clean run, matching the pre-flight modal behaviour — Share and Save now carry corrected inputs forward"
+    },
+    {
+      "version": "0.12.75",
+      "date": "2026-04-02",
+      "note": "Fix: contracts cleanup — load-contracts restores blank slate via UNLOAD_FLOW instead of reloading realtor; smide-machine adds UNLOAD_FLOW event on all flow-bearing states; _setSmideState supports no_flow target; ui-contracts APP_URL depth corrected after scripts/ reorganisation; load-contracts final summary styled to match smide-contracts (bold, coloured, 13px)"
+    },
+    {
+      "version": "0.12.74",
+      "date": "2026-04-02",
+      "note": "Refactor: app/test reorganised into scripts/ fixtures/ baselines/ subdirectories; all internal path references updated; window.contracts.all() added to run runtime+smide+load without requiring a fixed viewport"
+    },
+    {
+      "version": "0.12.73",
+      "date": "2026-04-02",
+      "note": "UX: drawer header is now the single progress indicator during headless test runs — status badge removed from runAllTracesHeadless; progress shown as 'Running X / N…' in header; per-path 5s stuck timer warns '⚠️ Path X may be stuck — click Stop to correct inputs' in amber while hung; guard rejection shows '⚠️ Some inputs were rejected by guards' after stop"
+    },
+    {
+      "version": "0.12.72",
+      "date": "2026-04-02",
+      "note": "Fix: SAMPLE_INPUTS guard failures now handled correctly — Runtime tracks validationAbortedAt; headless runner shows correction modal with pre-filled (bad) values highlighted after any run with guard-rejected inputs; applies to both loaded-from-file and modal-entered inputs; source patching deferred until run completes without validation aborts; toolbar Stop button stays active throughout modal-triggered runs; Cancel in modal resets toolbar cleanly"
+    },
     {
       "version": "0.12.71",
       "date": "2026-04-02",

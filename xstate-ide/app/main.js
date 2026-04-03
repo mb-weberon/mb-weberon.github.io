@@ -95,7 +95,7 @@ async function boot() {
 
     // ── smide-machine — source of truth for toolbar button state ─────────────
     // Each state declares meta.toolbar: an array of enabled button IDs.
-    const smideMachine = await fetch(BASE + 'test/smide-machine.json').then(r => r.json());
+    const smideMachine = await fetch(BASE + 'test/fixtures/smide-machine.json').then(r => r.json());
     const ALL_TOOLBAR_BTNS = ['test-btn', 'restart-btn', 'save-results-btn', 'save-flow-btn', 'load-btn', 'analyze-btn', 'pack-prod-btn', 'share-btn'];
     let _updateToolbar = null;
     let _updatePane    = null;
@@ -1247,6 +1247,7 @@ async function boot() {
     // Only 'results_ready' is called externally today; others included for completeness.
     window._setSmideState = (stateId) => {
         const eventMap = {
+            no_flow:         'UNLOAD_FLOW',
             results_ready:   'LOAD_RESULTS',
             flow_idle:       'LOAD_FLOW',
             tests_running:   'RUN_TESTS',
@@ -1316,6 +1317,8 @@ window.addEventListener('load', () => {
         `then undock DevTools before measuring.\n\n` +
         `  await window.contracts.ui()            — check (or capture) at 1024×768\n` +
         `  await window.contracts.ui('capture')   — force capture baseline\n\n` +
+        `── All (except UI) ──\n` +
+        `  await window.contracts.all()             — runtime + smide + load in one call\n\n` +
         `── Runtime Contracts ──\n` +
         `  await window.contracts.runtime()           — check (or capture)\n` +
         `  await window.contracts.runtime('capture')  — force capture baseline\n\n` +

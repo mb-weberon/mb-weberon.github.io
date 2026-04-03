@@ -29,10 +29,11 @@ export class Runtime {
         this.actor        = null;
         this.choices      = [];
         this.lastId       = null;
-        this.onSnapshot      = null;   // (snap) => void
-        this.onReplayStep    = null;   // (item: string) => void
-        this.onReplayDone    = null;   // () => void  — fires when replay() finishes
-        this.contextOverrides = {};    // applied on top of config.context at start()
+        this.onSnapshot        = null;   // (snap) => void
+        this.onReplayStep      = null;   // (item: string) => void
+        this.onReplayDone      = null;   // () => void  — fires when replay() finishes
+        this.validationAbortedAt = null; // stateId where a guard rejected the sample input
+        this.contextOverrides  = {};    // applied on top of config.context at start()
         if (!headless) this.setupKeyboard();
     }
 
@@ -274,6 +275,7 @@ export class Runtime {
                 if (afterId === stateId) {
                     const err = after.context.inputError || 'validation failed';
                     this.logger.error(`❌ Replay aborted at "${stateId}": ${err}`);
+                    this.validationAbortedAt = stateId;
                     this.onReplayDone?.();
                     return;
                 }
