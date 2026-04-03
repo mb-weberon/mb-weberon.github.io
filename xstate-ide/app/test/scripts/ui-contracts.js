@@ -842,7 +842,7 @@ async function ui_full(mode, label = `${UI_FULL_W}x${UI_FULL_H}`) {
             console.log('ℹ️  ui_full: reusing existing popup (no navigation)');
         } else {
             console.log(`🪟 ui_full: opening popup ${UI_FULL_W}×${UI_FULL_H} → ${APP_URL}`);
-            w = window.open(APP_URL, 'ui-test', `width=${UI_FULL_W},height=${UI_FULL_H},left=100,top=100`);
+            w = window.open(APP_URL + '?_regression_test=1', 'ui-test', `width=${UI_FULL_W},height=${UI_FULL_H},left=100,top=100`);
             if (!w) { console.error('❌ Popup blocked — allow popups for this page and retry'); return null; }
             _uiTestPopup = w;
         }
@@ -900,7 +900,9 @@ async function ui_full(mode, label = `${UI_FULL_W}x${UI_FULL_H}`) {
         }
 
         console.log(`▶️  contracts.ui: running _uiLowLevel('${mode ?? 'auto'}', '${label}') in popup…`);
-        return await w.contracts._uiLowLevel(mode, label);
+        const result = await w.contracts._uiLowLevel(mode, label);
+        localStorage.removeItem('xstate-ide:regression-flow');
+        return result;
     }
 
     // Already the right size — run in-place.
@@ -927,7 +929,9 @@ async function ui_full(mode, label = `${UI_FULL_W}x${UI_FULL_H}`) {
     console.log('✅ ui_full: UI ready');
 
     console.log(`▶️  contracts.ui: running ui_contracts('${mode ?? 'auto'}', '${label}')…`);
-    return await ui_contracts(mode, label);
+    const result = await ui_contracts(mode, label);
+    localStorage.removeItem('xstate-ide:regression-flow');
+    return result;
 }
 
 // ── Expose on window ──────────────────────────────────────────────────────────

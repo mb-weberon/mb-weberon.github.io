@@ -1,9 +1,19 @@
 {
   "major": 0,
   "minor": 12,
-  "patch": 77,
+  "patch": 79,
   "label": "",
   "history": [
+    {
+      "version": "0.12.79",
+      "date": "2026-04-03",
+      "note": "Fix: both contracts.ui() and contracts.load() now auto-clear 'xstate-ide:regression-flow' on completion — no manual contracts.clear() needed after a normal run"
+    },
+    {
+      "version": "0.12.78",
+      "date": "2026-04-03",
+      "note": "Fix: contracts runs isolated from user restore-session — _persistFlow writes to 'xstate-ide:regression-flow' when window._regressionTestMode is true; set via ?_regression_test=1 param (ui-contracts popup) or programmatically (load-contracts); window.contracts.clear() clears only the regression key"
+    },
     {
       "version": "0.12.77",
       "date": "2026-04-02",

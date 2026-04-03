@@ -189,11 +189,14 @@ async function suiteResultsRoundTrip() {
 async function restoreCleanState() {
     window._setSmideState?.('no_flow');
     await waitMs(150);
+    window._regressionTestMode = false;
+    localStorage.removeItem('xstate-ide:regression-flow');
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function load_contracts() {
+    window._regressionTestMode = true;
     console.group('📋 Load Contracts');
     let totalIssues = 0;
 
@@ -234,8 +237,12 @@ async function load_contracts() {
 
 // ── Expose on window ──────────────────────────────────────────────────────────
 
-window.contracts      = window.contracts      || {};
-window.contracts.load = load_contracts;
+window.contracts       = window.contracts       || {};
+window.contracts.load  = load_contracts;
+window.contracts.clear = () => {
+    localStorage.removeItem('xstate-ide:regression-flow');
+    console.log('🧹 Regression session cleared — user restore state is unaffected');
+};
 
 // Run all contracts except ui (no fixed viewport required).
 window.contracts.all = async () => {

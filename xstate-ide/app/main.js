@@ -211,12 +211,16 @@ async function boot() {
     }
 
     // ── Session persistence ───────────────────────────────────────────────────
-    const PERSIST_KEY = 'xstate-ide:flow';
-    const PREFS_KEY   = 'xstate-ide:uiPrefs';
+    const PERSIST_KEY            = 'xstate-ide:flow';
+    const REGRESSION_PERSIST_KEY = 'xstate-ide:regression-flow';
+    const PREFS_KEY              = 'xstate-ide:uiPrefs';
 
     function _persistFlow(machineJson, servicesSource, ctxOverrides) {
+        // Regression-test runs (load-contracts, ui-contracts popup) write to a
+        // separate key so they never pollute the user's restore-session state.
+        const key = window._regressionTestMode ? REGRESSION_PERSIST_KEY : PERSIST_KEY;
         try {
-            localStorage.setItem(PERSIST_KEY, JSON.stringify({ machineJson, servicesSource, ctxOverrides: ctxOverrides ?? null }));
+            localStorage.setItem(key, JSON.stringify({ machineJson, servicesSource, ctxOverrides: ctxOverrides ?? null }));
         } catch (e) {
             console.warn('⚠️  Could not persist flow to localStorage:', e.message);
         }
@@ -565,6 +569,12 @@ async function boot() {
             window._smideState = stateId;
             console.log('🗂️  smide state:', stateId, '| toolbar:', toolbar.join(', ') || '(none)');
         };
+
+        // ── Regression-test mode — isolates localStorage from user sessions ─
+        if (new URLSearchParams(window.location.search).get('_regression_test') === '1') {
+            window._regressionTestMode = true;
+            console.log('🧪 Regression-test mode: flow persistence isolated to regression-flow key');
+        }
 
         // ── Hash payload detection — load from #flow= URL if present ─────────
         _hashPayload = loadFromHash();
