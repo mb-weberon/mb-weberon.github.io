@@ -1,0 +1,593 @@
+{
+  "major": 0,
+  "minor": 12,
+  "patch": 86,
+  "label": "",
+  "history": [
+    {
+      "version": "0.12.86",
+      "date": "2026-04-03",
+      "note": "Refactor: TypeScript export uses setup().createMachine() — single machine.ts with typed stubs (guards: ()=>false, actors: fromPromise(async()=>{}), actions: assign(()=>({}))); services.ts dropped; Stately-native format for VS Code extension round-trip"
+    },
+    {
+      "version": "0.12.85",
+      "date": "2026-04-03",
+      "note": "Fix: properly unmount Preact before replacing chatMount innerHTML — _showBlankSlate and _showRestorePrompt call render(null, chatMount) to clear chatMount.__k before innerHTML replacement; stale __k caused insertBefore(newNode, detachedOldNode) DOMException on the next fresh render, silently producing a blank chat; chatUI also nulled so _activateFlow creates a fresh ChatUI"
+    },
+    {
+      "version": "0.12.82",
+      "date": "2026-04-03",
+      "note": "Fix: services.js actions must be plain functions — remove import { assign } from xstate; Runtime.js wraps plain functions with assign() so services.js stays self-contained and works when loaded as a blob URL via file picker"
+    },
+    {
+      "version": "0.12.81",
+      "date": "2026-04-03",
+      "note": "Refactor: decouple updateContext from Runtime (Phase 2) — updateContext action objects replaced by named assign functions in services.js; Runtime wires services.actions map; processActions/generatedActions machinery removed; legacy updateContext objects trigger a visible console warning; realtor machine.json and services.js updated; runtime-contracts.js inline machine updated; help.html updated"
+    },
+    {
+      "version": "0.12.80",
+      "date": "2026-04-03",
+      "note": "Refactor: decouple session tracing from machine.json (Phase 1) — initTrace/record/recordValidationFailure/recordService removed as built-in XState actions; trace now owned by Runtime instance (_trace), populated automatically in _onUpdate via event capture and inspect API; ChatUI uses snap.userInput instead of context.trace; profile pane reads snap.trace; stripRuntimeActions() auto-cleans legacy machine.json on load; RUNTIME_ACTIONS filtered from TS export stubs; realtor machine.json and fixture cleaned"
+    },
+    {
+      "version": "0.12.79",
+      "date": "2026-04-03",
+      "note": "Fix: both contracts.ui() and contracts.load() now auto-clear 'xstate-ide:regression-flow' on completion — no manual contracts.clear() needed after a normal run"
+    },
+    {
+      "version": "0.12.78",
+      "date": "2026-04-03",
+      "note": "Fix: contracts runs isolated from user restore-session — _persistFlow writes to 'xstate-ide:regression-flow' when window._regressionTestMode is true; set via ?_regression_test=1 param (ui-contracts popup) or programmatically (load-contracts); window.contracts.clear() clears only the regression key"
+    },
+    {
+      "version": "0.12.77",
+      "date": "2026-04-02",
+      "note": "Fix: three SAMPLE_INPUTS patching bugs — (1) injectSampleInputs now replaces an existing block in-place via brace-depth tracking instead of prepending (duplicate-key semantics caused original to silently win); (2) both modal paths inject the full merged input set so no keys are dropped; (3) pre-flight and correction modals capture sourceBeforeRun so a nested modal's patch is never overwritten by an outer modal's stale patchedSource"
+    },
+    {
+      "version": "0.12.76",
+      "date": "2026-04-02",
+      "note": "Fix: correction modal now patches window._loadedServicesSource with corrected SAMPLE_INPUTS after a clean run, matching the pre-flight modal behaviour — Share and Save now carry corrected inputs forward"
+    },
+    {
+      "version": "0.12.75",
+      "date": "2026-04-02",
+      "note": "Fix: contracts cleanup — load-contracts restores blank slate via UNLOAD_FLOW instead of reloading realtor; smide-machine adds UNLOAD_FLOW event on all flow-bearing states; _setSmideState supports no_flow target; ui-contracts APP_URL depth corrected after scripts/ reorganisation; load-contracts final summary styled to match smide-contracts (bold, coloured, 13px)"
+    },
+    {
+      "version": "0.12.74",
+      "date": "2026-04-02",
+      "note": "Refactor: app/test reorganised into scripts/ fixtures/ baselines/ subdirectories; all internal path references updated; window.contracts.all() added to run runtime+smide+load without requiring a fixed viewport"
+    },
+    {
+      "version": "0.12.73",
+      "date": "2026-04-02",
+      "note": "UX: drawer header is now the single progress indicator during headless test runs — status badge removed from runAllTracesHeadless; progress shown as 'Running X / N…' in header; per-path 5s stuck timer warns '⚠️ Path X may be stuck — click Stop to correct inputs' in amber while hung; guard rejection shows '⚠️ Some inputs were rejected by guards' after stop"
+    },
+    {
+      "version": "0.12.72",
+      "date": "2026-04-02",
+      "note": "Fix: SAMPLE_INPUTS guard failures now handled correctly — Runtime tracks validationAbortedAt; headless runner shows correction modal with pre-filled (bad) values highlighted after any run with guard-rejected inputs; applies to both loaded-from-file and modal-entered inputs; source patching deferred until run completes without validation aborts; toolbar Stop button stays active throughout modal-triggered runs; Cancel in modal resets toolbar cleanly"
+    },
+    {
+      "version": "0.12.71",
+      "date": "2026-04-02",
+      "note": "Improvement: SAMPLE_INPUTS modal now shows confirmation view after Run Tests — displays the snippet to add permanently, explains what was auto-patched (session, Save Results, Save Flow, Share), and notes the Share size caveat; no more console hunting"
+    },
+    {
+      "version": "0.12.70",
+      "date": "2026-04-02",
+      "note": "Feature: Share popover accepts shared URLs from any instance — paste a full URL, #flow= fragment, or bare flow= token; extractFlowFragment() strips foreign base URL; onShareLoad wired in main.js reusing extracted _applyHashPayload(); share-btn enabled in no_flow state so user can receive a shared link before loading any flow"
+    },
+    {
+      "version": "0.12.69",
+      "date": "2026-04-02",
+      "note": "Fix: SAMPLE_INPUTS backward-compat — after modal entry, injectSampleInputs() patches window._loadedServicesSource so Save Results and Save Flow carry the fix forward; console snippet shown to educate user on permanent fix"
+    },
+    {
+      "version": "0.12.68",
+      "date": "2026-04-02",
+      "note": "Improvement: exportToTypeScript now downloads a zip containing machine.ts, services.ts, package.json (xstate^5), and tsconfig.json — unzip + npm install + open in VS Code is all that's needed; nometa option strips meta fields for Stately editor compatibility; save results ZIP now includes {id}-machine.json and {id}-services.js alongside results.json so user can edit services (e.g. add SAMPLE_INPUTS) and reload without knowing internals; sample inputs modal replaced with live input fields per missing state + Run Tests callback — no file editing required; help.html updated with built-in runtime actions, Analyze/Share toolbar entries, TypeScript export section, and IDE Developer section with regression contracts reference"
+    },
+    {
+      "version": "0.12.67",
+      "date": "2026-04-01",
+      "note": "Feature: TypeScript export — app/export-typescript.js; window.exportToTypeScript() downloads {id}-machine.ts (createMachine config + inferred context/event types, types:{} as block for XState v5) and {id}-services.ts (wraps existing services.js with TS header, or generates typed stubs when no services loaded); wired in main.js alongside analyzeFlow; console help updated"
+    },
+    {
+      "version": "0.12.66",
+      "date": "2026-04-01",
+      "note": "Feature: Static analysis (Task 6) — app/analyze-flow.js; analyzeFlow(config, services) detects unreachable states, guard gaps (all branches guarded, no fallthrough), dead transitions (shadowed by earlier unguarded branch), unresolved guard names (when services loaded), missing event handlers (info); Analyze button in toolbar (analyze-btn) enabled in all flow-loaded states; window.analyzeFlow() exposed in console help; report stored in window._analysisReport"
+    },
+    {
+      "version": "0.12.62",
+      "date": "2026-04-01",
+      "note": "Feature: Share flow as compressed URL — app/share.js uses fflate deflateSync/inflateSync + base64url; buildShareUrl 3-tier graceful degradation (machine+services+results → machine+services → machine only → tooLarge); app/config.js holds CANONICAL_BASE_URL; Share button in toolbar opens popover with copy link + included summary or tooLarge message; boot-time #flow= hash detection auto-loads payload when smide reaches no_flow; share-btn added to smide-machine toolbar for all flow-loaded states"
+    },
+    {
+      "version": "0.12.61",
+      "date": "2026-03-31",
+      "note": "Fix: stopped-test restore shows all rows — store allPaths:traces in results so showResultsDrawer can render pending rows for untested paths (caseMap by path-1 index, pending rows from allPaths); resume: runAllTracesHeadless accepts priorResults option, pre-populates cases+caseMap, skips completed indices in loop; summary shows · K not run when tests were stopped; main.js passes window._testResults as priorResults so Test button resumes partial results"
+    },
+    {
+      "version": "0.12.60",
+      "date": "2026-03-31",
+      "note": "Fix: stopped-test results showed N/N denominator on restore — add pathCount field (full trace count) to results object in both runAllTraces and runAllTracesHeadless; showResultsDrawer uses pathCount ?? total as denominator so stopped runs display correctly as M/N"
+    },
+    {
+      "version": "0.12.59",
+      "date": "2026-03-31",
+      "note": "Persist test results in browser Cache API (xstate-ide-v1 cache, /xstate-ide/results) — cacheResults() called after runAllTracesHeadless and loadTestResults; on restore, checkPersistedState checks cache for hasResults, restorePersistedState loads cached results and shows drawer; clearResultsCache called on Start Fresh and on Load Flow (new flow invalidates prior results)"
+    },
+    {
+      "version": "0.12.58",
+      "date": "2026-03-31",
+      "note": "IDE LOG: observer-viewer background changed from --chat-bg to #282c34 (matches profile-viewer); fix &amp; rendering as literal text in htm templates — CONTEXT & STATE and Apply & Restart now use bare & character"
+    },
+    {
+      "version": "0.12.57",
+      "date": "2026-03-31",
+      "note": "uiPrefs persistence — xstate-ide:uiPrefs in localStorage stores paneOffset/drawerHeight/profileOpen/observerOpen; _persistUIPrefs(patch) merges; _applyUIPrefs() called after mountPaneUI restores all four; index.html exposes window._applyPaneOffset + saves paneOffset on mouseup/_endDrag; toggleProfile/toggleObserver wrapped to persist after rAF; drawer height restored in _onDrawerAdded; drawer touchend saves height"
+    },
+    {
+      "version": "0.12.56",
+      "date": "2026-03-31",
+      "note": "IDE LOG: wire CHAT_INPUT/RESTART/REPLAY smide events — ChatUI accepts onUserInput callback (fires on submit+choice, not on replay steps); onRestart toolbar + onApplyCtx send RESTART; _replayTrace sends REPLAY before _restartRuntime; _restartRuntime accepts _isReplay flag to suppress LOAD_FLOW when replay drives a config switch"
+    },
+    {
+      "version": "0.12.55",
+      "date": "2026-03-31",
+      "note": "Fix: _showBlankSlate/_showRestorePrompt guarded by stateId change — XState5 fires snapshot on ignored events (no transition), causing prompt_restore to wipe ChatUI when _restartRuntime sends LOAD_FLOW; fix checks stateId !== _obsPrevStateId before calling these functions"
+    },
+    {
+      "version": "0.12.54",
+      "date": "2026-03-31",
+      "note": "ui-contracts: add observer section measurements (observer_toggle_height, observer_viewer_open_maxHeight, observer_viewer_closed_height); expose window.toggleObserver from main.js; PaneUI.mountPaneUI returns toggleObserver; baseline recapture required"
+    },
+    {
+      "version": "0.12.53",
+      "date": "2026-03-31",
+      "note": "Task 6.5: smide observer chat pane — SmideObserverSection in PaneUI.js renders IDE LOG accordion between CONTEXT & STATE and replay bar; three message classes: user bubble (right, blue) for user-sent smide events, system label (centred italic) for onDone/onError, bot bubble (left, grey) for destination state meta.chat; smide-machine.json gains meta.chat + meta.onDone + meta.onError on all states; main.js wraps smideRuntime.send() to capture _pendingSmideEvent (XState5 snapshot.event is not exposed); onDone/onError detected structurally via prev state invoke + target state; #observer-mount added to index.html; observer styles in ide-theme.css reuse chat-theme .msg classes; ref on #observer-viewer for correct auto-scroll"
+    },
+    {
+      "version": "0.12.52",
+      "date": "2026-03-31",
+      "note": "Task 5: smide-machine as live Runtime — smideRuntime (headless) drives toolbar/pane via onSnapshot; production services inline in main.js (checkPersistedState reads localStorage, restorePersistedState calls _activateFlow); _setSmideState() removed, callers send XState events (LOAD_FLOW, RUN_TESTS, TESTS_COMPLETE, TESTS_STOP, LOAD_SERVICES); window._setSmideState shim maps legacy state IDs for generate-traces.js/ui-contracts.js; restore prompt and blank-slate driven from onSnapshot (prompt_restore/no_flow states); smide-machine gains LOAD_RESULTS on flow_idle/session_active/results_saved and LOAD_FLOW on load_error"
+    },
+    {
+      "version": "0.12.51",
+      "date": "2026-03-31",
+      "note": "Add smide-contracts regression tests — three suites: getAllTraces structural assertions + path count baseline (suite 1), Runtime driven through 8 named boot/interaction paths with inline service variants (suite 2), static structure check of all state targets and guard references (suite 3, no baseline, always runs); smide-baseline.json to be captured and committed on first run; index.html loads smide-contracts.js; main.js quick-start renamed to 'Regression contracts' and now lists ui_full + runtime_contracts + smide_contracts"
+    },
+    {
+      "version": "0.12.49",
+      "date": "2026-03-31",
+      "note": "ui-contracts: add drawer Y-position coverage — drawer_top + drawer_bottom_viewport_distance in results_drawer section (NEAR_ZERO_METRICS absolute check catches off-screen positioning); mobile_drawer_bottom_viewport_distance + mobile_drawer_header_top_in_viewport via _measureDrawerInMobile() called inside snapshotMobileLayout(); diagram_pane_right + right_pane_left added to default section to verify in-flow pane alignment"
+    },
+    {
+      "version": "0.12.48",
+      "date": "2026-03-31",
+      "note": "Fix: results drawer no longer goes off-screen after window resize across 700px mobile/desktop threshold — isMobile is now reactive state updated by resize listener; collapse effect deps include isMobile so correct branch runs on mode switch; each branch clears the other's stale styles (bottom/height/overflow vs transform); onMouseUp always snaps to bottom:0 so no negative bottom can survive a mode switch; add drawerDump() and drawerReset() console debug helpers"
+    },
+    {
+      "version": "0.12.47",
+      "date": "2026-03-31",
+      "note": "Add runtime-contracts regression tests — two suites: inline machine (text input, guard validation, choice events, updateContext, final state) and realtor machine (async services via fromPromise, always-transient route_by_timing, onDone/onError, recordService, two divergent paths); realtor-machine.json + realtor-services.js copied into app/test/ for server accessibility; runtime-baseline.json committed at v0.12.47; index.html loads runtime-contracts.js alongside ui-contracts.js"
+    },
+    {
+      "version": "0.12.46",
+      "date": "2026-03-30",
+      "note": "Fix: pack prod — preact/hooks and htm/preact CDN URLs now use ?external=preact so esm.sh emits bare 'preact' specifiers instead of /preact?target=es2022 root-relative imports; bare specifiers resolve via importmap to ./preact.js, eliminating the query-string path that static servers can't serve and the version conflict from following the redirect"
+    },
+    {
+      "version": "0.12.45",
+      "date": "2026-03-30",
+      "note": "Fix: pack prod — fetchModuleTree now sanitizes query-string import paths (e.g. /preact?target=es2022) by following the esm.sh redirect and storing files at the final pathname; rewrites those import specifiers in source so static servers can serve them (superseded by 0.12.46)"
+    },
+    {
+      "version": "0.12.44",
+      "date": "2026-03-30",
+      "note": "Task 3e: Preact results drawer — ResultsDrawerUI.js replaces imperative _createDrawerShell/_td/showResultsDrawer in generate-traces.js; mountResultsDrawer() Preact component owns header/subheader/table/drag/collapse/resize; runAllTracesHeadless + showResultsDrawer use drawerHandle.updateRow/setSummary/setRows/selectRow; _restoreCase uses window._setChatMessages + window._restoreStateView instead of direct DOM writes; _dismissDrawer() replaces document.getElementById().remove() pattern"
+    },
+    {
+      "version": "0.12.43",
+      "date": "2026-03-30",
+      "note": "Task 3d: Preact pane UI — titlebar, profile section (CONTEXT & STATE toggle + ctx-edit panel), and replay bar migrated to PaneUI.js; mountPaneUI() replaces static HTML; _updatePane patch fn drives all updates; window.toggleProfile/window._showReplayBar/window._clearReplayBar re-exposed via PaneUI; _restoreCase in generate-traces uses _showReplayBar + _activeReplayConfig instead of direct onclick override"
+    },
+    {
+      "version": "0.12.42",
+      "date": "2026-03-29",
+      "note": "Task 3+4: Preact toolbar — toolbar migrated to Preact/htm component (ToolbarUI.js); mountToolbar() replaces static HTML; _setSmideState/_setTestRunning update state via _updateToolbar patch function; test button click logic moves to onTest callback; importmap gains preact/preact/hooks/htm/preact entries. Task 4: prod bundle now offline-ready — xstate.js and fflate.js fetched from CDN at pack time and bundled locally; importmap uses ./xstate.js and ./fflate.js instead of CDN URLs"
+    },
+    {
+      "version": "0.12.41",
+      "date": "2026-03-30",
+      "note": "Fix: ui-contracts — ui_full now loads smide-test-results.json fixture (results_ready state) so all toolbar buttons including Save Flow are visible during capture/check; _loadFixture() helper replicates loadTestResults programmatically via fetch; capture uses blob download instead of showSaveFilePicker (no user-gesture requirement); popup URL derived from import.meta.url not location.href; _waitFor checks #input-area controls not just #messages; hidden toolbar buttons skipped in measureToolbarButtons; console help and docblock updated"
+    },
+    {
+      "version": "0.12.40",
+      "date": "2026-03-29",
+      "note": "Refactor: SAMPLE_INPUTS per-services — getAllTraces(config, sampleInputs={}) accepts an optional map; services files can now export SAMPLE_INPUTS keyed by state id and it takes precedence over the built-in fallback in generate-traces.js; runAllTracesHeadless passes services.SAMPLE_INPUTS ?? {} automatically"
+    },
+    {
+      "version": "0.12.39",
+      "date": "2026-03-29",
+      "note": "Fix: previously-skipped rows are now clickable after a failed re-run — updateRow() creates diffRow and wires tr.onclick when status=fail and no click handler exists yet (skipped rows never had one); diff messages are visible on row click"
+    },
+    {
+      "version": "0.12.38",
+      "date": "2026-03-29",
+      "note": "Fix: re-run row update — reverted _replayTrace to simple form (no callback param); re-run buttons now hook rt.onReplayDone directly via setTimeout(100ms), guaranteed to fire after _replayTrace's own setTimeout(50ms) has already started replay(); eliminates the race where onReplayDone was assigned in the same tick as replay() was called"
+    },
+    {
+      "version": "0.12.37",
+      "date": "2026-03-29",
+      "note": "Fix: re-run of originally-skipped rows now shows diff messages on failure — diffRow created on the fly and inserted after tr when a skipped row's re-run fails; clicking the row expands it to show diffs; diffRow removed if re-run passes"
+    },
+    {
+      "version": "0.12.36",
+      "date": "2026-03-29",
+      "note": "Fix: re-run button (▶) in results drawer now updates the row — _replayTrace accepts optional onDone(runtime) callback; after foreground replay completes, compareTraces runs and the row status/state/diffs update in-place for both the live test drawer and the load-results drawer"
+    },
+    {
+      "version": "0.12.35",
+      "date": "2026-03-29",
+      "note": "Feature: initial context editability — ⚙ Initial button in CONTEXT & STATE panel opens JSON editor; overrides are applied on top of machine config.context at Runtime.start(); overrides persist to localStorage alongside the flow and are restored on session restore; internal _trace/trace fields excluded from editor"
+    },
+    {
+      "version": "0.12.34",
+      "date": "2026-03-29",
+      "note": "UX: live results drawer built upfront showing all N paths as pending before tests start; rows update in-place with running/pass/fail/skipped status; per-row Skip button on running row calls skipCurrentTrace() (stops headless actor, unblocks polling loops); per-row ▶ Re-run button on failed/skipped rows replays path in foreground IDE Runtime with consoleLogger for full console visibility; _createDrawerShell() extracted as shared infrastructure for live runner and Load Results path"
+    },
+    {
+      "version": "0.12.33",
+      "date": "2026-03-29",
+      "note": "Fix: stopAllTraces() now stops the in-flight headless runtime actor, unblocking _waitForStateChange when a guard failure causes replay() to hang; added post-replay interrupt check so the loop breaks immediately; added SAMPLE_INPUTS for subscription_management_v2 text-input states"
+    },
+    {
+      "version": "0.12.32",
+      "date": "2026-03-28",
+      "note": "UX: Save Flow removed from toolbar except in results_ready — only useful when extracting an embedded flow from loaded results; button is hidden (not greyed) in all other states"
+    },
+    {
+      "version": "0.12.31",
+      "date": "2026-03-28",
+      "note": "Fix: on rotation in mobile mode, preserve visible right-pane pixel width rather than keeping _panOffset constant — diagram pane grows/shrinks into new orientation; results drawer tracks accordingly via _onPanOffsetChange"
+    },
+    {
+      "version": "0.12.30",
+      "date": "2026-03-28",
+      "note": "Fix: mobile landscape results drawer tracks right-pane slide position in real time via _onPanOffsetChange hook in _applyOffset; drawer fills diagram visible area (left:0 to rpRect.left) in all landscape orientations; portrait stays full-width; desktop landscape retains min-width:360px floor"
+    },
+    {
+      "version": "0.12.29",
+      "date": "2026-03-28",
+      "note": "Fix: on rotation, diagramReset() clears stale pan/zoom so diagram re-centers in new viewport; results drawer full-width in mobile landscape (right pane is overlay); desktop landscape drawer gets min-width = max(diagram-pane-width, 360px)"
+    },
+    {
+      "version": "0.12.28",
+      "date": "2026-03-27",
+      "note": "Fix: desktop results drawer — mouse drag uses 5px threshold before committing to drag mode; pure clicks no longer set _headerDragOccurred so header onclick fires correctly; snap-back only runs after a real drag"
+    },
+    {
+      "version": "0.12.27",
+      "date": "2026-03-28",
+      "note": "UX: results drawer is persistent — close button removed, replaced with ▲/▼ collapse arrow; drawer stays in DOM until a new test run replaces it; tap header to expand/collapse"
+    },
+    {
+      "version": "0.12.26",
+      "date": "2026-03-28",
+      "note": "UX: toolbar buttons driven by smide-machine meta.toolbar per state — _setSmideState() replaces scattered _setFlowLoaded/_setResultsReady; results_ready (load from file) shows Load Results not Save Results; missing IDs added to restart/save-flow/pack-prod buttons; save-results-btn virtual ID in results_unsaved state"
+    },
+    {
+      "version": "0.12.25",
+      "date": "2026-03-28",
+      "note": "Version bump"
+    },
+    {
+      "version": "0.12.24",
+      "date": "2026-03-28",
+      "note": "Fix: fullscreen nudge gated to touch devices only (pointer: coarse); #fs-exit-btn added to titlebar — hidden normally, shown via body.in-fullscreen when fullscreen is active; fullscreenchange toggles body.in-fullscreen class"
+    },
+    {
+      "version": "0.12.23",
+      "date": "2026-03-27",
+      "note": "Fix: slide-handle touch zone no longer blocks buttons inside pane — drag committed only after clear horizontal intent (dx > 8px && dx > dy) in touchmove; pure taps pass through to replay bar and other buttons"
+    },
+    {
+      "version": "0.12.22",
+      "date": "2026-03-27",
+      "note": "Fix mobile landscape: force-mobile-layout applied on phones (portrait width ≤ 700px) regardless of orientation — overlay model + touch slider active in landscape; mobile-landscape CSS class for compact toolbar on wider phones"
+    },
+    {
+      "version": "0.12.21",
+      "date": "2026-03-27",
+      "note": "Fix rotation: pane offset reset when layout mode switches (mobile↔desktop) or viewport resizes; results drawer constrained to diagram area in landscape (Option A — right edge tracks right pane left edge); toolbar compact layout in mobile landscape (reduced padding + font-size)"
+    },
+    {
+      "version": "0.12.20",
+      "date": "2026-03-27",
+      "note": "UX: graph direction auto-detects (TD on desktop/portrait, LR on mobile landscape); ⇄ toggle button in diagram heading for manual override; re-renders on screen rotation"
+    },
+    {
+      "version": "0.12.19",
+      "date": "2026-03-27",
+      "note": "Fix: replay bar buttons unclickable on mobile — slide-handle ::before set to pointer-events:none, touch zone extended via document-level proximity check instead; replay bar left padding increased to 18px"
+    },
+    {
+      "version": "0.12.18",
+      "date": "2026-03-27",
+      "note": "UX: slide-handle restored on mobile (9px visual, 69px touch zone via ::before); pane 99% width; send button flips left on any pan offset; choice buttons stack vertically left in narrow mode; diagram pinch-zoom (2-finger); results drawer snap-collapse refits diagram via rAF + transitionend"
+    },
+    {
+      "version": "0.12.17",
+      "date": "2026-03-27",
+      "note": "UX: pane-tab free drag (stops at release position, snaps closed only if chat < 80px); tab raised by 24px above profile-toggle; ghost tab (#pane-tab-ghost, position:fixed right:0, left-protruding bump) replaces tab when fully collapsed — tap to expand, drag to free resize"
+    },
+    {
+      "version": "0.12.16",
+      "date": "2026-03-27",
+      "note": "UX: mobile slide handle replaced by semicircular pull tab (#pane-tab) at left edge of pane just above CONTEXT & STATE — tap to collapse/expand, drag to resize; flips via scaleX(-1) when fully collapsed so bump protrudes into diagram; desktop slide-handle unchanged"
+    },
+    {
+      "version": "0.12.15",
+      "date": "2026-03-27",
+      "note": "UX: narrow pane — Send button moves to left of input field when pane-content width < 220px (ResizeObserver toggles pane-narrow class; flex-direction: row-reverse in chat-theme.css)"
+    },
+    {
+      "version": "0.12.14",
+      "date": "2026-03-27",
+      "note": "Fix: results drawer desktop width restored to 400px; right edge tracks right-pane left boundary so drawer never overlaps right pane"
+    },
+    {
+      "version": "0.12.13",
+      "date": "2026-03-27",
+      "note": "Fix: results drawer confined to diagram pane on desktop — right edge tracks right-pane left boundary via ResizeObserver; Test button disabled while unsaved results exist (re-enabled after Save Results)"
+    },
+    {
+      "version": "0.12.12",
+      "date": "2026-03-27",
+      "note": "Feature: auto-persist flow to localStorage (xstate-ide:flow key) — on next load shows restore prompt with flow id and Restore/Start fresh buttons; _activateFlow saves machineJson + servicesSource after every successful load"
+    },
+    {
+      "version": "0.12.11",
+      "date": "2026-03-26",
+      "note": "Docs: ui-contracts.js — workflow instructions updated to lead with ui_full() as primary entry point; low-level ui_contracts() calls moved to secondary section"
+    },
+    {
+      "version": "0.12.10",
+      "date": "2026-03-26",
+      "note": "Fix: mobile slide handle — --handle-w overridden to 32px on :root inside @media (max-width: 700px) and on body.force-mobile-layout so #pane-content calc() rules pick up the wider value; grip pill enlarged (5px × 40px)"
+    },
+    {
+      "version": "0.12.9",
+      "date": "2026-03-26",
+      "note": "UX: results drawer starts expanded; mobile collapse peeks header at viewport bottom via translateY; download JSON button removed from drawer"
+    },
+    {
+      "version": "0.12.8",
+      "date": "2026-03-26",
+      "note": "Fix: reloadServices dynamic export resolution — no longer hardcoded to realtorServices; picks default export, then first named export, then plain-object spread; prevents sealed module namespace being stored as activeServices"
+    },
+    {
+      "version": "0.12.7",
+      "date": "2026-03-26",
+      "note": "Fix: subscription-services.js — services hoisted to top level, guard signatures fixed for XState 5, process.env removed, watchRetryWindow made non-resolving to prevent past_due self-loop; subscription-machine.json added to repo"
+    },
+    {
+      "version": "0.12.6",
+      "date": "2026-03-26",
+      "note": "Fix: services file optional — loading a bare machine.json without services.js now works (activeServices reset to {}); blank-slate hint and help.html updated accordingly"
+    },
+    {
+      "version": "0.12.5",
+      "date": "2026-03-26",
+      "note": "Docs: help.html — guide covering machine JSON, services JS, guards, invoke states, testing, and results; realtor bot walkthrough with annotated code examples; help link shown in blank-slate UI"
+    },
+    {
+      "version": "0.12.4",
+      "date": "2026-03-26",
+      "note": "Fix: load-results → test regression — _activateFlow no longer overwrites window.runAllTraces, preserving servicesSource so guards are restored correctly on fresh-app load"
+    },
+    {
+      "version": "0.12.3",
+      "date": "2026-03-26",
+      "note": "Fix: loadTestResults restores services and config from saved results JSON — servicesSource stored in results object, _reloadServicesFromSource and _setActiveConfig called on load so re-runs work without manual flow reload"
+    },
+    {
+      "version": "0.12.2",
+      "date": "2026-03-26",
+      "note": "UX: toast notifications for flow and results load errors (invalid JSON, missing files, services import failure); toast anchored to bottom viewport-width-capped for portrait mobile; blank slate hint explaining both machine.json and services.js must be selected together"
+    },
+    {
+      "version": "0.12.1",
+      "date": "2026-03-26",
+      "note": "Fix: getAllTraces cycle detection — emit valid prefix instead of [CYCLE:] marker so paths replay cleanly on machines without a final state; getAllTraces guarded invoke.onDone — walk only unguarded fallback branch so generated paths match actual service-driven runtime behaviour; root index.html redirect to app/ so server from repo root still works"
+    },
+    {
+      "version": "0.12.0",
+      "date": "2026-03-26",
+      "note": "Repo reorganised into app/ (IDE engine) and flows/ (example flows); smide and ui-contracts test fixtures moved to app/test/; validators.js inlined into realtor-services.js for blob-URL self-containment; headless test runner (runAllTracesHeadless) — one Runtime per path, no DOM rendering, no inter-path delays, keyboard listeners skipped; Runtime headless option; realtor mock service delays reduced to 0ms; ui_full() one-call ui-contracts orchestration; _loadFlowFromUrl programmatic flow loader; smide-machine redesigned with render_ui/prompt_restore/load_error states and guarded invoke.onDone branches; generate-traces and renderDiagram fixed to handle array invoke.onDone; realtor-services.js dependency on validators.js removed"
+    },
+    {
+      "version": "0.10.3",
+      "date": "2026-03-24",
+      "note": "Fix: generate-traces.js — compareTraces() and runAllTraces() now normalise the enriched _trace envelope returned by getTrace() into a flat value array before comparison; validation-failure and service steps are filtered out; legacy flat-array format passes through unchanged"
+    },
+    {
+      "version": "0.10.2",
+      "date": "2026-03-24",
+      "note": "UI: prod bundle index.html \u2014 polished page chrome: fixed viewport layout, centered card (max 560px), dark header bar with flow id + version badge, Segoe UI font, soft-keyboard-safe layout; mermaid removed from prod importmap"
+    },
+    {
+      "version": "0.10.1",
+      "date": "2026-03-24",
+      "note": "Fix: Runtime.js \u2014 inject invoke.input = ({ context }) => context for all invoke states lacking an explicit input field; XState 5 does not auto-forward context to invoked actors; fn(input) \u2192 fn({ input }) so services receive { input: context } as expected"
+    },
+    {
+      "version": "0.10.0",
+      "date": "2026-03-24",
+      "note": "Phase 5: Enriched trace \u2014 _trace envelope with flowId, flowVersion, sessionId, startedAt, steps[]; each step records { stateId, value, at, ms }; validation failures recorded with valid:false; service results recorded with { service, ok, result, at, ms }; getTrace() returns full envelope; replay() handles both old flat-array and new envelope formats; IDE context viewer renders enriched trace rows"
+    },
+    {
+      "version": "0.9.0",
+      "date": "2026-03-24",
+      "note": "Phase 4: Chat UI + theming separation \u2014 ChatUI.js owns all chat DOM (bubbles, input, errors, choices); chat-theme.css owns chat styles via CSS custom properties; ide-theme.css owns all IDE shell styles; index.html has no inline <style>, links both CSS files; main.js is IDE shell only (renderIDE, Save/Load Flow, visited edges); _restartRuntime and _replayTrace delegate DOM clear to chatUI.clear()"
+    },
+    {
+      "version": "0.8.2",
+      "date": "2026-03-23",
+      "note": "Runtime.js: event-driven replay \u2014 replaced fixed 600ms per-step delay with _waitForStableState() / _waitForStateChange() polling; onReplayDone callback fires on completion; generate-traces.js: runAllTraces() awaits onReplayDone instead of estimateDuration timer; estimateDuration and timing constants (STEP_MS, INVOKE_FALLBACK_MS, STARTUP_MS, BUFFER_MS, INVOKE_DELAYS) removed"
+    },
+    {
+      "version": "0.8.1",
+      "date": "2026-03-24",
+      "note": "ui-contracts.js: appVersion stamped in baseline at capture time; version mismatch surfaces as warning with checkout hint; profile_viewer_open_height removed from snapshot (content-dependent, not a CSS regression signal); DYNAMIC_HEIGHT_METRICS exclusion set skips content-driven metrics in comparison; main.js: window._appVersion exposed after version badge is set"
+    },
+    {
+      "version": "0.8.0",
+      "date": "2026-03-23",
+      "note": "ui-contracts.js: viewport-stamped baseline files (ui-baseline-WxH.json) replace fixed ui-baseline.json \u2014 no TARGET_W/H constants to maintain, each machine auto-discovers and checks its own baseline; enforceViewport removed; baselineUrl() computed from window.innerWidth/innerHeight at call time; index.html: force-mobile-layout split into standalone ruleset separate from @media block"
+    },
+    {
+      "version": "0.7.0",
+      "date": "2026-03-23",
+      "note": "Fix: diagram edge labels now show \u2705 instead of \u2713 on visited paths; visitedEdges captured per test case so row-click correctly shows traversed paths; old results drawer dismissed when Test button is clicked"
+    },
+    {
+      "version": "0.6.9",
+      "date": "2026-03-23",
+      "note": "Mobile results drawer: larger touch-friendly header (52px, 14px font); slide-down collapse via translateY transition instead of display:none; starts collapsed on mobile; diagram-pane reserves bottom space for drawer title bar; auto-selects first row on open; toolbar buttons emoji above label with <br>; Restart and Replay buttons same treatment"
+    },
+    {
+      "version": "0.6.8",
+      "date": "2026-03-23",
+      "note": "UI: toolbar buttons restored to large touch-friendly style (flex:1, 12px 10px padding, 14px font, line-height 1.3, min-width 70px); Paths button re-added; button order matches Chatbot Logic IDE reference"
+    },
+    {
+      "version": "0.6.7",
+      "date": "2026-03-23",
+      "note": "UI: permanent #slide-handle on left edge of right pane \u2014 always visible including when fully collapsed; desktop drag resizes both panes; mobile tap toggles collapse, drag sets width freely with snap-to-collapse below 120px; right pane starts at 88% on mobile leaving diagram visible; toolbar restored to old large touch-friendly button style (8px 16px padding, 13px font, full labels: Save Flow, Load Flow, Test, Load Results); mobile-restore-btn removed; keyboard-shift fix retained (position:fixed #app)"
+    },
+    {
+      "version": "0.6.6",
+      "date": "2026-03-23",
+      "note": "Fix: keyboard resize \u2014 layout root changed to position:fixed/inset:0; floating mobile-restore-btn outside right pane; swipe-to-restore removed"
+    },
+    {
+      "version": "0.6.5",
+      "date": "2026-03-23",
+      "note": "Mobile UI: pinch-to-zoom on diagram (zoom buttons hidden on touch devices); desktop pane resize drag handle between diagram and right pane; mobile collapse tab on left edge of right pane slides pane away to reveal diagram (replaces full swipe-away); test results drawer touch-draggable via MutationObserver; swipe gestures preserved on non-interactive areas"
+    },
+    {
+      "version": "0.6.4",
+      "date": "2026-03-23",
+      "note": "Fix: test results viewer captures and restores visitedEdges per case; _visitedEdges exposed on window; _replayTrace/_restartRuntime accept overrideConfig"
+    },
+    {
+      "version": "0.6.3",
+      "date": "2026-03-23",
+      "note": "UI: SM-IDE title bar with version badge; toolbar buttons no longer overflow; context viewer collapsed by default with slide toggle; 100dvh + safe-area-inset fixes mobile URL bar overlap; touch pan on diagram; mobile swipe handle to reveal diagram behind right pane; test results row click restores captured state instantly without re-running; replay input populated on row click for manual re-run; invoke-aware duration estimator in generate-traces.js"
+    },
+    {
+      "version": "0.6.2",
+      "date": "2026-03-23",
+      "note": "Feature: generate-traces.js \u2014 runAllTraces() with self-test comparison, draggable/collapsible results drawer, stop button, load results from saved JSON, downloadTestResults()"
+    },
+    {
+      "version": "0.6.1",
+      "date": "2026-03-22",
+      "note": "Fix: user bubbles driven by trace length delta; replay restart ownership moved to _replayTrace; onReplayStep increments _lastTraceLength to prevent doubles"
+    },
+    {
+      "version": "0.6.0",
+      "date": "2026-03-22",
+      "note": "Phase 3: Runtime isolation \u2014 ChatEngine renamed Runtime; zero UI knowledge; single onSnapshot callback; main.js split into renderChat + renderIDE"
+    },
+    {
+      "version": "0.5.0",
+      "date": "2026-03-22",
+      "note": "Phase 2: Logger abstraction \u2014 nullLogger/consoleLogger/resolveLogger; ChatEngine accepts injected logger; production silent by default, debug via ?debug=true or localStorage"
+    },
+    {
+      "version": "0.4.3",
+      "date": "2026-03-22",
+      "note": "Fix: visited edge key changed from fromState|toState to fromState|eventType"
+    },
+    {
+      "version": "0.4.2",
+      "date": "2026-03-22",
+      "note": "Fix: diagram-canvas position:absolute so SVG renders visibly; zoom/pan/reset working"
+    },
+    {
+      "version": "0.4.1",
+      "date": "2026-03-22",
+      "note": "Fix: drop linkStyle and ==> arrows; visited edges marked with checkmark label prefix"
+    },
+    {
+      "version": "0.4.0",
+      "date": "2026-03-22",
+      "note": "Feature: diagram fits viewport; zoom/pan controls; visited edge tracking"
+    },
+    {
+      "version": "0.3.9",
+      "date": "2026-03-22",
+      "note": "Fix: Load Flow accepts ZIP, bare .json, bare .js, or pair"
+    },
+    {
+      "version": "0.3.8",
+      "date": "2026-03-22",
+      "note": "Feature: Save/Load Flow as paired ZIP"
+    },
+    {
+      "version": "0.3.7",
+      "date": "2026-03-22",
+      "note": "Fix: layout fits 100% zoom; Send button added"
+    },
+    {
+      "version": "0.3.6",
+      "date": "2026-03-22",
+      "note": "Fix: deep copy config before mutation in start()"
+    },
+    {
+      "version": "0.3.5",
+      "date": "2026-03-22",
+      "note": "Fix: pre-generate assign closures for XState 5"
+    },
+    {
+      "version": "0.3.4",
+      "date": "2026-03-22",
+      "note": "Diagnostics: raw action log, version+URL at boot"
+    },
+    {
+      "version": "0.3.3",
+      "date": "2026-03-22",
+      "note": "Fix: combine updateContext actions on email SUBMIT"
+    },
+    {
+      "version": "0.3.2",
+      "date": "2026-03-22",
+      "note": "Fix: user bubble ordering"
+    },
+    {
+      "version": "0.3.1",
+      "date": "2026-03-22",
+      "note": "Fix: diagram array transitions, validation bubble, replay guard check"
+    },
+    {
+      "version": "0.3.0",
+      "date": "2026-03-22",
+      "note": "Phase 1: validation moved to XState-native guards"
+    },
+    {
+      "version": "0.2.0",
+      "date": "2026-03-22",
+      "note": "Input validation + state-change logging"
+    },
+    {
+      "version": "0.1.0",
+      "date": "2026-03-22",
+      "note": "Initial release"
+    }
+  ]
+}

@@ -1,0 +1,711 @@
+/*
+ * ide3-theme.css  (v0.11.0 UI3 variant)
+ *
+ * Identical to ide-theme.css except for one layout change:
+ *   — #pane-content stacking order is now:
+ *       #app-titlebar  (top, flex-shrink:0)
+ *       #chat-mount    (flex:1, fills all available space)
+ *       #profile-toggle / #profile-viewer  (flex-shrink:0)
+ *       #replay-bar    (flex-shrink:0)
+ *       #toolbar       (bottom, flex-shrink:0)
+ *
+ * Everything else — tokens, diagram pane, slide handle, right pane,
+ * zoom controls, touch tooltip, mobile overrides — is unchanged.
+ */
+
+/* ── Tokens ─────────────────────────────────────────────────────────────────── */
+:root {
+    --bg:          #f4f7f6;
+    --panel:       #ffffff;
+    --accent:      #0084ff;
+    --dark:        #1c1e21;
+    --handle-w:    9px;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+
+/*
+ * #app is the true layout root, pinned to the visual viewport.
+ * position:fixed + inset:0 means the soft keyboard can never shift
+ * the layout — it opens over the content instead of pushing it up.
+ */
+#app {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    font-family: 'Segoe UI', sans-serif;
+    background: var(--bg);
+    overflow: hidden;
+}
+
+/* ── Global button defaults ─────────────────────────────────────────────────── */
+button {
+    padding: 8px 16px;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: opacity 0.2s;
+    touch-action: manipulation;
+}
+
+button:hover  { opacity: 0.85; }
+button:active { opacity: 0.7;  }
+
+input[type="text"] {
+    padding: 9px 11px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    outline: none;
+    font-size: 14px;
+}
+
+input[type="text"]:focus { border-color: var(--accent); }
+
+/* ── Diagram pane ───────────────────────────────────────────────────────────── */
+#diagram-pane {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: var(--panel);
+    padding: 16px;
+    min-width: 0;
+    overflow: hidden;
+}
+
+#diagram-pane h2 {
+    flex-shrink: 0;
+    margin: 0 0 8px 0;
+    font-size: 15px;
+    color: #888;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+#dir-toggle {
+    font-size: 13px;
+    padding: 1px 6px;
+    background: #2c313a;
+    color: #61dafb;
+    border: 1px solid #444;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: normal;
+    flex-shrink: 0;
+}
+
+#dir-toggle:hover { background: #353b48; }
+
+#diagram-viewport {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+    cursor: grab;
+    user-select: none;
+    touch-action: none;
+}
+
+#diagram-viewport:active { cursor: grabbing; }
+
+#diagram-canvas {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transform-origin: center center;
+}
+
+#diagram-canvas svg { display: block; max-width: 100%; max-height: 100%; }
+
+#mermaid-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+}
+
+/* ── Zoom controls — hidden on touch-primary devices ────────────────────────── */
+#zoom-controls {
+    position: absolute;
+    bottom: 12px; right: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    z-index: 10;
+}
+
+#zoom-controls button {
+    width: 36px; height: 36px;
+    padding: 0; font-size: 18px;
+    border-radius: 6px;
+    background: rgba(40,44,52,0.85);
+    border: 1px solid #444;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+@media (hover: none) and (pointer: coarse) {
+    #zoom-controls { display: none; }
+}
+
+/* ── Permanent slide handle ─────────────────────────────────────────────────── */
+#slide-handle {
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: var(--handle-w);
+    background: #23272e;
+    border-right: 1px solid #333;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: ew-resize;
+    z-index: 30;
+    flex-shrink: 0;
+    user-select: none;
+    touch-action: none;
+    overflow: visible; /* allow hit-zone pseudo-element to extend beyond bounds */
+}
+
+#slide-handle:hover  { background: #2c313a; }
+#slide-handle:active { background: #353b48; }
+
+/* Visual spacer only — pointer-events disabled so chat content behind it stays
+   clickable. The touch zone is extended via the document-level JS handler. */
+#slide-handle::before {
+    content: '';
+    position: absolute;
+    left: -30px;
+    right: -30px;
+    top: 0;
+    bottom: 0;
+    pointer-events: none;
+}
+
+/* Grip pill — centered visual cue */
+#slide-handle::after {
+    content: '';
+    display: block;
+    width: 3px;
+    height: 28px;
+    background: #444;
+    border-radius: 2px;
+    position: relative;
+    z-index: 1; /* above the transparent ::before */
+}
+
+#slide-handle:hover::after { background: #61dafb; }
+
+#handle-arrow {
+    color: #61dafb;
+    font-size: 11px;
+    line-height: 1;
+    transition: transform 0.3s;
+}
+
+/* ── Right pane ─────────────────────────────────────────────────────────────── */
+/* Desktop: in-flow flex sibling of #diagram-pane. JS shrinks its width to      *
+ * collapse it; #diagram-pane (flex:1) expands/contracts naturally.             *
+ * Mobile (≤ 700px): switches to position:absolute overlay; translateX slides   *
+ * it off-screen. See media query below.                                         *
+ * ──────────────────────────────────────────────────────────────────────────── */
+#right-pane {
+    position: relative;
+    flex-shrink: 0;
+    width: 460px;
+    min-width: var(--handle-w);
+    max-width: calc(100% - 40px);
+    display: flex;
+    flex-direction: column;
+    background: var(--panel);
+    box-shadow: -2px 0 10px rgba(0,0,0,0.08);
+    z-index: 10;
+    transition: width 0.3s ease;
+}
+
+/* Content area — offset left to make room for the handle */
+#pane-content {
+    margin-left: var(--handle-w);
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    overflow: hidden;
+    min-width: 0;
+    position: relative;  /* anchor for #pane-tab absolute positioning */
+}
+
+/* ── Pane tab — mobile-only semicircular pull tab ───────────────────────────── */
+/*                                                                               */
+/* Replaces the full-height slide-handle on mobile. Positioned just above       */
+/* #profile-toggle (set by JS). Protrudes rightward into the chat area.         */
+/* When the pane is fully collapsed, scaleX(-1) flips it so the bump protrudes  */
+/* leftward into the diagram area and the arrow reverses direction.              */
+#pane-tab {
+    display: none;         /* shown only on mobile via media query below */
+    position: absolute;
+    left: 0;
+    /* bottom: set by JS (_positionPaneTab) */
+    width: 60px;
+    height: 60px;
+    background: #23272e;
+    border: 1px solid #3a3f4b;
+    border-left: none;
+    border-radius: 0 30px 30px 0;
+    z-index: 25;
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+    touch-action: none;
+    user-select: none;
+    box-shadow: 3px 0 8px rgba(0,0,0,0.35);
+    transition: transform 0.3s ease, background 0.15s;
+}
+
+#pane-tab:active { background: #353b48; }
+
+#pane-tab-arrow {
+    color: #61dafb;
+    font-size: 15px;
+    line-height: 1;
+    pointer-events: none;
+}
+
+/* ── Ghost tab — fixed at right edge when pane is fully collapsed ────────────── */
+/* Mirror image of #pane-tab: flat edge at screen right, bump protrudes left.    */
+#pane-tab-ghost {
+    display: none;         /* shown by JS (_applyOffset) on mobile when collapsed */
+    position: fixed;
+    right: 0;
+    /* bottom: set by JS (_positionGhostTab) */
+    width: 60px;
+    height: 60px;
+    background: #23272e;
+    border: 1px solid #3a3f4b;
+    border-right: none;
+    border-radius: 30px 0 0 30px;
+    z-index: 30;
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+    touch-action: none;
+    user-select: none;
+    box-shadow: -3px 0 8px rgba(0,0,0,0.35);
+}
+
+/* ── App title bar ──────────────────────────────────────────────────────────── */
+#app-titlebar {
+    padding: 8px 12px 6px;
+    background: var(--dark);
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+#app-title {
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    font-weight: bold;
+    color: #61dafb;
+    letter-spacing: 0.05em;
+}
+
+#version-badge {
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    font-weight: bold;
+    color: #ffffff;
+    background: #0051cc;
+    border: 1px solid #3a8fff;
+    border-radius: 4px;
+    padding: 2px 8px;
+    white-space: nowrap;
+}
+
+/* ── Fullscreen exit button ─────────────────────────────────────────────────── */
+/* Sits in the title bar, hidden until body.in-fullscreen is set.               */
+#fs-exit-btn {
+    display: none;
+    margin-left: auto;
+    padding: 1px 7px;
+    font-size: 14px;
+    line-height: 1;
+    background: #2c313a;
+    color: #61dafb;
+    border: 1px solid #444;
+    border-radius: 4px;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+#fs-exit-btn:hover { background: #353b48; opacity: 1; }
+
+body.in-fullscreen #fs-exit-btn { display: inline-flex; align-items: center; }
+
+/* ── Toolbar — pinned to bottom of pane-content ─────────────────────────────── */
+#toolbar {
+    padding: 8px 10px;
+    background: var(--dark);
+    display: flex;
+    align-items: stretch;
+    gap: 6px;
+    flex-shrink: 0;
+    /* No flex-wrap: buttons share width equally regardless of label length. */
+}
+
+#toolbar button {
+    flex: 1 1 0;
+    padding: 8px 4px;
+    font-size: 11px;
+    border-radius: 10px;
+    white-space: normal;
+    font-weight: 600;
+    line-height: 1.3;
+    text-align: center;
+    min-width: 40px;
+}
+
+/* ── Touch-friendly tooltip ─────────────────────────────────────────────────── */
+#touch-tooltip {
+    position: fixed;
+    background: rgba(30,33,40,0.95);
+    color: #abb2bf;
+    font-family: 'Segoe UI', sans-serif;
+    font-size: 12px;
+    line-height: 1.4;
+    padding: 7px 11px;
+    border-radius: 7px;
+    border: 1px solid #444;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.45);
+    max-width: 220px;
+    pointer-events: none;
+    z-index: 9999;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+
+#touch-tooltip.visible { opacity: 1; }
+
+/* ── Context / profile viewer ───────────────────────────────────────────────── */
+#profile-viewer {
+    background: #282c34;
+    color: #61dafb;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    overflow: hidden;
+    border-bottom: 2px solid #444;
+    flex-shrink: 0;
+    max-height: 0;
+    transition: max-height 0.25s ease;
+}
+
+#profile-viewer.open {
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+#profile-viewer-inner { padding: 10px 14px; }
+
+#profile-toggle {
+    padding: 4px 10px;
+    background: #23272e;
+    border-top: 1px solid #333;
+    border-bottom: 1px solid #333;
+    cursor: pointer;
+    flex-shrink: 0;
+    user-select: none;
+}
+
+#profile-toggle span {
+    font-family: 'Courier New', monospace;
+    font-size: 10px;
+    color: #888;
+}
+
+#profile-toggle-arrow {
+    font-size: 10px;
+    color: #555;
+    transition: transform 0.2s;
+}
+
+/* ── Observer section (IDE LOG) ─────────────────────────────────────────────── */
+#observer-toggle {
+    padding: 4px 10px;
+    background: #23272e;
+    border-top: 1px solid #333;
+    border-bottom: 1px solid #333;
+    cursor: pointer;
+    flex-shrink: 0;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+#observer-toggle span {
+    font-family: 'Courier New', monospace;
+    font-size: 10px;
+    color: #888;
+}
+
+#observer-toggle-arrow {
+    font-size: 10px;
+    color: #888;
+    transition: transform 0.2s;
+    margin-left: auto;
+}
+
+#observer-viewer {
+    background: #282c34;
+    overflow-y: auto;
+    border-bottom: 1px solid #ddd;
+    flex-shrink: 0;
+    max-height: 0;
+    transition: max-height 0.25s ease;
+}
+
+#observer-viewer.open {
+    max-height: 200px;
+}
+
+/* Same layout as #messages in chat-theme.css */
+#observer-list {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--chat-gap);
+}
+
+.obs-sys {
+    align-self: center;
+    font-size: 11px;
+    color: #999;
+    font-family: 'Courier New', monospace;
+    font-style: italic;
+}
+
+/* ── Replay bar — hidden until triggered ────────────────────────────────────── */
+#replay-bar {
+    padding: 4px 8px 4px 18px;
+    background: #e8e8e8;
+    display: none;
+    gap: 4px;
+    border-bottom: 1px solid #d0d0d0;
+    flex-shrink: 0;
+    align-items: center;
+}
+
+#replay-bar.visible {
+    display: flex;
+}
+
+#replay-bar input[type="text"] {
+    flex: 1;
+    min-width: 0;
+    padding: 5px 8px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    font-size: 12px;
+    outline: none;
+    height: 30px;
+    box-sizing: border-box;
+}
+
+/* ▶ and ✕ — identical square buttons, always on the LEFT of the field */
+#replay-go-btn,
+#replay-clear-btn {
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    font-size: 13px;
+    border-radius: 6px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+}
+
+#replay-clear-btn {
+    background: #888;
+}
+
+.restart-btn { background: #ff4757; }
+
+/* ── Test button stop-mode ───────────────────────────────────────────────────── */
+/* Applied by main3.js while tests are running */
+#toolbar button.test-btn-stop {
+    background: #ff4757;
+}
+
+/* ── Results drawer row action icons ────────────────────────────────────────────
+ *
+ * Two small icon buttons prepended to each result row by main3.js:
+ *   📋  copy trace → replay field + collapse drawer
+ *   ▶   replay trace immediately
+ *
+ * Scoped inside #test-results-drawer so they don't affect other buttons.
+ * ──────────────────────────────────────────────────────────────────────────── */
+#test-results-drawer td.row-action-icons {
+    white-space: nowrap;
+    padding: 2px 4px;
+    width: 52px;
+}
+
+#test-results-drawer .row-icon-btn {
+    padding: 2px 5px;
+    font-size: 12px;
+    border-radius: 4px;
+    background: #2c313a;
+    border: 1px solid #444;
+    color: #abb2bf;
+    cursor: pointer;
+    line-height: 1;
+    margin-right: 2px;
+    vertical-align: middle;
+    min-width: 0;
+    width: auto;
+    flex: none;
+}
+
+#test-results-drawer .row-icon-btn:hover  { background: #353b48; opacity: 1; }
+#test-results-drawer .row-icon-btn:active { background: #3a8fff; color: #fff; opacity: 1; }
+
+/* ── #test-status-badge overrides ───────────────────────────────────────────────
+ *
+ * generate-traces.js appends this as a position:fixed floating element.
+ * In UI3 the toolbar is at the bottom, so the badge lands on top of it.
+ *
+ * Positioning (bottom distance) is set precisely by main3.js once the badge
+ * appears, by measuring #profile-toggle's bounding rect at that moment.
+ *
+ * Here we only handle:
+ *   - flush to the right viewport edge (aligns with the right pane)
+ *   - rounded only on the left side (looks attached to the pane edge)
+ *   - hide the badge's own stop button (Test/Stop toolbar toggle owns that)
+ * ──────────────────────────────────────────────────────────────────────────── */
+#test-status-badge {
+    right:  0    !important;
+    left:   auto !important;
+    top:    auto !important;
+    border-radius: 6px 0 0 6px !important;
+}
+
+#test-status-badge button {
+    display: none !important;
+}
+
+/* ── Test progress label inside #profile-toggle ─────────────────────────────── */
+/*
+ * Sits between "CONTEXT & STATE" and the collapse arrow.
+ * flex:1 pushes the arrow to the far right and lets the progress
+ * text consume any available middle space without shifting anything.
+ */
+#profile-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+#test-progress {
+    flex: 1;
+    font-family: 'Courier New', monospace;
+    font-size: 10px;
+    color: #61dafb;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: right;
+    padding-right: 4px;
+}
+
+/* ── Mobile overrides ───────────────────────────────────────────────────────── */
+@media (max-width: 700px) {
+    /* Switch to the full-width overlay / translateX slide model on small screens */
+    /* --handle-w is 0: the full-height slide-handle is hidden; #pane-tab       */
+    /* (the semicircular pull tab) takes over as the sole resize/collapse control */
+    :root { --handle-w: 9px; }
+
+    #diagram-pane {
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+    }
+
+    #right-pane {
+        position: absolute;
+        right: 0;
+        top: 0;
+        bottom: 0;
+        width: 99% !important;
+        max-width: unset;
+        transform: translateX(0);
+        transition: transform 0.3s ease;
+        will-change: transform;
+    }
+
+    #pane-content {
+        margin-left: 0;
+        width: var(--visible-pane-w, 100vw);
+        max-width: 100vw;
+    }
+
+    #pane-tab     { display: none; }
+}
+
+/* ── Mobile landscape: compact toolbar ─────────────────────────────────────── */
+/* Covers both narrow phones (≤700px CSS width) and wider phones forced into    */
+/* mobile-layout mode via body.mobile-landscape (JS-set class).                 */
+@media (max-width: 700px) and (orientation: landscape) {
+    #toolbar { padding: 3px 8px; gap: 4px; }
+    #toolbar button { padding: 3px 4px; font-size: 10px; line-height: 1.2; }
+}
+
+body.mobile-landscape #toolbar { padding: 3px 8px; gap: 4px; }
+body.mobile-landscape #toolbar button { padding: 3px 4px; font-size: 10px; line-height: 1.2; }
+
+/* ── Force mobile layout (for ui-contracts) ─────────────────────────────────── */
+body.force-mobile-layout #diagram-pane {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+}
+
+body.force-mobile-layout #right-pane {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 99% !important;
+    max-width: unset;
+    transform: translateX(0);
+    transition: transform 0.3s ease;
+    will-change: transform;
+}
+
+body.force-mobile-layout #pane-content {
+    width: calc(var(--visible-pane-w, 100vw) - var(--handle-w));
+    max-width: calc(100vw - var(--handle-w));
+}
+
+body.force-mobile-layout {
+    --handle-w: 9px;
+}
+
+body.force-mobile-layout #pane-content {
+    margin-left: 0;
+    width: var(--visible-pane-w, 100vw);
+    max-width: 100vw;
+}
+
+body.force-mobile-layout #pane-tab { display: none; }

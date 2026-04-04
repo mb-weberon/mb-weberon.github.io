@@ -1,0 +1,362 @@
+{
+  "id": "sm_ide",
+  "initial": "render_ui",
+  "context": {
+    "flowId": "",
+    "resultsSaved": true,
+    "trace": []
+  },
+  "states": {
+
+    "render_ui": {
+      "meta": {
+        "text": "SM-IDE is ready.",
+        "chat": "SM-IDE ready.",
+        "toolbar": []
+      },
+      "always": {
+        "target": "booting"
+      }
+    },
+
+    "booting": {
+      "meta": {
+        "text": "Checking for a previously loaded flow and cached test results.",
+        "chat": "Checking for a saved session...",
+        "onDone": "Storage check complete.",
+        "onError": "Could not read storage.",
+        "toolbar": []
+      },
+      "invoke": {
+        "src": "checkPersistedState",
+        "onDone": [
+          {
+            "guard": "hasPersistedFlow",
+            "target": "prompt_restore"
+          },
+          {
+            "target": "no_flow"
+          }
+        ],
+        "onError": {
+          "target": "load_error"
+        }
+      }
+    },
+
+    "prompt_restore": {
+      "meta": {
+        "text": "A previous session was found. Restore it or start fresh?",
+        "chat": "Found a previous session. Restore it or start fresh?",
+        "toolbar": []
+      },
+      "on": {
+        "RESTORE": {
+          "target": "restoring_flow",
+          "actions": ["record"]
+        },
+        "START_FRESH": {
+          "target": "no_flow",
+          "actions": ["record"]
+        },
+        "LOAD_FLOW": {
+          "target": "flow_idle",
+          "actions": ["record"]
+        },
+        "LOAD_RESULTS": {
+          "target": "results_ready",
+          "actions": ["record"]
+        }
+      }
+    },
+
+    "restoring_flow": {
+      "meta": {
+        "text": "Restoring flow, session, and test results from storage.",
+        "chat": "Restoring session from storage...",
+        "onDone": "Session restored successfully.",
+        "onError": "Failed to restore session.",
+        "toolbar": []
+      },
+      "invoke": {
+        "src": "restorePersistedState",
+        "onDone": [
+          {
+            "guard": "hasPersistedResults",
+            "target": "results_ready",
+            "actions": ["record"]
+          },
+          {
+            "guard": "hasPersistedSession",
+            "target": "session_active",
+            "actions": ["record"]
+          },
+          {
+            "target": "flow_idle",
+            "actions": ["record"]
+          }
+        ],
+        "onError": {
+          "target": "load_error"
+        }
+      }
+    },
+
+    "load_error": {
+      "meta": {
+        "text": "Load failed. Check the browser console for details.",
+        "chat": "Load failed. Check the browser console.",
+        "toolbar": ["load-btn"]
+      },
+      "on": {
+        "DISMISS": {
+          "target": "no_flow",
+          "actions": ["record"]
+        },
+        "LOAD_FLOW": {
+          "target": "flow_idle",
+          "actions": ["record"]
+        }
+      }
+    },
+
+    "no_flow": {
+      "meta": {
+        "text": "No flow loaded. Use Load to open a flow or restore test results.",
+        "chat": "Ready. Load a flow to get started.",
+        "toolbar": ["load-btn", "share-btn"]
+      },
+      "on": {
+        "LOAD_FLOW": {
+          "target": "flow_idle",
+          "actions": ["record"]
+        },
+        "LOAD_RESULTS": {
+          "target": "results_ready",
+          "actions": ["record"]
+        },
+        "LOAD_ERROR": {
+          "target": "load_error",
+          "actions": ["record"]
+        }
+      }
+    },
+
+    "flow_idle": {
+      "meta": {
+        "text": "Flow loaded. Chat at initial state. Ready to converse or run tests.",
+        "chat": "Flow loaded. Ready to chat or run tests.",
+        "toolbar": ["test-btn", "restart-btn", "load-btn", "analyze-btn", "pack-prod-btn", "share-btn"]
+      },
+      "on": {
+        "UNLOAD_FLOW": {
+          "target": "no_flow",
+          "actions": ["record"]
+        },
+        "LOAD_FLOW": {
+          "target": "flow_idle",
+          "actions": ["record"]
+        },
+        "LOAD_SERVICES": {
+          "target": "flow_idle",
+          "actions": ["record"]
+        },
+        "LOAD_RESULTS": {
+          "target": "results_ready",
+          "actions": ["record"]
+        },
+        "RUN_TESTS": {
+          "target": "tests_running",
+          "actions": ["record"]
+        },
+        "CHAT_INPUT": {
+          "target": "session_active",
+          "actions": ["record"]
+        },
+        "RESTART": {
+          "target": "flow_idle",
+          "actions": ["record"]
+        },
+        "LOAD_ERROR": {
+          "target": "load_error",
+          "actions": ["record"]
+        }
+      }
+    },
+
+    "session_active": {
+      "meta": {
+        "text": "Conversation in progress. Trace being recorded.",
+        "chat": "Conversation active. Trace being recorded.",
+        "toolbar": ["test-btn", "restart-btn", "load-btn", "analyze-btn", "pack-prod-btn", "share-btn"]
+      },
+      "on": {
+        "UNLOAD_FLOW": {
+          "target": "no_flow",
+          "actions": ["record"]
+        },
+        "LOAD_FLOW": {
+          "target": "flow_idle",
+          "actions": ["record"]
+        },
+        "LOAD_SERVICES": {
+          "target": "flow_idle",
+          "actions": ["record"]
+        },
+        "LOAD_RESULTS": {
+          "target": "results_ready",
+          "actions": ["record"]
+        },
+        "RUN_TESTS": {
+          "target": "tests_running",
+          "actions": ["record"]
+        },
+        "CHAT_INPUT": {
+          "target": "session_active",
+          "actions": ["record"]
+        },
+        "REPLAY": {
+          "target": "session_active",
+          "actions": ["record"]
+        },
+        "RESTART": {
+          "target": "flow_idle",
+          "actions": ["record"]
+        },
+        "LOAD_ERROR": {
+          "target": "load_error",
+          "actions": ["record"]
+        }
+      }
+    },
+
+    "tests_running": {
+      "meta": {
+        "text": "Test suite running. All paths exercised automatically. Click Stop to interrupt.",
+        "chat": "Running all test paths...",
+        "toolbar": ["test-btn"]
+      },
+      "on": {
+        "TESTS_COMPLETE": {
+          "target": "results_unsaved",
+          "actions": ["record"]
+        },
+        "TESTS_STOP": {
+          "target": "results_unsaved",
+          "actions": ["record"]
+        }
+      }
+    },
+
+    "results_unsaved": {
+      "meta": {
+        "text": "Tests done. Results are cached and will survive a reload. Save Results to download a copy before loading a new flow.",
+        "chat": "Tests done. Results cached. Save a copy before loading a new flow.",
+        "toolbar": ["test-btn", "restart-btn", "save-results-btn", "analyze-btn", "pack-prod-btn", "share-btn"]
+      },
+      "on": {
+        "UNLOAD_FLOW": {
+          "target": "no_flow",
+          "actions": ["record"]
+        },
+        "SAVE_RESULTS": {
+          "target": "results_saved",
+          "actions": ["record"]
+        },
+        "RUN_TESTS": {
+          "target": "tests_running",
+          "actions": ["record"]
+        },
+        "REPLAY": {
+          "target": "session_active",
+          "actions": ["record"]
+        }
+      }
+    },
+
+    "results_saved": {
+      "meta": {
+        "text": "Results saved to disk. Load Flow re-enabled.",
+        "chat": "Results saved. All options available.",
+        "toolbar": ["test-btn", "restart-btn", "load-btn", "analyze-btn", "pack-prod-btn", "share-btn"]
+      },
+      "on": {
+        "UNLOAD_FLOW": {
+          "target": "no_flow",
+          "actions": ["record"]
+        },
+        "LOAD_FLOW": {
+          "target": "flow_idle",
+          "actions": ["record"]
+        },
+        "LOAD_SERVICES": {
+          "target": "flow_idle",
+          "actions": ["record"]
+        },
+        "LOAD_RESULTS": {
+          "target": "results_ready",
+          "actions": ["record"]
+        },
+        "RUN_TESTS": {
+          "target": "tests_running",
+          "actions": ["record"]
+        },
+        "REPLAY": {
+          "target": "session_active",
+          "actions": ["record"]
+        },
+        "RESTART": {
+          "target": "flow_idle",
+          "actions": ["record"]
+        },
+        "LOAD_ERROR": {
+          "target": "load_error",
+          "actions": ["record"]
+        }
+      }
+    },
+
+    "results_ready": {
+      "meta": {
+        "text": "Results loaded or restored from storage. Drawer shown. Flow active and re-loadable.",
+        "chat": "Results ready. Flow active and re-loadable.",
+        "toolbar": ["test-btn", "restart-btn", "save-flow-btn", "load-btn", "analyze-btn", "pack-prod-btn", "share-btn"]
+      },
+      "on": {
+        "UNLOAD_FLOW": {
+          "target": "no_flow",
+          "actions": ["record"]
+        },
+        "LOAD_FLOW": {
+          "target": "flow_idle",
+          "actions": ["record"]
+        },
+        "LOAD_SERVICES": {
+          "target": "flow_idle",
+          "actions": ["record"]
+        },
+        "SAVE_RESULTS": {
+          "target": "results_saved",
+          "actions": ["record"]
+        },
+        "RUN_TESTS": {
+          "target": "tests_running",
+          "actions": ["record"]
+        },
+        "REPLAY": {
+          "target": "session_active",
+          "actions": ["record"]
+        },
+        "RESTART": {
+          "target": "flow_idle",
+          "actions": ["record"]
+        },
+        "LOAD_ERROR": {
+          "target": "load_error",
+          "actions": ["record"]
+        }
+      }
+    }
+
+  }
+}

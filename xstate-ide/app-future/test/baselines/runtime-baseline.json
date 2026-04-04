@@ -1,0 +1,243 @@
+{
+  "timestamp": "2026-03-31T16:13:34.709Z",
+  "appVersion": "v0.12.46",
+  "results": [
+    {
+      "name": "inline_happy_path_a",
+      "snapshots": [
+        {
+          "stateId": "ask_name",
+          "input": "text",
+          "choices": [],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "ask_path",
+          "input": null,
+          "choices": [
+            "PATH_A",
+            "PATH_B"
+          ],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "done_a",
+          "input": null,
+          "choices": [],
+          "hasMessage": true,
+          "hasError": false
+        }
+      ]
+    },
+    {
+      "name": "inline_happy_path_b",
+      "snapshots": [
+        {
+          "stateId": "ask_name",
+          "input": "text",
+          "choices": [],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "ask_path",
+          "input": null,
+          "choices": [
+            "PATH_A",
+            "PATH_B"
+          ],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "done_b",
+          "input": null,
+          "choices": [],
+          "hasMessage": true,
+          "hasError": false
+        }
+      ]
+    },
+    {
+      "name": "inline_validation_then_recover",
+      "snapshots": [
+        {
+          "stateId": "ask_name",
+          "input": "text",
+          "choices": [],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "ask_name",
+          "input": "text",
+          "choices": [],
+          "hasMessage": false,
+          "hasError": false
+        },
+        {
+          "stateId": "ask_path",
+          "input": null,
+          "choices": [
+            "PATH_A",
+            "PATH_B"
+          ],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "done_a",
+          "input": null,
+          "choices": [],
+          "hasMessage": true,
+          "hasError": false
+        }
+      ]
+    },
+    {
+      "name": "realtor_soon_rent_transcript",
+      "snapshots": [
+        {
+          "stateId": "ask_email",
+          "input": "text",
+          "choices": [],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "ask_status",
+          "input": null,
+          "choices": [
+            "OWN",
+            "RENT"
+          ],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "ask_timing",
+          "input": null,
+          "choices": [
+            "LATER",
+            "SOON"
+          ],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "ask_phone",
+          "input": "text",
+          "choices": [],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "closing_soon",
+          "input": null,
+          "choices": [
+            "NO",
+            "YES"
+          ],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "send_transcript",
+          "input": null,
+          "choices": [],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "upload_context",
+          "input": null,
+          "choices": [],
+          "hasMessage": false,
+          "hasError": false
+        },
+        {
+          "stateId": "finish_screen",
+          "input": null,
+          "choices": [],
+          "hasMessage": true,
+          "hasError": false
+        }
+      ]
+    },
+    {
+      "name": "realtor_later_own_no_transcript",
+      "snapshots": [
+        {
+          "stateId": "ask_email",
+          "input": "text",
+          "choices": [],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "ask_status",
+          "input": null,
+          "choices": [
+            "OWN",
+            "RENT"
+          ],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "ask_order",
+          "input": null,
+          "choices": [
+            "BUY_FIRST",
+            "SELL_FIRST"
+          ],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "ask_timing",
+          "input": null,
+          "choices": [
+            "LATER",
+            "SOON"
+          ],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "ask_phone",
+          "input": "text",
+          "choices": [],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "closing_later",
+          "input": null,
+          "choices": [
+            "NO",
+            "YES"
+          ],
+          "hasMessage": true,
+          "hasError": false
+        },
+        {
+          "stateId": "upload_context",
+          "input": null,
+          "choices": [],
+          "hasMessage": false,
+          "hasError": false
+        },
+        {
+          "stateId": "finish_screen",
+          "input": null,
+          "choices": [],
+          "hasMessage": true,
+          "hasError": false
+        }
+      ]
+    }
+  ]
+}

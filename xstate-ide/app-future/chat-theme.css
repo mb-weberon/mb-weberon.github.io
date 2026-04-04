@@ -1,0 +1,156 @@
+/*
+ * chat-theme.css
+ *
+ * All chat UI styles. Consumed by both the full IDE (alongside ide-theme.css)
+ * and the standalone production bundle (on its own).
+ *
+ * Customise via CSS custom properties on :root or any ancestor element.
+ */
+
+:root {
+    --bubble-bot-bg:       #e4e6eb;
+    --bubble-bot-color:    #050505;
+    --bubble-user-bg:      #0084ff;
+    --bubble-user-color:   #ffffff;
+    --input-border:        #ddd;
+    --input-border-focus:  #0084ff;
+    --error-color:         #e53e3e;
+    --chat-bg:             #fafafa;
+    --chat-gap:            10px;
+    --safe-bottom:         env(safe-area-inset-bottom, 0px);
+}
+
+/* ── Messages scroll area ───────────────────────────────────────────────────── */
+#messages {
+    flex: 1;
+    padding: 16px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--chat-gap);
+    background: var(--chat-bg);
+    -webkit-overflow-scrolling: touch;
+    /* Keep newest messages anchored to bottom when height shrinks */
+    overflow-anchor: auto;
+    container-type: inline-size;
+    container-name: messages;
+}
+
+/* ── Bubbles ────────────────────────────────────────────────────────────────── */
+.msg {
+    max-width: 82%;
+    padding: 10px 14px;
+    border-radius: 18px;
+    font-size: 14px;
+    line-height: 1.5;
+    /* Words break inside bubbles, content never reflowed */
+    word-break: break-word;
+    overflow-wrap: break-word;
+}
+
+.msg.bot {
+    background:              var(--bubble-bot-bg);
+    color:                   var(--bubble-bot-color);
+    align-self:              flex-start;
+    border-bottom-left-radius: 4px;
+}
+
+.msg.user {
+    background:               var(--bubble-user-bg);
+    color:                    var(--bubble-user-color);
+    align-self:               flex-end;
+    border-bottom-right-radius: 4px;
+}
+
+/* ── Narrow container: both bubbles anchor left, fill available width ────────── *
+ * Triggered when the messages container itself is narrower than 300px —        *
+ * i.e. when the user slides the pane far enough right that the chat column     *
+ * compresses. Bubbles stretch to fill, content stays legible.                  *
+ * ──────────────────────────────────────────────────────────────────────────── */
+@container messages (max-width: 300px) {
+    .msg {
+        max-width: 100%;
+        align-self: flex-start;
+        border-bottom-right-radius: 18px; /* reset user corner */
+        border-bottom-left-radius:  4px;
+    }
+    .msg.user {
+        border-bottom-right-radius: 4px;
+    }
+}
+
+/* ── Controls / input area ──────────────────────────────────────────────────── */
+#controls-container {
+    padding: 10px 14px;
+    padding-bottom: calc(10px + var(--safe-bottom));
+    border-top: 1px solid #eee;
+    background: white;
+    flex-shrink: 0;
+}
+
+#input-area {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+/* ── Text input ─────────────────────────────────────────────────────────────── */
+#input-area input[type="text"] {
+    flex: 1;
+    min-width: 0;
+    padding: 9px 11px;
+    border: 1px solid var(--input-border);
+    border-radius: 8px;
+    outline: none;
+    font-size: 14px;
+    transition: border-color 0.15s;
+}
+
+#input-area input[type="text"]:focus {
+    border-color: var(--input-border-focus);
+}
+
+#input-area input[type="text"].input-error {
+    border-color: var(--error-color);
+}
+
+/* ── Validation error message ───────────────────────────────────────────────── */
+.validation-error {
+    width: 100%;
+    color: var(--error-color);
+    font-size: 12px;
+    margin-top: 4px;
+    padding: 0 2px;
+}
+
+/* ── Choice + send buttons ──────────────────────────────────────────────────── */
+#input-area button {
+    padding: 8px 16px;
+    background: var(--bubble-user-bg);
+    color: var(--bubble-user-color);
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: opacity 0.2s;
+    touch-action: manipulation;
+    flex-shrink: 0;
+}
+
+#input-area button:hover  { opacity: 0.85; }
+#input-area button:active { opacity: 0.7;  }
+
+/* ── Narrow pane: choices stack vertically on the left ───────────────────── */
+/* pane-narrow is toggled by _applyOffset in index.html when _panOffset > 0.  */
+
+/* Default narrow layout: column, left-aligned (choice-button states) */
+#pane-content.pane-narrow #input-area {
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+/* When a text input is present, keep send+input horizontal with send on left */
+#pane-content.pane-narrow #input-area:has(input[type="text"]) {
+    flex-direction: row-reverse;
+    align-items: center;
+}

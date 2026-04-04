@@ -1,0 +1,128 @@
+{
+  "id": "realtor",
+  "initial": "ask_email",
+  "context": {
+    "user_email": "",
+    "status": "",
+    "order": "",
+    "timing": "",
+    "phone": "",
+    "inputError": null
+  },
+  "states": {
+    "ask_email": {
+      "meta": {
+        "text": "Welcome! Please enter your email address.",
+        "input": "text",
+        "placeholder": "email@example.com"
+      },
+      "on": {
+        "SUBMIT": [
+          {
+            "guard": "isValidEmail",
+            "target": "ask_status",
+            "actions": ["setUserEmail"]
+          },
+          {
+            "actions": ["setEmailError"]
+          }
+        ]
+      }
+    },
+    "ask_status": {
+      "meta": {
+        "text": "Do you rent or own your current home?"
+      },
+      "on": {
+        "RENT": { "target": "ask_timing",  "actions": ["setStatusRent"] },
+        "OWN":  { "target": "ask_order",   "actions": ["setStatusOwn"]  }
+      }
+    },
+    "ask_order": {
+      "meta": {
+        "text": "Would you like to buy first or sell first?"
+      },
+      "on": {
+        "BUY_FIRST":  { "target": "ask_timing", "actions": ["setOrderBuyFirst"]  },
+        "SELL_FIRST": { "target": "ask_timing", "actions": ["setOrderSellFirst"] }
+      }
+    },
+    "ask_timing": {
+      "meta": {
+        "text": "When are you planning to move?"
+      },
+      "on": {
+        "SOON":  { "target": "ask_phone", "actions": ["setTimingSoon"]  },
+        "LATER": { "target": "ask_phone", "actions": ["setTimingLater"] }
+      }
+    },
+    "ask_phone": {
+      "meta": {
+        "text": "What is your phone number?",
+        "input": "text",
+        "placeholder": "e.g. 4155550123"
+      },
+      "on": {
+        "SUBMIT": [
+          {
+            "guard": "isValidPhone",
+            "target": "route_by_timing",
+            "actions": ["setPhone"]
+          },
+          {
+            "actions": ["setPhoneError"]
+          }
+        ]
+      }
+    },
+    "route_by_timing": {
+      "always": [
+        { "guard": "isSoon",  "target": "closing_soon"  },
+        { "guard": "isLater", "target": "closing_later" }
+      ]
+    },
+    "closing_soon": {
+      "meta": {
+        "text": "Great news \u2014 let's get you booked in! We'll reach out via email to {{user_email}} at {{phone}} to schedule your appointment about . Talk {{timing}}! \ud83c\udfe1\n\nWould you like a transcript of this conversation emailed to {{user_email}}?"
+      },
+      "on": {
+        "YES": { "target": "send_transcript" },
+        "NO":  { "target": "upload_context"  }
+      }
+    },
+    "closing_later": {
+      "meta": {
+        "text": "No rush! We'll check in with you {{timing}} at {{user_email}} when the timing is right. Thanks for chatting! \ud83d\udc4b\n\nWould you like a transcript of this conversation emailed to {{user_email}}?"
+      },
+      "on": {
+        "YES": { "target": "send_transcript" },
+        "NO":  { "target": "upload_context"  }
+      }
+    },
+    "send_transcript": {
+      "meta": {
+        "text": "Got it! A transcript will be emailed to {{user_email}} shortly."
+      },
+      "invoke": {
+        "id": "emailTranscript",
+        "src": "emailTranscript",
+        "onDone":  { "target": "upload_context" },
+        "onError": { "target": "upload_context" }
+      }
+    },
+    "upload_context": {
+      "invoke": {
+        "id": "uploadContext",
+        "src": "uploadContext",
+        "onDone":  { "target": "finish_screen" },
+        "onError": { "target": "finish_screen" }
+      }
+    },
+    "finish_screen": {
+      "type": "final",
+      "meta": {
+        "text": "All done \u2014 thanks for chatting! We'll be in touch {{timing}}. \ud83d\ude0a"
+      }
+    }
+  }
+}
