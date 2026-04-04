@@ -349,10 +349,9 @@
     .msg-pipeline-cmd-chip:hover { background: #45475a; color: #cba6f7; border-color: #cba6f7; }
     .msg-pipeline-cmd-chip:active { background: #585b70; }
 
+
     /* Trace mode header button */
-    #trace-toggle-btn.trace-btn-active {
-      color: #7c3aed; font-weight: 700;
-    }
+    #trace-toggle-btn.trace-btn-active { color: #7c3aed; font-weight: 700; }
 
     /* Collapsible trace panel inside assistant bubbles */
     .msg-trace-details {
@@ -546,6 +545,7 @@
       <button class="sp-tab-btn" data-tab="inference">Inference</button>
       <button class="sp-tab-btn" data-tab="retrieval">Retrieval</button>
       <button class="sp-tab-btn" data-tab="models">Models</button>
+      <button class="sp-tab-btn" data-tab="pipeline">Pipeline</button>
       <button class="sp-tab-btn" data-tab="import-export">Import/Export</button>
     </div>
 
@@ -663,26 +663,6 @@
           <span id="sp-related-count-val" class="sp-slider-val"></span>
         </div>
         <p class="sp-slider-tip">Questions shown below each response. Default: 5</p>
-
-        <div class="sp-section-title">Debug</div>
-        <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 12px; background:#f9fafb; border:1px solid #e5e7eb; border-radius:8px; margin-bottom:14px;">
-          <div>
-            <div style="font-size:12px; font-weight:700; color:#374151;">Enable pipeline trace</div>
-            <div style="font-size:11px; color:#6b7280; margin-top:2px;">Automatically trace every query — shows embed, retrieve, dedup, passages, prompt and generate stages. Collapsed by default under each response.</div>
-          </div>
-          <label style="position:relative; display:inline-block; width:40px; height:22px; flex-shrink:0; margin-left:12px; cursor:pointer;">
-            <input type="checkbox" id="sp-trace-enabled" style="opacity:0; width:0; height:0; position:absolute;">
-            <span id="sp-trace-toggle-track" style="
-              position:absolute; cursor:pointer; inset:0;
-              background:#d1d5db; border-radius:11px; transition:background 0.2s;
-            "></span>
-            <span id="sp-trace-toggle-thumb" style="
-              position:absolute; height:16px; width:16px; left:3px; top:3px;
-              background:white; border-radius:50%; transition:transform 0.2s;
-              box-shadow:0 1px 3px rgba(0,0,0,0.2);
-            "></span>
-          </label>
-        </div>
       </div>
 
       <!-- Models tab -->
@@ -691,6 +671,62 @@
         <div style="display:flex; gap:8px; margin-top:4px; flex-wrap:wrap;">
           <button id="sp-add-model-btn" class="sp-btn sp-btn-secondary">+ Add model</button>
           <button id="sp-upload-models-btn" class="sp-btn sp-btn-secondary">📂 Upload models JSON</button>
+        </div>
+      </div>
+
+      <!-- Pipeline tab -->
+      <div class="sp-tab-pane hidden" data-pane="pipeline">
+        <div class="sp-section-title">Groq API</div>
+        <div class="sp-field">
+          <label>API key <span class="sp-hint">(stored in your browser, sent only to api.groq.com)</span></label>
+          <input type="password" id="sp-groq-api-key" class="sp-input" placeholder="gsk_…" autocomplete="off">
+        </div>
+        <div class="sp-field" style="margin-bottom:14px">
+          <label>Model</label>
+          <select id="sp-groq-model" class="sp-input">
+            <option value="llama-3.3-70b-versatile">Llama 3.3 70B (versatile)</option>
+            <option value="llama-3.1-8b-instant">Llama 3.1 8B (instant)</option>
+            <option value="mixtral-8x7b-32768">Mixtral 8x7B</option>
+            <option value="gemma2-9b-it">Gemma 2 9B</option>
+            <option value="deepseek-r1-distill-llama-70b">DeepSeek R1 70B</option>
+          </select>
+        </div>
+
+        <div class="sp-section-title">Default pipeline <span class="sp-hint" style="font-weight:400">(leave empty for built-in default)</span></div>
+        <div class="sp-field" style="margin-bottom:10px">
+          <textarea id="sp-pipeline-default" class="sp-input" rows="3"
+            placeholder="rag.search().unique(&quot;url&quot;).slice(3).chunks().llm()"></textarea>
+          <p style="font-size:11px;color:#6b7280;margin-top:4px;">
+            Any <code>//</code> pipeline expression. Query is injected into empty <code>.search()</code> calls.
+            Use <code>.groq()</code> as the terminal to route answers through Groq instead of the local model.
+          </p>
+        </div>
+        <div class="sp-section-title">Examples</div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <button class="sp-btn sp-btn-secondary" style="text-align:left;font-family:monospace;font-size:11px"
+            onclick="document.getElementById('sp-pipeline-default').value='rag.search().unique(&quot;url&quot;).slice(3).chunks().llm()'">
+            rag.search().unique("url").slice(3).chunks().llm()
+          </button>
+          <button class="sp-btn sp-btn-secondary" style="text-align:left;font-family:monospace;font-size:11px"
+            onclick="document.getElementById('sp-pipeline-default').value='rag.search().unique(&quot;url&quot;).slice(3).chunks().groq()'">
+            rag.search().unique("url").slice(3).chunks().groq()  &nbsp;(Groq)
+          </button>
+          <button class="sp-btn sp-btn-secondary" style="text-align:left;font-family:monospace;font-size:11px"
+            onclick="document.getElementById('sp-pipeline-default').value='rag.search().unique(&quot;url&quot;).slice(5).chunks().llm()'">
+            rag.search().unique("url").slice(5).chunks().llm()  &nbsp;(more sources)
+          </button>
+        </div>
+        <div class="sp-section-title" style="margin-top:14px">Trace</div>
+        <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 12px; background:#f9fafb; border:1px solid #e5e7eb; border-radius:8px; margin-bottom:8px;">
+          <div>
+            <div style="font-size:12px; font-weight:700; color:#374151;">Show pipeline trace</div>
+            <div style="font-size:11px; color:#6b7280; margin-top:2px;">Adds a collapsible <strong>▶ Pipeline trace</strong> link at the bottom of each response. Also available via <code>// trace("query")</code>.</div>
+          </div>
+          <label style="position:relative; display:inline-block; width:40px; height:22px; flex-shrink:0; margin-left:12px; cursor:pointer;">
+            <input type="checkbox" id="sp-trace-enabled" style="opacity:0; width:0; height:0; position:absolute;">
+            <span id="sp-trace-toggle-track" style="position:absolute; cursor:pointer; inset:0; background:#d1d5db; border-radius:11px; transition:background 0.2s;"></span>
+            <span id="sp-trace-toggle-thumb" style="position:absolute; height:16px; width:16px; left:3px; top:3px; background:white; border-radius:50%; transition:transform 0.2s; box-shadow:0 1px 3px rgba(0,0,0,0.2);"></span>
+          </label>
         </div>
       </div>
 

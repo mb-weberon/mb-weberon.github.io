@@ -313,7 +313,6 @@ function updateEngineStatus() {
 
   const modelLabel = engineState.model
     ? (() => {
-        // Find the short label for the loaded model, fall back to a trimmed ID
         const found = getModels().find(m => engineState.model.startsWith(m.id));
         const shortLabel = found
           ? found.label
@@ -322,9 +321,15 @@ function updateEngineStatus() {
       })()
     : '';
 
+  const groqKey   = RAGConfig.get('groq.apiKey');
+  const groqModel = RAGConfig.get('groq.model') || 'llama-3.3-70b-versatile';
+  const groqBadge = groqKey
+    ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-orange-100 text-orange-700">☁ Groq: ${groqModel}</span>`
+    : '';
+
   bar.innerHTML = `
     <div class="flex items-center gap-2 flex-wrap">
-      ${dot} ${modeBadge} ${gpuBadge} ${modelLabel}
+      ${dot} ${modeBadge} ${gpuBadge} ${modelLabel} ${groqBadge}
     </div>
   `;
 }
@@ -978,8 +983,42 @@ class Collection {
     return this._docs.map(d => typeof d === 'string' ? d : (d.title || d.url || String(d))).join(sep);
   }
 
+  async rewrite(promptOverride) {
+    const input = this._query ?? '';
+    if (!input) {
+      return this._next(this._docs, this._query, {
+        op: 'rewrite', skipped: true, reason: 'no ambient query to rewrite'
+      });
+    }
+    if (!llmEngine) {
+      return this._next(this._docs, this._query, {
+        op: 'rewrite', skipped: true, reason: 'LLM not loaded'
+      });
+    }
+    const t0     = Date.now();
+    const prompt = promptOverride ||
+      'Fix spelling mistakes and expand abbreviations in the following search query. Do NOT change the meaning or add new ideas — only correct the words as written. Return ONLY the corrected query text, nothing else.';
+    try {
+      const { answer } = await _callLLM(prompt, input, '', null);
+      const output = answer.trim().replace(/^["']|["']$/g, '');
+      return this._next(this._docs, output, {
+        op:      'rewrite',
+        input,
+        output,
+        elapsed: Date.now() - t0,
+      });
+    } catch(e) {
+      console.warn('Collection.rewrite() failed:', e.message);
+      return this._next(this._docs, this._query, {
+        op: 'rewrite', skipped: true, reason: 'LLM error: ' + e.message
+      });
+    }
+  }
+
   async search(q, k) {
-    if (!q) return this._next(this._docs, this._query, { op: 'search', skipped: true, reason: 'empty query' });
+    // No explicit q — use ambient _query (set by rewrite() or rag root context)
+    if (!q) q = this._query ?? '';
+    if (!q) return this._next(this._docs, null, { op: 'search', skipped: true, reason: 'no query provided' });
     k = k ?? this._searchK ?? Math.min(this._docs.length, 50);
     const before = this._docs.length;
     const t0     = Date.now();
@@ -1080,7 +1119,32 @@ class Collection {
     return { answer, sources };
   }
 
-  async trace(signal) {
+  async groq(argsStr, signal) {
+    const { prompt, userInput } = _parseLlmArgs(argsStr);
+    const systemPrompt = prompt ?? RAGConfig.get('llm.systemPrompt');
+    const query        = userInput ?? this._query ?? 'Summarize the key information.';
+    const charBudget   = RAGConfig.get('retrieval.passageCharLimit') * getMaxSources();
+    const passageLen   = RAGConfig.get('retrieval.passageCharLimit');
+
+    await ensureTextLoaded();
+    const seenUrls = new Set();
+    const sources  = [];
+    let usedChars  = 0;
+    for (const doc of this._docs) {
+      if (seenUrls.has(doc.url)) continue;
+      const text = (doc._text || getText(doc.id)).substring(0, passageLen);
+      if (usedChars + text.length > charBudget && sources.length > 0) break;
+      seenUrls.add(doc.url);
+      sources.push({ ...doc, _resolvedText: text });
+      usedChars += text.length;
+    }
+
+    const passages = sources.map((d, i) => `[${i+1}] ${d._resolvedText}`).join('\n\n');
+    const { answer } = await _callGroq(systemPrompt, query, passages, signal);
+    return { answer, sources };
+  }
+
+  async trace(signal, provider = 'local') {
     const sep  = '\u2500'.repeat(48);
     const sep2 = '\u2550'.repeat(48);
     const lines = [];
@@ -1096,6 +1160,19 @@ class Collection {
       if (stage.op === 'root') {
         lines.push('\u25a0 metaDocs');
         lines.push('  total     ' + stage.count + ' chunks');
+        lines.push('');
+        continue;
+      }
+
+      if (stage.op === 'rewrite') {
+        if (stage.skipped) {
+          lines.push('\u25a0 .rewrite()  SKIPPED (' + stage.reason + ')');
+        } else {
+          lines.push('\u25a0 .rewrite()');
+          lines.push('  input    "' + stage.input + '"');
+          lines.push('  output   "' + stage.output + '"');
+          lines.push('  elapsed  ' + stage.elapsed + 'ms');
+        }
         lines.push('');
         continue;
       }
@@ -1210,38 +1287,135 @@ class Collection {
     lines.push('');
 
     const systemPrompt = RAGConfig.get('llm.systemPrompt');
+    const isGroq = provider === 'groq';
     lines.push('\u25a0 .trace()  \u2500 generate');
     lines.push('  query      "' + query + '"');
     lines.push('  prompt     ' + systemPrompt.length + ' chars  "' + systemPrompt.replace(/\n/g, ' ').slice(0, 60) + (systemPrompt.length > 60 ? '\u2026' : '') + '"');
     const histN    = RAGConfig.get('llm.historyExchanges');
     const histMsgs = messages.filter(m => !m.isWelcome && (m.role === 'user' || m.role === 'assistant')).slice(-(histN * 2 + 1), -1);
     lines.push('  history    ' + Math.floor(histMsgs.length / 2) + ' of ' + histN + ' exchange(s)');
-    lines.push('  model      ' + (engineState.model || 'not loaded'));
-    lines.push('  temp       ' + RAGConfig.get('llm.temperature') + '  maxTokens:' + RAGConfig.get('llm.maxTokens') + '  rep_penalty:' + RAGConfig.get('llm.repetitionPenalty'));
+    if (isGroq) {
+      lines.push('  provider   groq  model:' + (RAGConfig.get('groq.model') || 'llama-3.3-70b-versatile'));
+    } else {
+      lines.push('  model      ' + (engineState.model || 'not loaded'));
+      lines.push('  temp       ' + RAGConfig.get('llm.temperature') + '  maxTokens:' + RAGConfig.get('llm.maxTokens') + '  rep_penalty:' + RAGConfig.get('llm.repetitionPenalty'));
+    }
     lines.push('');
 
     let answer = '(LLM not available)';
-    if (llmEngine) {
-      const t6 = Date.now();
-      try {
-        const passages = sources.map((d, i) => '[' + (i+1) + '] ' + d._resolvedText).join('\n\n');
-        const result   = await _callLLM(systemPrompt, query, passages, signal);
+    const t6 = Date.now();
+    try {
+      const passages = sources.map((d, i) => '[' + (i+1) + '] ' + d._resolvedText).join('\n\n');
+      if (isGroq) {
+        const result = await _callGroq(systemPrompt, query, passages, signal);
         answer = result.answer;
+      } else if (llmEngine) {
+        const result = await _callLLM(systemPrompt, query, passages, signal);
+        answer = result.answer;
+      } else {
+        lines.push('  SKIPPED (no local LLM loaded)');
+      }
+      if (answer !== '(LLM not available)') {
         lines.push('  elapsed    ' + (Date.now() - t6) + 'ms');
         lines.push('  tokens     ~' + Math.round(answer.split(/\s+/).length * 1.3) + ' (estimate)');
-      } catch(e) {
-        if (e.name === 'AbortError') throw e;
-        answer = '(LLM error: ' + e.message + ')';
-        lines.push('  ERROR: ' + e.message);
       }
-    } else {
-      lines.push('  SKIPPED (no LLM loaded)');
+    } catch(e) {
+      if (e.name === 'AbortError') throw e;
+      answer = '(LLM error: ' + e.message + ')';
+      lines.push('  ERROR: ' + e.message);
     }
     lines.push('  total     ' + (Date.now() - t0) + 'ms');
     lines.push('');
 
     return { answer, sources, traceLines: lines };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Groq streaming helper — used by Collection.groq()
+// ---------------------------------------------------------------------------
+async function _callGroq(systemPrompt, userInput, passages, signal) {
+  const apiKey = RAGConfig.get('groq.apiKey');
+  if (!apiKey) return { answer: '⚠ Groq API key not set. Add it in Settings → Pipeline.' };
+
+  const model = RAGConfig.get('groq.model') || 'llama-3.3-70b-versatile';
+
+  const systemContent = passages
+    ? `${systemPrompt}\n\nPassages:\n${passages}`
+    : systemPrompt;
+
+  const HISTORY_EXCHANGES = RAGConfig.get('llm.historyExchanges');
+  const history = messages
+    .filter(m => !m.isWelcome && (m.role === 'user' || m.role === 'assistant'))
+    .slice(-(HISTORY_EXCHANGES * 2 + 1), -1)
+    .map(m => ({
+      role: m.role,
+      content: m.role === 'assistant'
+        ? m.content.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().substring(0, 150)
+        : m.content.substring(0, 100)
+    }));
+
+  if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+
+  const typingText = document.querySelector('#typing-indicator span.text-gray-400');
+  if (typingText) typingText.textContent = 'Reading…';
+
+  const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type':  'application/json',
+      'Authorization': 'Bearer ' + apiKey,
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: 'system', content: systemContent },
+        ...history,
+        { role: 'user',   content: userInput },
+      ],
+      temperature: RAGConfig.get('llm.temperature'),
+      max_tokens:  RAGConfig.get('llm.maxTokens'),
+      stream: true,
+    }),
+    signal,
+  });
+
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    const msg = err?.error?.message || resp.statusText;
+    throw new Error('Groq API ' + resp.status + ': ' + msg);
+  }
+
+  const reader  = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let raw = '', firstToken = true, buf = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split('\n');
+    buf = lines.pop(); // hold back incomplete last line
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      const data = line.slice(6).trim();
+      if (data === '[DONE]') continue;
+      try {
+        const token = JSON.parse(data).choices?.[0]?.delta?.content ?? '';
+        if (token && firstToken) { firstToken = false; if (typingText) typingText.textContent = 'Generating…'; }
+        raw += token;
+      } catch {}
+    }
+  }
+
+  const answer = deduplicateSentences(raw)
+    .replace(/\n+\[?\d+\]?\s*https?:\/\/\S+/g, '')
+    .replace(/\n+(sources|references|source list|cited|links)[\s\S]*/gi, '')
+    .replace(/\n+\[\d+\][^\n]*/g, '')
+    .trimEnd();
+
+  return { answer };
 }
 
 // ---------------------------------------------------------------------------
@@ -1440,9 +1614,11 @@ async function _pipelineHelp(prefix) {
   \`.count\`                   — number of results
   \`.pluck("field")\`          — list of field values
   \`.join("sep")\`             — join to string
-  \`.llm()\`                   — send to LLM (query from .search context, or "Summarize the key information.")
+  \`.llm()\`                   — send to local LLM (query from .search context, or "Summarize the key information.")
   \`.llm("question")\`         — explicit question
   \`.llm(prompt="...", "q")\`  — override system prompt + question
+  \`.groq()\`                  — send to Groq API (set key in Settings → Pipeline)
+  \`.groq("question")\`        — explicit question via Groq
   \`.trace\`                   — send to LLM with full pipeline stage report
   \`.text\`                    — show raw chunk text (chunkId, type, question fields)
   \`.duplicates()\`            — find URLs with >1 chunk; renders bar chart with filter chips
@@ -1495,7 +1671,7 @@ ${searchResult}
 \`${p} {{topics.slice(5).join(", ")}}\``, sources: [] };
 }
 
-async function executePipeline(expr, signal) {
+async function executePipeline(expr, signal, context = {}) {
   // {{ }} template expressions — evaluate and return directly
   if (expr.includes('{{')) {
     try {
@@ -1516,34 +1692,23 @@ async function executePipeline(expr, signal) {
     return await _callLLM(systemPrompt, question, [], signal);
   }
 
-  // trace("query") — sugar for rag.search("q").trace()
+  // trace("query") — sugar: delegates to _ragPipeline with trace terminal
   const traceM = expr.trim().match(/^trace\(["'](.+)["']\)\s*$/s);
-  if (traceM) {
-    const q   = traceM[1];
-    const k   = getMaxSources() * RAGConfig.get('retrieval.candidatesMultiplier');
-    const col = await (new Collection(metaDocs, q, k)).search(q);
-    const deduped  = col.unique('url').slice(getMaxSources());
-    const chunked  = await deduped.chunks();
-    return await chunked.trace(signal);
-  }
+  if (traceM) return await _ragPipeline(traceM[1], signal, 'trace');
 
   const rootM = expr.trim().match(/^(metaDocs|pages|topics|questions|rag)([\s\S]*)$/);
   if (!rootM) return null;
 
-  // rag("q") shorthand — expand to full default pipeline
+  // rag("q") shorthand — delegates to _ragPipeline with llm terminal
   if (rootM[1] === 'rag') {
     const callM = (rootM[2] || '').match(/^\(["'](.+)["']\)\s*$/s);
-    if (callM) {
-      const q        = callM[1];
-      const k        = getMaxSources() * RAGConfig.get('retrieval.candidatesMultiplier');
-      const col      = await (new Collection(metaDocs, q, k)).search(q);
-      const deduped  = col.unique('url').slice(getMaxSources());
-      const chunked  = await deduped.chunks();
-      return await chunked.llm('', signal);  // _query already set by .search(q)
-    }
+    if (callM) return await _ragPipeline(callM[1], signal, 'llm');
   }
 
-  let value = _getRootCollection(rootM[1]);
+  // Seed ambient query into rag root from context so .rewrite().search() can pick it up
+  let value = rootM[1] === 'rag' && context.query
+    ? new Collection(metaDocs, context.query, getMaxSources() * RAGConfig.get('retrieval.candidatesMultiplier'))
+    : _getRootCollection(rootM[1]);
   let rest  = rootM[2] || '';
 
   while (rest.startsWith('.')) {
@@ -1553,7 +1718,10 @@ async function executePipeline(expr, signal) {
     const [, method, argsStr, tail] = m;
     rest = tail || '';
 
-    if (method === 'search') {
+    if (method === 'rewrite') {
+      const promptM = (argsStr || '').match(/^["'](.+)["']$/s);
+      value = await value.rewrite(promptM ? promptM[1] : undefined);
+    } else if (method === 'search') {
       const qM = (argsStr || '').match(/^["'](.*)["']$/s);
       const q  = qM ? qM[1] : (argsStr || '').trim();
       value = await value.search(q);  // k defaults to min(50, docs.length)
@@ -1621,8 +1789,11 @@ async function executePipeline(expr, signal) {
       value = await value.chunks();
     } else if (method === 'llm') {
       return await value.llm(argsStr || '', signal);
+    } else if (method === 'groq') {
+      return await value.groq(argsStr || '', signal);
     } else if (method === 'trace') {
-      return await value.trace(signal);
+      const provM = (argsStr || '').match(/^["'](\w+)["']$/);
+      return await value.trace(signal, provM ? provM[1] : 'local');
     } else if (method === 'duplicates') {
       // Show all URLs with more than one chunk, ranked by count desc
       const docs  = value._docs;
@@ -1806,75 +1977,76 @@ async function chat(query, signal = null) {
     };
   }
 
-  // --- Normal RAG path ---
+  // --- Normal RAG path via Collection pipeline ---
+  // Same code path as // rag("query") and // trace("query") — single canonical implementation
+  const ragEnabled = RAGConfig.get('retrieval.ragEnabled') !== false;
 
-  const ragEnabled = RAGConfig.get('retrieval.ragEnabled') !== false; // default true
-  const maxSources = getMaxSources();
-  let uniqueSources = [];
-
-  if (ragEnabled) {
-    // Fetch enough candidates to find maxSources unique URLs even if chunks cluster
-    const sources = await search(query, maxSources * RAGConfig.get('retrieval.candidatesMultiplier'));
-
-    // Dedupe to at most maxSources unique URLs
-    const seenUrls = new Set();
-    sources.forEach(s => {
-      if (!seenUrls.has(s.url) && uniqueSources.length < maxSources) {
-        seenUrls.add(s.url);
-        uniqueSources.push(s);
-      }
-    });
-
-    // Attach a short snippet to each source for footnote display
-    await ensureTextLoaded();
-    uniqueSources.forEach(s => {
-      if (!s.snippet) {
-        s.snippet = getText(s.id).replace(/\s+/g, ' ').trim().substring(0, RAGConfig.get('retrieval.footnoteSnippetLength'));
-      }
-    });
-  }
-
-  // LLM path
-  if (llmEngine) {
+  if (!ragEnabled) {
+    if (!llmEngine) return { answer: '_LLM not available and RAG is disabled._', sources: [] };
     try {
-      const passages = ragEnabled && uniqueSources.length
-        ? uniqueSources.map((s, i) =>
-            `[${i+1}] ${getText(s.id).substring(0, RAGConfig.get('retrieval.passageCharLimit'))}`
-          ).join('\n\n')
-        : '';
-      if (ragEnabled) console.log('📤 Sending context to LLM:\n', passages);
-      else            console.log('📤 RAG disabled — sending query directly to LLM');
-      const { answer } = await _callLLM(RAGConfig.get('llm.systemPrompt'), query, passages, signal);
-      return { answer, sources: uniqueSources };
+      const { answer } = await _callLLM(RAGConfig.get('llm.systemPrompt'), query, '', signal);
+      return { answer, sources: [] };
     } catch (e) {
       if (e.name === 'AbortError') throw e;
-      if (e.message?.includes('Device was lost') || e.message?.includes('external Instance')) {
-        console.warn('⚠️ GPU device lost — resetting engine, please reload model');
-        llmEngine = null;
-        engineState.mode = 'fallback';
-        engineState.failReason = 'GPU device lost — use Load button to reload model';
-        updateEngineStatus();
-      } else {
-        console.warn('LLM failed, falling back to template:', e);
-      }
+      _handleLLMError(e);
+      return { answer: '_LLM error. Please try again._', sources: [] };
     }
   }
 
-  // Template fallback (no LLM, or LLM failed)
-  if (!ragEnabled) {
-    return { answer: '_LLM not available and RAG is disabled — no response can be generated._', sources: [] };
+  try {
+    return await _ragPipeline(query, signal, 'llm');
+  } catch (e) {
+    if (e.name === 'AbortError') throw e;
+    _handleLLMError(e);
   }
 
-  if (uniqueSources.length === 0) {
-    return { answer: 'No relevant content found in your site.', sources: [] };
-  }
-
-  const answer = `Here's what I found on the site:\n\n` +
-    uniqueSources.map((s, i) => `[${i+1}] ${getText(s.id).substring(0, RAGConfig.get('retrieval.passageCharLimit'))}...`).join('\n\n');
-
-  return { answer, sources: uniqueSources };
+  // Template fallback when LLM fails or is not loaded
+  const fallbackCol = await _getRootCollection('rag').search(query);
+  const fallbackSrc = fallbackCol.unique('url').slice(getMaxSources())._docs;
+  await ensureTextLoaded();
+  if (!fallbackSrc.length) return { answer: 'No relevant content found in your site.', sources: [] };
+  const passLen = RAGConfig.get('retrieval.passageCharLimit');
+  const fbAnswer = "Here's what I found on the site:\n\n" +
+    fallbackSrc.map((s, i) => '[' + (i+1) + '] ' + getText(s.id).substring(0, passLen) + '...').join('\n\n');
+  return { answer: fbAnswer, sources: fallbackSrc };
 }
 
+
+// Shared LLM error handler — GPU device lost detection
+function _handleLLMError(e) {
+  if (e.message?.includes('Device was lost') || e.message?.includes('external Instance')) {
+    console.warn('⚠️ GPU device lost — resetting engine, please reload model');
+    llmEngine = null;
+    engineState.mode = 'fallback';
+    engineState.failReason = 'GPU device lost — use Load button to reload model';
+    updateEngineStatus();
+  } else {
+    console.warn('LLM error:', e);
+  }
+}
+
+// Canonical RAG pipeline — single implementation shared by chat(), autoTrace, rag(), trace()
+// terminal: 'llm' | 'trace'
+async function _ragPipeline(query, signal, terminal = 'llm') {
+  // Use configured pipeline expression if set, otherwise use hardcoded default
+  const pipelineExpr = RAGConfig.get('pipeline.default');
+
+  if (pipelineExpr) {
+    // Swap terminal: replace trailing .llm(), .groq(), or .trace() with the requested terminal
+    const expr = pipelineExpr
+      .replace(/\.llm\(([^)]*)\)\s*$/, terminal === 'trace' ? '.trace()' : '.llm($1)')
+      .replace(/\.groq\([^)]*\)\s*$/,  terminal === 'trace' ? '.trace("groq")' : '.groq()')
+      .replace(/\.trace\(\)\s*$/,      terminal === 'trace' ? '.trace()' : '.llm()');
+    return await executePipeline(expr, signal, { query });
+  }
+
+  // Default hardcoded pipeline — equivalent to:
+  // rag.rewrite().search().unique("url").slice(n).chunks().llm/trace()
+  const col     = await _getRootCollection('rag').search(query);
+  const prepped = await col.unique('url').slice(getMaxSources()).chunks();
+  if (terminal === 'trace') return await prepped.trace(signal);
+  return await prepped.llm('', signal);
+}
 
 // Active abort controller — set while a query is in flight, null otherwise
 let _abortController = null;
@@ -1957,21 +2129,14 @@ window.ask = async function() {
 
   try {
     let result;
-    if (autoTrace) {
-      const k       = getMaxSources() * RAGConfig.get('retrieval.candidatesMultiplier');
-      const col     = await (new Collection(metaDocs, query, k)).search(query);
-      const chunked = await col.unique('url').slice(getMaxSources()).chunks();
-      result = await chunked.trace(signal);
-    } else {
-      result = await chat(query, signal);
-    }
+    result = autoTrace
+      ? await _ragPipeline(query, signal, 'trace')
+      : await chat(query, signal);
     answer     = result.answer;
     sources    = result.sources || [];
     traceLines = result.traceLines || null;
     // For // pipeline commands that produced a trace, fold trace into the terminal
-    // card body so the dark console card shows everything inline. For autoTrace
-    // (normal chat), keep traceLines separate so renderMessages can hide them
-    // in a collapsible <details> block.
+    // card body so the dark console card shows everything inline.
     if (isPipelineCmd && traceLines) {
       const sep = '\u2550'.repeat(48);
       answer = [...traceLines, '', sep, 'ANSWER', sep, answer].join('\n');
@@ -2079,6 +2244,7 @@ function renderMessages() {
               <span class="msg-pipeline-dot msg-pipeline-dot-y"></span>
               <span class="msg-pipeline-dot msg-pipeline-dot-g"></span>
               <span class="msg-pipeline-label">${m.pipelineQuery ? escHtml(m.pipelineQuery) : 'pipeline'}</span>
+              <button onclick="event.stopPropagation();openSettingsPipeline()" title="Pipeline settings" style="margin-left:auto;background:none;border:none;cursor:pointer;color:#6c7086;font-size:11px;padding:0 2px;line-height:1" onmouseover="this.style.color='#cba6f7'" onmouseout="this.style.color='#6c7086'">⚙</button>
             </div>
             <div class="msg-pipeline-body">${body}</div>
             ${sourcesHtml}
@@ -2168,6 +2334,7 @@ function renderMessages() {
         ).join('');
         content += `<div class="msg-related-chips">${chips}</div>`;
       }
+
     }
 
     const isUser = m.role === 'user';
@@ -2514,16 +2681,12 @@ window.renderMessages  = renderMessages;
 // ---------------------------------------------------------------------------
 // Trace mode toggle
 // ---------------------------------------------------------------------------
+
 function _syncTraceBtnVisual(enabled) {
   const btn = document.getElementById('trace-toggle-btn');
   if (!btn) return;
-  if (enabled) {
-    btn.classList.add('trace-btn-active');
-    btn.title = 'Trace mode ON — click to disable';
-  } else {
-    btn.classList.remove('trace-btn-active');
-    btn.title = 'Trace mode OFF — click to enable';
-  }
+  btn.classList.toggle('trace-btn-active', enabled);
+  btn.title = enabled ? 'Trace mode ON — click to disable' : 'Trace mode OFF — click to enable';
 }
 
 window.toggleTraceMode = function() {
@@ -2556,6 +2719,7 @@ function _pcSets() {
 
   // Insert strings have NO leading dot — dot is part of commitPart or added by caller
   const TRANSFORMS = [
+    { label: '.rewrite()', insert: 'rewrite()',           cursorBack: 0 },
     { label: '.search()',  insert: 'search("")',         cursorBack: 2 },
     { label: '.filter()',  insert: 'filter("")',          cursorBack: 1 },
     { label: '.unique()',  insert: 'unique("url")',      cursorBack: 5 },
@@ -2568,11 +2732,13 @@ function _pcSets() {
     { label: '.text',       insert: 'text',               cursorBack: 0 },
     { label: '.duplicates',  insert: 'duplicates',         cursorBack: 0 },
     { label: '.trace',       insert: 'trace',              cursorBack: 0 },
+    { label: '.groq()',      insert: 'groq()',             cursorBack: 0 },
   ];
 
   const AFTER_CHUNKS = [
     { label: '.llm()',     insert: 'llm()',              cursorBack: 0 },
     { label: '.llm("…")', insert: 'llm("")',            cursorBack: 2 },
+    { label: '.groq()',    insert: 'groq()',             cursorBack: 0 },
     { label: '.count',     insert: 'count',               cursorBack: 0 },
     { label: '.pluck()',   insert: 'pluck("title")',     cursorBack: 8 },
     { label: '.join()',    insert: 'join(", ")',          cursorBack: 4 },
@@ -2777,7 +2943,6 @@ document.addEventListener('DOMContentLoaded', function() {
     sendBtn.onclick = window.ask;
   }
 
-  // Sync trace button visual from persisted config
   _syncTraceBtnVisual(RAGConfig.get('debug.traceEnabled') === true);
 
   if (input) {

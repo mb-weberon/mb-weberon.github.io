@@ -58,8 +58,14 @@ const DEFAULT_SETTINGS = {
     exploreCount: 20,
     relatedCount: 5,
   },
-  debug: {
-    traceEnabled: false,
+  pipeline: {
+    // null = hardcoded default. Set to any // expression, e.g.:
+    // 'rag.search().unique("url").slice(3).chunks().groq()'
+    default: null,
+  },
+  groq: {
+    apiKey: null,
+    model:  'llama-3.3-70b-versatile',
   },
 };
 
@@ -268,7 +274,7 @@ const _state = {
   models:   _doLoadModels(),
 };
 
-const APP_VERSION = 'v2.0';
+const APP_VERSION = 'v2.4';
 
 window.RAGConfig = {
   version: APP_VERSION,

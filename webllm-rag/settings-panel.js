@@ -21,6 +21,11 @@ function closeSettingsPanel() {
   document.body.style.overflow = '';
 }
 
+function openSettingsPipeline() {
+  openSettingsPanel();
+  switchTab('pipeline');
+}
+
 // ---------------------------------------------------------------------------
 // Tab switching
 // ---------------------------------------------------------------------------
@@ -66,17 +71,22 @@ function populatePanel() {
   _slider('sp-explore-count',           (s.questions || {}).exploreCount ?? 20);
   _slider('sp-related-count',           (s.questions || {}).relatedCount ?? 5);
 
-  const traceEnabledEl = document.getElementById('sp-trace-enabled');
-  if (traceEnabledEl) {
-    traceEnabledEl.checked = (s.debug || {}).traceEnabled === true;
-    const traceTrack = document.getElementById('sp-trace-toggle-track');
-    const traceThumb = document.getElementById('sp-trace-toggle-thumb');
-    if (traceTrack) traceTrack.style.background = traceEnabledEl.checked ? '#7c3aed' : '#d1d5db';
-    if (traceThumb) traceThumb.style.transform   = traceEnabledEl.checked ? 'translateX(18px)' : 'translateX(0)';
-  }
-
   // Models tab
   renderModelCards();
+
+  // Pipeline tab
+  _val('sp-groq-api-key', (s.groq || {}).apiKey || '');
+  const groqModelEl = document.getElementById('sp-groq-model');
+  if (groqModelEl) groqModelEl.value = (s.groq || {}).model || 'llama-3.3-70b-versatile';
+  _val('sp-pipeline-default', (s.pipeline || {}).default || '');
+  const traceEl = document.getElementById('sp-trace-enabled');
+  const traceTrack = document.getElementById('sp-trace-toggle-track');
+  const traceThumb = document.getElementById('sp-trace-toggle-thumb');
+  if (traceEl) {
+    traceEl.checked = (s.debug || {}).traceEnabled === true;
+    if (traceTrack) traceTrack.style.background = traceEl.checked ? '#7c3aed' : '#d1d5db';
+    if (traceThumb) traceThumb.style.transform   = traceEl.checked ? 'translateX(18px)' : 'translateX(0)';
+  }
 
   // Switch to first tab
   switchTab('prompt');
@@ -118,12 +128,12 @@ function initSliders() {
 
   // Trace toggle visual wiring
   const traceCheckbox = document.getElementById('sp-trace-enabled');
-  const traceTrack    = document.getElementById('sp-trace-toggle-track');
-  const traceThumb    = document.getElementById('sp-trace-toggle-thumb');
+  const traceTrackEl  = document.getElementById('sp-trace-toggle-track');
+  const traceThumbEl  = document.getElementById('sp-trace-toggle-thumb');
   function updateTraceToggleVisual() {
-    if (!traceCheckbox || !traceTrack || !traceThumb) return;
-    traceTrack.style.background = traceCheckbox.checked ? '#7c3aed' : '#d1d5db';
-    traceThumb.style.transform  = traceCheckbox.checked ? 'translateX(18px)' : 'translateX(0)';
+    if (!traceCheckbox || !traceTrackEl || !traceThumbEl) return;
+    traceTrackEl.style.background = traceCheckbox.checked ? '#7c3aed' : '#d1d5db';
+    traceThumbEl.style.transform  = traceCheckbox.checked ? 'translateX(18px)' : 'translateX(0)';
   }
   if (traceCheckbox) traceCheckbox.addEventListener('change', updateTraceToggleVisual);
 }
@@ -156,14 +166,23 @@ function saveSettings() {
   current.questions.exploreCount = parseInt(document.getElementById('sp-explore-count').value);
   current.questions.relatedCount = parseInt(document.getElementById('sp-related-count').value);
 
+  // Pipeline
+  if (!current.pipeline) current.pipeline = {};
+  const pipelineVal = (document.getElementById('sp-pipeline-default')?.value || '').trim();
+  current.pipeline.default = pipelineVal || null;
+
+  if (!current.groq) current.groq = {};
+  current.groq.apiKey = (document.getElementById('sp-groq-api-key')?.value || '').trim() || null;
+  current.groq.model  = document.getElementById('sp-groq-model')?.value || 'llama-3.3-70b-versatile';
+
   if (!current.debug) current.debug = {};
-  const traceEl = document.getElementById('sp-trace-enabled');
-  current.debug.traceEnabled = traceEl ? traceEl.checked : false;
+  const traceElSave = document.getElementById('sp-trace-enabled');
+  current.debug.traceEnabled = traceElSave ? traceElSave.checked : false;
 
   RAGConfig.applySettings(current);
 
-  // Sync header trace button
-  if (typeof _syncTraceBtnVisual === 'function') _syncTraceBtnVisual(current.debug.traceEnabled);
+  _syncTraceBtnVisual(current.debug.traceEnabled);
+  if (typeof updateEngineStatus === 'function') updateEngineStatus();
 
   // Models — collect from cards
   const cards = document.querySelectorAll('.sp-model-card');
