@@ -37,7 +37,8 @@ const KEYS = {
 // ---------------------------------------------------------------------------
 const DEFAULT_SETTINGS = {
   llm: {
-    systemPrompt:      'You are a helpful real estate assistant. Answer using ONLY the passages below. Cite as [1][2][3]. Be thorough but concise.',
+    provider:          'groq',    // 'local' = in-browser LLM, 'groq' = remote Groq API
+    systemPrompt:      'Act human not AI, but do not lie that you are a human. You are a helpful real estate assistant. Answer using ONLY the passages below, and what the user message. Cite as [1][2][3] as needed. Be thorough but concise, polite, engaging to keep conversation going. Try to detect if the user is buyer or seller. If it is not clear, ask. If the passages given to you are written for a seller and you are conversing with a buyer, rephrase it from the buyer point of view, and vice versa.',
     temperature:       0.4,
     repetitionPenalty: 1.3,
     maxTokens:         400,
@@ -64,8 +65,10 @@ const DEFAULT_SETTINGS = {
     default: null,
   },
   groq: {
-    apiKey: null,
-    model:  'llama-3.3-70b-versatile',
+    apiKey:   null,
+    model:    'llama-3.3-70b-versatile',
+    proxyUrl:   null,   // optional proxy — key stays server-side, no Authorization header sent
+    proxyToken: null,   // token sent as X-Proxy-Token header to authenticate with the proxy
   },
 };
 
@@ -133,6 +136,12 @@ function normaliseModel(m) {
 }
 
 // ---------------------------------------------------------------------------
+// Server config — operator-injected overrides (set window.RAGServerConfig
+// before config.js loads to lock fields for shared deployments)
+// ---------------------------------------------------------------------------
+const _serverConfig = (typeof window !== 'undefined' && window.RAGServerConfig) || {};
+
+// ---------------------------------------------------------------------------
 // Migration — move old localStorage keys to new prefixed keys
 // ---------------------------------------------------------------------------
 function migrateOldKeys() {
@@ -159,10 +168,12 @@ function _doLoadSettings() {
   try {
     const raw = _storageGet(KEYS.settings);
     const saved = raw ? JSON.parse(raw) : {};
-    return deepMerge(DEFAULT_SETTINGS, saved);
+    // Three-layer merge: defaults ← user storage ← server config (server always wins)
+    const withUser = deepMerge(DEFAULT_SETTINGS, saved);
+    return deepMerge(withUser, _serverConfig);
   } catch(e) {
     console.warn('⚠️ Failed to load settings, using defaults:', e.message);
-    return JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+    return deepMerge(JSON.parse(JSON.stringify(DEFAULT_SETTINGS)), _serverConfig);
   }
 }
 
@@ -274,7 +285,7 @@ const _state = {
   models:   _doLoadModels(),
 };
 
-const APP_VERSION = 'v2.4';
+const APP_VERSION = 'v2.4-server-config';
 
 window.RAGConfig = {
   version: APP_VERSION,
@@ -297,7 +308,9 @@ window.RAGConfig = {
 
   // Replace entire settings object and persist
   applySettings(settings) {
-    _state.settings = deepMerge(DEFAULT_SETTINGS, settings);
+    const merged = deepMerge(DEFAULT_SETTINGS, settings);
+    // Server config always wins — re-apply on top
+    _state.settings = deepMerge(merged, _serverConfig);
     _doSaveSettings(_state.settings);
   },
 
@@ -339,6 +352,14 @@ window.RAGConfig = {
     _state.settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
     _state.models   = JSON.parse(JSON.stringify(DEFAULT_MODELS));
   },
+
+  // Returns true if this dot-path is locked by server config (user cannot override)
+  isLocked(path) {
+    return getByPath(_serverConfig, path) !== undefined;
+  },
+
+  // The raw server config (read-only reference)
+  serverConfig: _serverConfig,
 
   // Storage key constants — used by app.js
   KEYS,

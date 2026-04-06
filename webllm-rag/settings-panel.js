@@ -75,6 +75,14 @@ function populatePanel() {
   renderModelCards();
 
   // Pipeline tab
+  const provider = (s.llm || {}).provider || 'local';
+  const provLocalEl = document.getElementById('sp-provider-local');
+  const provGroqEl  = document.getElementById('sp-provider-groq');
+  if (provLocalEl) provLocalEl.checked = provider === 'local';
+  if (provGroqEl)  provGroqEl.checked  = provider === 'groq';
+
+  _val('sp-groq-proxy-url', (s.groq || {}).proxyUrl || '');
+  _val('sp-groq-proxy-token', (s.groq || {}).proxyToken || '');
   _val('sp-groq-api-key', (s.groq || {}).apiKey || '');
   const groqModelEl = document.getElementById('sp-groq-model');
   if (groqModelEl) groqModelEl.value = (s.groq || {}).model || 'llama-3.3-70b-versatile';
@@ -88,8 +96,60 @@ function populatePanel() {
     if (traceThumb) traceThumb.style.transform   = traceEl.checked ? 'translateX(18px)' : 'translateX(0)';
   }
 
+  _applyLocks();
+
   // Switch to first tab
   switchTab('prompt');
+}
+
+// Map from element ID → settings dot-path for lock checking
+const _LOCK_MAP = [
+  ['sp-provider-local',           'llm.provider'],
+  ['sp-provider-groq',            'llm.provider'],
+  ['sp-system-prompt',           'llm.systemPrompt'],
+  ['sp-sys-cmd-prefix',          'ui.systemCommandPrefix'],
+  ['sp-welcome-msg',             'ui.welcomeMessage'],
+  ['sp-temperature',             'llm.temperature'],
+  ['sp-repetition-penalty',      'llm.repetitionPenalty'],
+  ['sp-max-tokens',              'llm.maxTokens'],
+  ['sp-history-exchanges',       'llm.historyExchanges'],
+  ['sp-rag-enabled',             'retrieval.ragEnabled'],
+  ['sp-passage-char-limit',      'retrieval.passageCharLimit'],
+  ['sp-contact-boost',           'retrieval.contactBoost'],
+  ['sp-candidates-multiplier',   'retrieval.candidatesMultiplier'],
+  ['sp-footnote-snippet-length', 'retrieval.footnoteSnippetLength'],
+  ['sp-groq-proxy-url',          'groq.proxyUrl'],
+  ['sp-groq-api-key',            'groq.apiKey'],
+  ['sp-groq-model',              'groq.model'],
+  ['sp-pipeline-default',        'pipeline.default'],
+  ['sp-trace-enabled',           'debug.traceEnabled'],
+];
+
+function _applyLocks() {
+  _LOCK_MAP.forEach(([id, path]) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const locked = RAGConfig.isLocked(path);
+    el.disabled = locked;
+
+    // Remove any existing badge first
+    const parent = el.closest('.sp-field') || el.parentElement;
+    parent.querySelector('.sp-lock-badge')?.remove();
+
+    if (locked) {
+      const badge = document.createElement('span');
+      badge.className = 'sp-lock-badge';
+      badge.textContent = '🔒 set by server';
+      parent.appendChild(badge);
+    }
+  });
+
+  // When proxy URL is locked/set, show a note on the API key field
+  const proxyLocked = RAGConfig.isLocked('groq.proxyUrl') || !!RAGConfig.get('groq.proxyUrl');
+  const keyEl = document.getElementById('sp-groq-api-key');
+  if (keyEl && proxyLocked && !RAGConfig.isLocked('groq.apiKey')) {
+    keyEl.placeholder = 'Not needed — API key managed by proxy';
+  }
 }
 
 function _val(id, value) {
@@ -144,6 +204,10 @@ function initSliders() {
 function saveSettings() {
   const current = RAGConfig.getSettings();
 
+  // Provider
+  const provGroqChecked = document.getElementById('sp-provider-groq')?.checked;
+  current.llm.provider = provGroqChecked ? 'groq' : 'local';
+
   // Prompt
   current.llm.systemPrompt         = document.getElementById('sp-system-prompt').value.trim();
   current.ui.systemCommandPrefix    = document.getElementById('sp-sys-cmd-prefix').value.trim() || '//';
@@ -172,8 +236,10 @@ function saveSettings() {
   current.pipeline.default = pipelineVal || null;
 
   if (!current.groq) current.groq = {};
-  current.groq.apiKey = (document.getElementById('sp-groq-api-key')?.value || '').trim() || null;
-  current.groq.model  = document.getElementById('sp-groq-model')?.value || 'llama-3.3-70b-versatile';
+  current.groq.proxyUrl   = (document.getElementById('sp-groq-proxy-url')?.value || '').trim() || null;
+  current.groq.proxyToken = (document.getElementById('sp-groq-proxy-token')?.value || '').trim() || null;
+  current.groq.apiKey     = (document.getElementById('sp-groq-api-key')?.value || '').trim() || null;
+  current.groq.model    = document.getElementById('sp-groq-model')?.value || 'llama-3.3-70b-versatile';
 
   if (!current.debug) current.debug = {};
   const traceElSave = document.getElementById('sp-trace-enabled');
@@ -183,6 +249,9 @@ function saveSettings() {
 
   _syncTraceBtnVisual(current.debug.traceEnabled);
   if (typeof updateEngineStatus === 'function') updateEngineStatus();
+
+  // Re-init LLM if provider changed (e.g. local→groq skips model load, groq→local triggers it)
+  if (typeof initLLM === 'function') initLLM();
 
   // Models — collect from cards
   const cards = document.querySelectorAll('.sp-model-card');

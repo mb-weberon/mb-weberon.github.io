@@ -292,6 +292,21 @@ function updateEngineStatus() {
   let modeBadge = '';
   let dot = '';
 
+  const isGroqProvider = RAGConfig.get('llm.provider') === 'groq';
+
+  // When provider is groq, show only the Groq badge
+  if (isGroqProvider) {
+    const groqModel = RAGConfig.get('groq.model') || 'llama-3.3-70b-versatile';
+    const groqProxy = RAGConfig.get('groq.proxyUrl');
+    bar.innerHTML = `
+      <div class="flex items-center gap-2 flex-wrap">
+        <span class="inline-block w-2 h-2 rounded-full bg-green-500"></span>
+        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-orange-100 text-orange-700">☁ Groq: ${groqModel}${groqProxy ? ' (proxy)' : ''}</span>
+      </div>
+    `;
+    return;
+  }
+
   if (engineState.mode === 'loading') {
     dot = '<span class="inline-block w-2 h-2 rounded-full bg-yellow-400 animate-pulse"></span>';
     const prog = engineState.loadProgress !== null ? ` ${engineState.loadProgress}%` : '';
@@ -321,15 +336,9 @@ function updateEngineStatus() {
       })()
     : '';
 
-  const groqKey   = RAGConfig.get('groq.apiKey');
-  const groqModel = RAGConfig.get('groq.model') || 'llama-3.3-70b-versatile';
-  const groqBadge = groqKey
-    ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-orange-100 text-orange-700">☁ Groq: ${groqModel}</span>`
-    : '';
-
   bar.innerHTML = `
     <div class="flex items-center gap-2 flex-wrap">
-      ${dot} ${modeBadge} ${gpuBadge} ${modelLabel} ${groqBadge}
+      ${dot} ${modeBadge} ${gpuBadge} ${modelLabel}
     </div>
   `;
 }
@@ -610,6 +619,21 @@ function getText(id) {
 // Initialize WebLLM — tries WebGPU first, falls back to CPU via Transformers.js
 // Skips both on iOS Safari where neither works reliably without special server headers
 async function initLLM() {
+
+  // --- Remote provider check — skip local LLM entirely ---
+  if (RAGConfig.get('llm.provider') === 'groq') {
+    engineState.mode = 'groq';
+    engineState.model = null;
+    updateEngineStatus();
+    const row = document.getElementById('model-selector-row');
+    if (row) row.classList.add('hidden');
+    console.log('☁ LLM provider set to Groq — skipping local model load');
+    return;
+  }
+
+  // Show model selector when provider is local
+  const row = document.getElementById('model-selector-row');
+  if (row) row.classList.remove('hidden');
 
   // --- Secure context check ---
   // WebGPU, WebNN, and SharedArrayBuffer (WASM threads) all require HTTPS or localhost.
@@ -1115,7 +1139,8 @@ class Collection {
     }
 
     const passages = sources.map((d, i) => `[${i+1}] ${d._resolvedText}`).join('\n\n');
-    const { answer } = await _callLLM(systemPrompt, query, passages, signal);
+    const callFn = RAGConfig.get('llm.provider') === 'groq' ? _callGroq : _callLLM;
+    const { answer } = await callFn(systemPrompt, query, passages, signal);
     return { answer, sources };
   }
 
@@ -1306,7 +1331,8 @@ class Collection {
     const t6 = Date.now();
     try {
       const passages = sources.map((d, i) => '[' + (i+1) + '] ' + d._resolvedText).join('\n\n');
-      if (isGroq) {
+      const useGroq = isGroq || RAGConfig.get('llm.provider') === 'groq';
+      if (useGroq) {
         const result = await _callGroq(systemPrompt, query, passages, signal);
         answer = result.answer;
       } else if (llmEngine) {
@@ -1335,10 +1361,19 @@ class Collection {
 // Groq streaming helper — used by Collection.groq()
 // ---------------------------------------------------------------------------
 async function _callGroq(systemPrompt, userInput, passages, signal) {
-  const apiKey = RAGConfig.get('groq.apiKey');
-  if (!apiKey) return { answer: '⚠ Groq API key not set. Add it in Settings → Pipeline.' };
+  const proxyUrl = RAGConfig.get('groq.proxyUrl');
+  const apiKey   = RAGConfig.get('groq.apiKey');
+  if (!proxyUrl && !apiKey) return { answer: '⚠ Groq API key not set. Add it in Settings → Pipeline.' };
 
-  const model = RAGConfig.get('groq.model') || 'llama-3.3-70b-versatile';
+  const model    = RAGConfig.get('groq.model') || 'llama-3.3-70b-versatile';
+  const endpoint = proxyUrl || 'https://api.groq.com/openai/v1/chat/completions';
+  const reqHeaders = { 'Content-Type': 'application/json' };
+  if (proxyUrl) {
+    const proxyToken = RAGConfig.get('groq.proxyToken');
+    if (proxyToken) reqHeaders['X-Proxy-Token'] = proxyToken;
+  } else {
+    reqHeaders['Authorization'] = 'Bearer ' + apiKey;
+  }
 
   const systemContent = passages
     ? `${systemPrompt}\n\nPassages:\n${passages}`
@@ -1360,12 +1395,9 @@ async function _callGroq(systemPrompt, userInput, passages, signal) {
   const typingText = document.querySelector('#typing-indicator span.text-gray-400');
   if (typingText) typingText.textContent = 'Reading…';
 
-  const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+  const resp = await fetch(endpoint, {
     method: 'POST',
-    headers: {
-      'Content-Type':  'application/json',
-      'Authorization': 'Bearer ' + apiKey,
-    },
+    headers: reqHeaders,
     body: JSON.stringify({
       model,
       messages: [
@@ -1689,7 +1721,8 @@ async function executePipeline(expr, signal, context = {}) {
     const { prompt, userInput } = _parseLlmArgs(llmRootM[1]);
     const systemPrompt = prompt ?? RAGConfig.get('llm.systemPrompt');
     const question = userInput ?? 'Summarize the key information.';
-    return await _callLLM(systemPrompt, question, [], signal);
+    const callFn = RAGConfig.get('llm.provider') === 'groq' ? _callGroq : _callLLM;
+    return await callFn(systemPrompt, question, [], signal);
   }
 
   // trace("query") — sugar: delegates to _ragPipeline with trace terminal
@@ -1982,9 +2015,11 @@ async function chat(query, signal = null) {
   const ragEnabled = RAGConfig.get('retrieval.ragEnabled') !== false;
 
   if (!ragEnabled) {
-    if (!llmEngine) return { answer: '_LLM not available and RAG is disabled._', sources: [] };
+    const isGroqProvider = RAGConfig.get('llm.provider') === 'groq';
+    if (!isGroqProvider && !llmEngine) return { answer: '_LLM not available and RAG is disabled._', sources: [] };
     try {
-      const { answer } = await _callLLM(RAGConfig.get('llm.systemPrompt'), query, '', signal);
+      const callFn = isGroqProvider ? _callGroq : _callLLM;
+      const { answer } = await callFn(RAGConfig.get('llm.systemPrompt'), query, '', signal);
       return { answer, sources: [] };
     } catch (e) {
       if (e.name === 'AbortError') throw e;
@@ -2031,20 +2066,23 @@ async function _ragPipeline(query, signal, terminal = 'llm') {
   // Use configured pipeline expression if set, otherwise use hardcoded default
   const pipelineExpr = RAGConfig.get('pipeline.default');
 
+  const isGroqProvider = RAGConfig.get('llm.provider') === 'groq';
+
   if (pipelineExpr) {
     // Swap terminal: replace trailing .llm(), .groq(), or .trace() with the requested terminal
     const expr = pipelineExpr
-      .replace(/\.llm\(([^)]*)\)\s*$/, terminal === 'trace' ? '.trace()' : '.llm($1)')
+      .replace(/\.llm\(([^)]*)\)\s*$/, terminal === 'trace' ? '.trace()' : (isGroqProvider ? '.groq()' : '.llm($1)'))
       .replace(/\.groq\([^)]*\)\s*$/,  terminal === 'trace' ? '.trace("groq")' : '.groq()')
-      .replace(/\.trace\(\)\s*$/,      terminal === 'trace' ? '.trace()' : '.llm()');
+      .replace(/\.trace\(\)\s*$/,      terminal === 'trace' ? '.trace()' : (isGroqProvider ? '.groq()' : '.llm()'));
     return await executePipeline(expr, signal, { query });
   }
 
   // Default hardcoded pipeline — equivalent to:
-  // rag.rewrite().search().unique("url").slice(n).chunks().llm/trace()
+  // rag.search().unique("url").slice(n).chunks().llm()/groq()
   const col     = await _getRootCollection('rag').search(query);
   const prepped = await col.unique('url').slice(getMaxSources()).chunks();
-  if (terminal === 'trace') return await prepped.trace(signal);
+  if (terminal === 'trace') return await prepped.trace(signal, isGroqProvider ? 'groq' : 'local');
+  if (isGroqProvider) return await prepped.groq('', signal);
   return await prepped.llm('', signal);
 }
 

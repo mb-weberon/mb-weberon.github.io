@@ -109,7 +109,9 @@
       outline: none; transition: border-color 0.15s;
     }
     .sp-input:focus { border-color: #3b82f6; background: #fff; }
+    .sp-input:disabled { background: #f9fafb; color: #9ca3af; cursor: not-allowed; }
     textarea.sp-input { resize: vertical; font-family: monospace; font-size: 11px; }
+    .sp-lock-badge { font-size: 10px; color: #9ca3af; margin-top: 2px; }
 
     /* Sliders */
     .sp-slider-row { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
@@ -444,7 +446,6 @@
       <div class="flex items-center justify-between">
         <h1 class="text-lg font-bold tracking-tight">📚 Site Notebook <span id="app-version" class="text-xs font-normal text-gray-400 ml-1"></span></h1>
         <div class="flex items-center gap-3">
-          <div id="engine-status" class="text-xs"></div>
           <button onclick="refreshIndex()" class="text-xs text-gray-400 hover:text-blue-500 active:text-blue-600" title="Refresh index">↻</button>
           <button onclick="downloadChat()" class="text-xs text-gray-400 hover:text-blue-500 active:text-blue-600" title="Download chat as JSON">⬇️</button>
           <button id="trace-toggle-btn" onclick="toggleTraceMode()" class="text-xs text-gray-400 hover:text-purple-500 active:text-purple-600 px-1 font-mono" title="Trace mode OFF — click to enable">TRACE</button>
@@ -454,7 +455,8 @@
         </div>
       </div>
       <!-- Model selector + sources count -->
-      <div id="model-selector-row" class="mt-2 space-y-1.5">
+      <div id="engine-status" class="text-xs mt-2"></div>
+      <div id="model-selector-row" class="mt-1 space-y-1.5">
         <div class="flex items-center gap-2 min-w-0">
           <label for="model-select" class="text-xs text-gray-500 whitespace-nowrap flex-none">Model:</label>
           <select
@@ -676,9 +678,31 @@
 
       <!-- Pipeline tab -->
       <div class="sp-tab-pane hidden" data-pane="pipeline">
+        <div class="sp-section-title">LLM Provider</div>
+        <div class="sp-field" style="margin-bottom:14px">
+          <div class="flex items-center gap-3">
+            <label class="flex items-center gap-1.5 cursor-pointer">
+              <input type="radio" name="sp-llm-provider" value="local" id="sp-provider-local" class="accent-blue-500">
+              <span style="font-size:12px;font-weight:500;">Local <span class="sp-hint">(in-browser, WebGPU/CPU)</span></span>
+            </label>
+            <label class="flex items-center gap-1.5 cursor-pointer">
+              <input type="radio" name="sp-llm-provider" value="groq" id="sp-provider-groq" class="accent-orange-500">
+              <span style="font-size:12px;font-weight:500;">Remote <span class="sp-hint">(Groq API)</span></span>
+            </label>
+          </div>
+        </div>
+
         <div class="sp-section-title">Groq API</div>
+        <div class="sp-field" style="margin-bottom:10px">
+          <label>Proxy URL <span class="sp-hint">(optional — route calls through your own serverless proxy; key stays server-side)</span></label>
+          <input type="text" id="sp-groq-proxy-url" class="sp-input" placeholder="https://your-worker.workers.dev/api/groq">
+        </div>
+        <div class="sp-field" style="margin-bottom:10px">
+          <label>Proxy token <span class="sp-hint">(required when using a proxy — get this from the site operator)</span></label>
+          <input type="password" id="sp-groq-proxy-token" class="sp-input" placeholder="Enter proxy access token" autocomplete="off">
+        </div>
         <div class="sp-field">
-          <label>API key <span class="sp-hint">(stored in your browser, sent only to api.groq.com)</span></label>
+          <label>API key <span class="sp-hint">(stored in your browser, sent only to api.groq.com — not needed when using a proxy)</span></label>
           <input type="password" id="sp-groq-api-key" class="sp-input" placeholder="gsk_…" autocomplete="off">
         </div>
         <div class="sp-field" style="margin-bottom:14px">
@@ -776,6 +800,26 @@
     </div>
   </div>
 
+  <!--
+    SERVER CONFIGURATION — operator-controlled settings that override user preferences.
+    Uncomment and edit the block below to lock down settings for shared deployments.
+    This script MUST appear before config.js so RAGServerConfig is available at load time.
+
+    groq.proxyUrl   — route Groq calls through a serverless proxy (key stays server-side)
+    groq.model      — lock which Groq model is used
+    pipeline.default — lock the RAG pipeline expression
+    llm.systemPrompt — lock the system prompt
+
+    Any key set here is shown as read-only (🔒) in the settings panel and cannot be
+    overridden by user localStorage.
+  -->
+  <script>
+  window.RAGServerConfig = {
+    groq: {
+      proxyUrl: 'https://aiproxy.subhikksha.workers.dev',
+    },
+  };
+  </script>
   <script src="config.js" defer></script>
   <script src="settings-panel.js" defer></script>
   <script src="app.js" defer></script>
