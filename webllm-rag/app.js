@@ -294,6 +294,16 @@ function updateEngineStatus() {
 
   const isGroqProvider = RAGConfig.get('llm.provider') === 'groq';
 
+  // Disable input when proxy token is missing
+  const inputEl  = document.getElementById('input');
+  const sendBtn  = document.getElementById('send-btn');
+  const needsToken = isGroqProvider && RAGConfig.get('groq.proxyUrl') && !RAGConfig.get('groq.proxyToken');
+  if (inputEl) {
+    inputEl.disabled = needsToken;
+    inputEl.placeholder = needsToken ? 'Proxy token required — open Settings → Pipeline' : 'Ask about the site…';
+  }
+  if (sendBtn) sendBtn.disabled = needsToken;
+
   // When provider is groq, show only the Groq badge
   if (isGroqProvider) {
     const groqModel = RAGConfig.get('groq.model') || 'llama-3.3-70b-versatile';
@@ -1341,6 +1351,7 @@ class Collection {
       } else {
         lines.push('  SKIPPED (no local LLM loaded)');
       }
+      if (answer === null) return { answer: null, sources, traceLines: lines };
       if (answer !== '(LLM not available)') {
         lines.push('  elapsed    ' + (Date.now() - t6) + 'ms');
         lines.push('  tokens     ~' + Math.round(answer.split(/\s+/).length * 1.3) + ' (estimate)');
@@ -1363,14 +1374,21 @@ class Collection {
 async function _callGroq(systemPrompt, userInput, passages, signal) {
   const proxyUrl = RAGConfig.get('groq.proxyUrl');
   const apiKey   = RAGConfig.get('groq.apiKey');
-  if (!proxyUrl && !apiKey) return { answer: '⚠ Groq API key not set. Add it in Settings → Pipeline.' };
+  if (!proxyUrl && !apiKey) {
+    if (typeof openSettingsPipeline === 'function') openSettingsPipeline();
+    return { answer: null };
+  }
+
+  if (proxyUrl && !RAGConfig.get('groq.proxyToken')) {
+    if (typeof openSettingsPipeline === 'function') openSettingsPipeline();
+    return { answer: null };
+  }
 
   const model    = RAGConfig.get('groq.model') || 'llama-3.3-70b-versatile';
   const endpoint = proxyUrl || 'https://api.groq.com/openai/v1/chat/completions';
   const reqHeaders = { 'Content-Type': 'application/json' };
   if (proxyUrl) {
-    const proxyToken = RAGConfig.get('groq.proxyToken');
-    if (proxyToken) reqHeaders['X-Proxy-Token'] = proxyToken;
+    reqHeaders['X-Proxy-Token'] = RAGConfig.get('groq.proxyToken');
   } else {
     reqHeaders['Authorization'] = 'Bearer ' + apiKey;
   }
@@ -1415,6 +1433,10 @@ async function _callGroq(systemPrompt, userInput, passages, signal) {
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}));
     const msg = err?.error?.message || resp.statusText;
+    if (resp.status === 401 || resp.status === 403) {
+      if (typeof openSettingsPipeline === 'function') openSettingsPipeline();
+      return { answer: null };
+    }
     throw new Error('Groq API ' + resp.status + ': ' + msg);
   }
 
@@ -2171,6 +2193,7 @@ window.ask = async function() {
       ? await _ragPipeline(query, signal, 'trace')
       : await chat(query, signal);
     answer     = result.answer;
+    if (answer === null) { typing.remove(); _abortController = null; return; }   // settings panel opened, no response to render
     sources    = result.sources || [];
     traceLines = result.traceLines || null;
     // For // pipeline commands that produced a trace, fold trace into the terminal
