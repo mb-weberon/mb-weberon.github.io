@@ -1369,6 +1369,26 @@ class Collection {
 }
 
 // ---------------------------------------------------------------------------
+// Proxy event helper — sends metadata/click events to the Worker
+// ---------------------------------------------------------------------------
+function _sendProxyEvent(payload) {
+  const proxyUrl = RAGConfig.get('groq.proxyUrl');
+  if (!proxyUrl) return;
+  const proxyToken = RAGConfig.get('groq.proxyToken');
+  const vid = _storageGet('wllmrag_visitor_id');
+  const body = JSON.stringify({ ...payload, _token: proxyToken, _vid: vid });
+  // Use sendBeacon for reliability (survives tab navigation / target="_blank")
+  if (navigator.sendBeacon) {
+    navigator.sendBeacon(proxyUrl, new Blob([body], { type: 'application/json' }));
+  } else {
+    const headers = { 'Content-Type': 'application/json' };
+    if (proxyToken) headers['X-Proxy-Token'] = proxyToken;
+    if (vid) headers['X-Visitor-Id'] = vid;
+    fetch(proxyUrl, { method: 'POST', credentials: 'include', headers, body: JSON.stringify(payload) }).catch(() => {});
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Groq streaming helper — used by Collection.groq()
 // ---------------------------------------------------------------------------
 async function _callGroq(systemPrompt, userInput, passages, signal) {
@@ -1396,9 +1416,11 @@ async function _callGroq(systemPrompt, userInput, passages, signal) {
     reqHeaders['Authorization'] = 'Bearer ' + apiKey;
   }
 
-  const systemContent = passages
-    ? `${systemPrompt}\n\nPassages:\n${passages}`
-    : systemPrompt;
+  // When using proxy, send only passages (system prompt is injected server-side).
+  // When direct, send the full system message.
+  const systemMsg = proxyUrl
+    ? (passages ? { role: 'system', content: `Passages:\n${passages}` } : null)
+    : { role: 'system', content: passages ? `${systemPrompt}\n\nPassages:\n${passages}` : systemPrompt };
 
   const HISTORY_EXCHANGES = RAGConfig.get('llm.historyExchanges');
   const history = messages
@@ -1416,17 +1438,15 @@ async function _callGroq(systemPrompt, userInput, passages, signal) {
   const typingText = document.querySelector('#typing-indicator span.text-gray-400');
   if (typingText) typingText.textContent = 'Reading…';
 
+  const msgArray = [...(systemMsg ? [systemMsg] : []), ...history, { role: 'user', content: userInput }];
+
   const resp = await fetch(endpoint, {
     method: 'POST',
     credentials: proxyUrl ? 'include' : 'omit',
     headers: reqHeaders,
     body: JSON.stringify({
       model,
-      messages: [
-        { role: 'system', content: systemContent },
-        ...history,
-        { role: 'user',   content: userInput },
-      ],
+      messages: msgArray,
       temperature: RAGConfig.get('llm.temperature'),
       max_tokens:  RAGConfig.get('llm.maxTokens'),
       stream: true,
@@ -2240,6 +2260,14 @@ window.ask = async function() {
     });
     saveMessages();
     renderMessages();
+
+    // Send sources to proxy for D1 logging
+    if (sources.length) {
+      _sendProxyEvent({
+        action: 'metadata',
+        sources: sources.map(s => ({ url: s.url, title: s.title })),
+      });
+    }
   }
   if (chatSucceeded && !effectivePipelineCmd) updateQuestionsFromChat(answer, messages.length - 1);
 
@@ -2966,6 +2994,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Event delegation for chips inside messages
   document.getElementById('messages')?.addEventListener('click', e => {
+    // Source link click — track in proxy
+    const sourceChip = e.target.closest('.msg-source-chip, .msg-pipeline-source-chip');
+    if (sourceChip) {
+      _sendProxyEvent({ action: 'click', url: sourceChip.href, title: sourceChip.textContent });
+    }
+
     // Pipeline command chip in terminal card — fill input, don't submit
     const cmdChip = e.target.closest('.msg-pipeline-cmd-chip');
     if (cmdChip) {

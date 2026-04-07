@@ -105,8 +105,13 @@
 
     // Store in window.messageRelated and re-render messages to show chips
     if (related.length && window.messageRelated && msgIdx >= 0) {
-      window.messageRelated.set(msgIdx, related.map(d => d.question));
+      const questionTexts = related.map(d => d.question);
+      window.messageRelated.set(msgIdx, questionTexts);
       if (window.renderMessages) window.renderMessages();
+      // Log related questions to proxy
+      if (typeof _sendProxyEvent === 'function') {
+        _sendProxyEvent({ action: 'metadata', relatedQuestions: questionTexts });
+      }
     }
 
     // --- Explore: diverse picks from full index, excluding related chunks ---
