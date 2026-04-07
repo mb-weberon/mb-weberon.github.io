@@ -3,8 +3,7 @@
   "initial": "render_ui",
   "context": {
     "flowId": "",
-    "resultsSaved": true,
-    "trace": []
+    "resultsSaved": true
   },
   "states": {
 
@@ -52,20 +51,16 @@
       },
       "on": {
         "RESTORE": {
-          "target": "restoring_flow",
-          "actions": ["record"]
+          "target": "restoring_flow"
         },
         "START_FRESH": {
-          "target": "no_flow",
-          "actions": ["record"]
+          "target": "no_flow"
         },
         "LOAD_FLOW": {
-          "target": "flow_idle",
-          "actions": ["record"]
+          "target": "flow_idle"
         },
         "LOAD_RESULTS": {
-          "target": "results_ready",
-          "actions": ["record"]
+          "target": "results_ready"
         }
       }
     },
@@ -83,17 +78,14 @@
         "onDone": [
           {
             "guard": "hasPersistedResults",
-            "target": "results_ready",
-            "actions": ["record"]
+            "target": "results_ready"
           },
           {
             "guard": "hasPersistedSession",
-            "target": "session_active",
-            "actions": ["record"]
+            "target": "session_active"
           },
           {
-            "target": "flow_idle",
-            "actions": ["record"]
+            "target": "flow_idle"
           }
         ],
         "onError": {
@@ -110,12 +102,10 @@
       },
       "on": {
         "DISMISS": {
-          "target": "no_flow",
-          "actions": ["record"]
+          "target": "no_flow"
         },
         "LOAD_FLOW": {
-          "target": "flow_idle",
-          "actions": ["record"]
+          "target": "flow_idle"
         }
       }
     },
@@ -128,16 +118,13 @@
       },
       "on": {
         "LOAD_FLOW": {
-          "target": "flow_idle",
-          "actions": ["record"]
+          "target": "flow_idle"
         },
         "LOAD_RESULTS": {
-          "target": "results_ready",
-          "actions": ["record"]
+          "target": "results_ready"
         },
         "LOAD_ERROR": {
-          "target": "load_error",
-          "actions": ["record"]
+          "target": "load_error"
         }
       }
     },
@@ -146,40 +133,32 @@
       "meta": {
         "text": "Flow loaded. Chat at initial state. Ready to converse or run tests.",
         "chat": "Flow loaded. Ready to chat or run tests.",
-        "toolbar": ["test-btn", "restart-btn", "load-btn", "analyze-btn", "pack-prod-btn", "share-btn"]
+        "toolbar": ["test-btn", "restart-btn", "save-flow-btn", "load-btn", "analyze-btn", "pack-prod-btn", "share-btn"]
       },
       "on": {
         "UNLOAD_FLOW": {
-          "target": "no_flow",
-          "actions": ["record"]
+          "target": "no_flow"
         },
         "LOAD_FLOW": {
-          "target": "flow_idle",
-          "actions": ["record"]
+          "target": "flow_idle"
         },
         "LOAD_SERVICES": {
-          "target": "flow_idle",
-          "actions": ["record"]
+          "target": "flow_idle"
         },
         "LOAD_RESULTS": {
-          "target": "results_ready",
-          "actions": ["record"]
+          "target": "results_ready"
         },
         "RUN_TESTS": {
-          "target": "tests_running",
-          "actions": ["record"]
+          "target": "tests_running"
         },
         "CHAT_INPUT": {
-          "target": "session_active",
-          "actions": ["record"]
+          "target": "session_active"
         },
         "RESTART": {
-          "target": "flow_idle",
-          "actions": ["record"]
+          "target": "flow_idle"
         },
         "LOAD_ERROR": {
-          "target": "load_error",
-          "actions": ["record"]
+          "target": "load_error"
         }
       }
     },
@@ -188,44 +167,35 @@
       "meta": {
         "text": "Conversation in progress. Trace being recorded.",
         "chat": "Conversation active. Trace being recorded.",
-        "toolbar": ["test-btn", "restart-btn", "load-btn", "analyze-btn", "pack-prod-btn", "share-btn"]
+        "toolbar": ["test-btn", "restart-btn", "save-flow-btn", "load-btn", "analyze-btn", "pack-prod-btn", "share-btn"]
       },
       "on": {
         "UNLOAD_FLOW": {
-          "target": "no_flow",
-          "actions": ["record"]
+          "target": "no_flow"
         },
         "LOAD_FLOW": {
-          "target": "flow_idle",
-          "actions": ["record"]
+          "target": "flow_idle"
         },
         "LOAD_SERVICES": {
-          "target": "flow_idle",
-          "actions": ["record"]
+          "target": "flow_idle"
         },
         "LOAD_RESULTS": {
-          "target": "results_ready",
-          "actions": ["record"]
+          "target": "results_ready"
         },
         "RUN_TESTS": {
-          "target": "tests_running",
-          "actions": ["record"]
+          "target": "tests_running"
         },
         "CHAT_INPUT": {
-          "target": "session_active",
-          "actions": ["record"]
+          "target": "session_active"
         },
         "REPLAY": {
-          "target": "session_active",
-          "actions": ["record"]
+          "target": "session_active"
         },
         "RESTART": {
-          "target": "flow_idle",
-          "actions": ["record"]
+          "target": "flow_idle"
         },
         "LOAD_ERROR": {
-          "target": "load_error",
-          "actions": ["record"]
+          "target": "load_error"
         }
       }
     },
@@ -238,12 +208,10 @@
       },
       "on": {
         "TESTS_COMPLETE": {
-          "target": "results_unsaved",
-          "actions": ["record"]
+          "target": "results_unsaved"
         },
         "TESTS_STOP": {
-          "target": "results_unsaved",
-          "actions": ["record"]
+          "target": "results_unsaved"
         }
       }
     },
@@ -256,20 +224,16 @@
       },
       "on": {
         "UNLOAD_FLOW": {
-          "target": "no_flow",
-          "actions": ["record"]
+          "target": "no_flow"
         },
         "SAVE_RESULTS": {
-          "target": "results_saved",
-          "actions": ["record"]
+          "target": "results_saved"
         },
         "RUN_TESTS": {
-          "target": "tests_running",
-          "actions": ["record"]
+          "target": "tests_running"
         },
         "REPLAY": {
-          "target": "session_active",
-          "actions": ["record"]
+          "target": "session_active"
         }
       }
     },
@@ -278,40 +242,32 @@
       "meta": {
         "text": "Results saved to disk. Load Flow re-enabled.",
         "chat": "Results saved. All options available.",
-        "toolbar": ["test-btn", "restart-btn", "load-btn", "analyze-btn", "pack-prod-btn", "share-btn"]
+        "toolbar": ["test-btn", "restart-btn", "save-flow-btn", "load-btn", "analyze-btn", "pack-prod-btn", "share-btn"]
       },
       "on": {
         "UNLOAD_FLOW": {
-          "target": "no_flow",
-          "actions": ["record"]
+          "target": "no_flow"
         },
         "LOAD_FLOW": {
-          "target": "flow_idle",
-          "actions": ["record"]
+          "target": "flow_idle"
         },
         "LOAD_SERVICES": {
-          "target": "flow_idle",
-          "actions": ["record"]
+          "target": "flow_idle"
         },
         "LOAD_RESULTS": {
-          "target": "results_ready",
-          "actions": ["record"]
+          "target": "results_ready"
         },
         "RUN_TESTS": {
-          "target": "tests_running",
-          "actions": ["record"]
+          "target": "tests_running"
         },
         "REPLAY": {
-          "target": "session_active",
-          "actions": ["record"]
+          "target": "session_active"
         },
         "RESTART": {
-          "target": "flow_idle",
-          "actions": ["record"]
+          "target": "flow_idle"
         },
         "LOAD_ERROR": {
-          "target": "load_error",
-          "actions": ["record"]
+          "target": "load_error"
         }
       }
     },
@@ -324,36 +280,28 @@
       },
       "on": {
         "UNLOAD_FLOW": {
-          "target": "no_flow",
-          "actions": ["record"]
+          "target": "no_flow"
         },
         "LOAD_FLOW": {
-          "target": "flow_idle",
-          "actions": ["record"]
+          "target": "flow_idle"
         },
         "LOAD_SERVICES": {
-          "target": "flow_idle",
-          "actions": ["record"]
+          "target": "flow_idle"
         },
         "SAVE_RESULTS": {
-          "target": "results_saved",
-          "actions": ["record"]
+          "target": "results_saved"
         },
         "RUN_TESTS": {
-          "target": "tests_running",
-          "actions": ["record"]
+          "target": "tests_running"
         },
         "REPLAY": {
-          "target": "session_active",
-          "actions": ["record"]
+          "target": "session_active"
         },
         "RESTART": {
-          "target": "flow_idle",
-          "actions": ["record"]
+          "target": "flow_idle"
         },
         "LOAD_ERROR": {
-          "target": "load_error",
-          "actions": ["record"]
+          "target": "load_error"
         }
       }
     }

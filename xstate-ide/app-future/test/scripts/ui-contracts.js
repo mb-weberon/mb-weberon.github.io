@@ -900,7 +900,23 @@ async function ui_full(mode, label = `${UI_FULL_W}x${UI_FULL_H}`) {
         }
 
         console.log(`▶️  contracts.ui: running _uiLowLevel('${mode ?? 'auto'}', '${label}') in popup…`);
-        const result = await w.contracts._uiLowLevel(mode, label);
+
+        // Mirror the popup's console output into the caller's console so the
+        // developer doesn't have to open the popup's DevTools to see results.
+        const METHODS = ['log', 'warn', 'error', 'info', 'group', 'groupCollapsed', 'groupEnd'];
+        const originals = {};
+        for (const m of METHODS) {
+            originals[m] = w.console[m];
+            w.console[m] = (...args) => { originals[m].apply(w.console, args); console[m](...args); };
+        }
+
+        let result;
+        try {
+            result = await w.contracts._uiLowLevel(mode, label);
+        } finally {
+            for (const m of METHODS) w.console[m] = originals[m];
+        }
+
         localStorage.removeItem('xstate-ide:regression-flow');
         return result;
     }

@@ -126,17 +126,35 @@ function stripMeta(obj) {
     return out;
 }
 
+/**
+ * Extract any declarations that appear before the first `export` keyword in a
+ * services source string (e.g. `const validators = { ... }`).  These are helper
+ * variables that the exported functions close over — they must be included in the
+ * generated .ts so the inlined guard/action/actor bodies can reference them.
+ * Returns an empty string when there is no preamble or no source.
+ */
+function extractServicesPreamble(source) {
+    if (!source) return '';
+    const exportIdx = source.search(/\bexport\b/);
+    if (exportIdx <= 0) return '';
+    const preamble = source.slice(0, exportIdx).trimEnd();
+    return preamble || '';
+}
+
 // ── machine.ts generator ──────────────────────────────────────────────────────
 
-export function generateMachineTs(config, { nometa = false } = {}) {
+export function generateMachineTs(config, { nometa = false, services = null, servicesSource = null, preamble: inlinedPreamble = null, setupBlock = null } = {}) {
     const name   = toPascalCase(config.id ?? 'machine');
     const events = collectEvents(config);
     const { guards, actors, actions } = collectImplementations(config);
 
-    // Imports — only pull in fromPromise/assign if the machine uses them
+    // Imports — only pull in fromPromise/assign if the machine uses them.
+    // When setupBlock is present, scan it for usage rather than checking collected names.
     const imports = ['setup'];
-    if (actors.length)  imports.push('fromPromise');
-    if (actions.length) imports.push('assign');
+    const needsFromPromise = setupBlock ? setupBlock.includes('fromPromise') : actors.length > 0;
+    const needsAssign      = setupBlock ? setupBlock.includes('assign')      : actions.length > 0;
+    if (needsFromPromise) imports.push('fromPromise');
+    if (needsAssign)      imports.push('assign');
     const importLine = `import { ${imports.join(', ')} } from 'xstate';`;
 
     // Context type — skip internal trace bookkeeping fields
@@ -151,30 +169,85 @@ export function generateMachineTs(config, { nometa = false } = {}) {
         ? events.map(e => `  | { type: '${e}'; value?: string }`).join('\n')
         : `  | { type: string }`;
 
-    // setup() stubs
-    const guardStubs = guards.map(g =>
-        `    ${g}: () => false,`
-    ).join('\n');
+    // setup() implementations — real functions from services if available, stubs otherwise.
+    // fn.toString() on an arrow function returns just the function source, ready to inline.
+    const guardImpls = guards.map(g => {
+        const fn = services?.guards?.[g];
+        const body = (typeof fn === 'function') ? fn.toString() : '() => false';
+        return `    ${g}: ${body},`;
+    }).join('\n');
 
-    const actorStubs = actors.map(a =>
-        `    ${a}: fromPromise(async () => {}),`
-    ).join('\n');
+    const actorImpls = actors.map(a => {
+        const fn = services?.[a];
+        let body;
+        if (typeof fn === 'function')                              body = fn.toString();
+        else if (fn && typeof fn.config === 'function')            body = fn.config.toString(); // pre-built fromPromise logic
+        else                                                       body = 'async () => {}';
+        return `    ${a}: fromPromise(${body}),`;
+    }).join('\n');
 
-    const actionStubs = actions.map(a =>
-        `    ${a}: assign(() => ({})),`
-    ).join('\n');
-
-    const setupParts = [
-        `  types: {} as {\n    context: ${name}Context;\n    events: ${name}Event;\n  },`,
-        guards.length  ? `  guards: {\n${guardStubs}\n  },`  : '',
-        actors.length  ? `  actors: {\n${actorStubs}\n  },`  : '',
-        actions.length ? `  actions: {\n${actionStubs}\n  },` : '',
-    ].filter(Boolean).join('\n');
+    const actionImpls = actions.map(a => {
+        const fn = services?.actions?.[a];
+        let body;
+        if (typeof fn === 'function')                              body = fn.toString();
+        else if (fn && typeof fn.params === 'function')            body = fn.params.toString(); // pre-built assign() object
+        else                                                       body = '() => ({})';
+        return `    ${a}: assign(${body}),`;
+    }).join('\n');
 
     // Machine config — strip types key (moved into setup), optionally strip meta
     const { types: _t, ...cfg } = config;
     const cleanCfg = nometa ? stripMeta(cfg) : cfg;
     const cfgStr   = toLiteral(cleanCfg, 0);
+
+    // Preamble: helper variables the inlined functions close over (e.g. `const validators`).
+    // Supplied directly when loaded from .ts (inlinedPreamble); otherwise extracted from
+    // servicesSource by finding everything before the first `export` keyword.
+    const preamble = inlinedPreamble ?? (services ? extractServicesPreamble(servicesSource) : '');
+
+    // SAMPLE_INPUTS — exported as a named constant so .ts round-trips preserve it.
+    const sampleInputs = services?.SAMPLE_INPUTS;
+    const sampleBlock = sampleInputs && Object.keys(sampleInputs).length
+        ? [
+            `// ── Sample Inputs (for IDE test runner) ──────────────────────────────────────`,
+            `export const SAMPLE_INPUTS: Record<string, string> = ${JSON.stringify(sampleInputs, null, 2)};`,
+            ``,
+        ] : [];
+
+    // When a raw setup({...}) block was captured on .ts load, reuse it verbatim.
+    // This is more reliable than reconstructing from machine.implementations.
+    if (setupBlock) {
+        return [
+            importLine,
+            ``,
+            `// ── Types ───────────────────────────────────────────────────────────────────`,
+            `export type ${name}Context = {`,
+            ctxFields,
+            `};`,
+            ``,
+            `export type ${name}Event =`,
+            eventUnion,
+            `  ;`,
+            ``,
+            ...(preamble ? [
+                `// ── Helpers ────────────────────────────────────────────────────────────────`,
+                preamble,
+                ``,
+            ] : []),
+            `// ── Machine ─────────────────────────────────────────────────────────────────`,
+            `export const machine = ${setupBlock}`,
+            `.createMachine(${cfgStr});`,
+            ``,
+            ...sampleBlock,
+        ].join('\n');
+    }
+
+    const setupParts = [
+        `  types: {} as {\n    context: ${name}Context;\n    events: ${name}Event;\n  },`,
+        guards.length  ? `  guards: {\n${guardImpls}\n  },`  : '',
+        actors.length  ? `  actors: {\n${actorImpls}\n  },`  : '',
+        actions.length ? `  actions: {\n${actionImpls}\n  },` : '',
+    ].filter(Boolean).join('\n');
 
     return [
         importLine,
@@ -188,11 +261,17 @@ export function generateMachineTs(config, { nometa = false } = {}) {
         eventUnion,
         `  ;`,
         ``,
+        ...(preamble ? [
+            `// ── Helpers (from services.js) ──────────────────────────────────────────────`,
+            preamble,
+            ``,
+        ] : []),
         `// ── Machine ─────────────────────────────────────────────────────────────────`,
         `export const machine = setup({`,
         setupParts,
         `}).createMachine(${cfgStr});`,
         ``,
+        ...sampleBlock,
     ].join('\n');
 }
 
@@ -227,21 +306,27 @@ function generateTsConfig() {
 // ── Main export ───────────────────────────────────────────────────────────────
 
 /**
- * exportToTypeScript(config, { nometa? })
+ * exportToTypeScript(config, { nometa?, services?, servicesSource? })
  *
  * Downloads {id}-xstate.zip containing:
- *   {id}-machine.ts  — setup().createMachine() with stubs + context/event types
+ *   {id}-machine.ts  — setup().createMachine() with real implementations (if services
+ *                       provided) or typed stubs, + context/event types
  *   package.json
  *   tsconfig.json
+ *
+ * When services is provided, guard/actor/action bodies are inlined via fn.toString()
+ * so Stately simulate can run the machine end-to-end without a companion .js file.
+ * servicesSource is used to extract helper variable declarations (e.g. validators)
+ * that the inlined functions close over.
  */
-export async function exportToTypeScript(config, { nometa = false } = {}) {
+export async function exportToTypeScript(config, { nometa = false, services = null, servicesSource = null, preamble = null, setupBlock = null } = {}) {
     if (!config?.states) {
         console.warn('⚠️  exportToTypeScript: no machine config loaded');
         return null;
     }
 
     const id        = config.id ?? 'machine';
-    const machineTs = generateMachineTs(config, { nometa });
+    const machineTs = generateMachineTs(config, { nometa, services, servicesSource, preamble, setupBlock });
     const pkgJson   = generatePackageJson(id);
     const tsConfig  = generateTsConfig();
 
@@ -258,16 +343,17 @@ export async function exportToTypeScript(config, { nometa = false } = {}) {
     a.click();
     URL.revokeObjectURL(a.href);
 
+    const implNote = services ? 'real implementations inlined' : 'typed stubs — fill in to run';
     console.group(`📤 TypeScript export: ${id}`);
     console.log(`✅ ${id}-xstate.zip`);
-    console.log(`     ${id}-machine.ts  — setup().createMachine() with typed stubs`);
+    console.log(`     ${id}-machine.ts  — setup().createMachine() with ${implNote}`);
     console.log(`     package.json      — xstate ^5 + typescript ^5`);
     console.log(`     tsconfig.json`);
     console.log(`\nNext steps:`);
     console.log(`  1. Unzip and run: npm install`);
     console.log(`  2. Open the folder in VS Code with the Stately extension`);
     console.log(`  3. The extension will visualize ${id}-machine.ts automatically`);
-    console.log(`  4. Fill in the stub implementations in setup() to run the machine`);
+    if (!services) console.log(`  4. Fill in the stub implementations in setup() to run the machine`);
     console.groupEnd();
 
     return { machineTs, pkgJson, tsConfig };

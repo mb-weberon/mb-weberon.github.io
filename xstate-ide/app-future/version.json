@@ -1,9 +1,64 @@
 {
   "major": 0,
   "minor": 12,
-  "patch": 86,
+  "patch": 97,
   "label": "",
   "history": [
+    {
+      "version": "0.12.98",
+      "date": "2026-04-05",
+      "note": "Fix: Save as ZIP and Save as separate files now block with a toast when a .ts flow is loaded (implementations not recoverable as .js); also removed showSaveFilePicker/showDirectoryPicker paths — blob downloads only; Feature: Save Flow popover; save-flow-btn visible in all flow-loaded states"
+    },
+    {
+      "version": "0.12.96",
+      "date": "2026-04-04",
+      "note": "Fix: re-export from .ts-loaded flow now reuses the original setup({...}) block verbatim — extractSetupBlock captures it on load, stored as _loadedTsSetupBlock, passed to generateMachineTs; avoids broken guard/action stubs from machine.implementations reconstruction"
+    },
+    {
+      "version": "0.12.95",
+      "date": "2026-04-04",
+      "note": "Fix: keyboard choice shortcuts (1, 2…) now call this.send() instead of actor.send() directly — sets _lastEvent so userInput is non-null and the user bubble appears in chat"
+    },
+    {
+      "version": "0.12.94",
+      "date": "2026-04-04",
+      "note": "Fix: test runner headless Runtimes also use prebuiltMachine from .ts load — guards/actions now work correctly in test paths; _loadedPrebuiltMachine stored on window, passed through runAllTracesHeadless to each new Runtime"
+    },
+    {
+      "version": "0.12.93",
+      "date": "2026-04-04",
+      "note": "Fix: noServices warning in test runner — check services.guards/actions content, not just servicesSource; allows .ts-loaded flows to run tests without false 'no services' warning"
+    },
+    {
+      "version": "0.12.92",
+      "date": "2026-04-04",
+      "note": "Fix: .ts load — pass pre-built machine to Runtime and use createMachine(config).provide(machine.implementations) so XState handles assign()/fromPromise() objects in its own format; fixes guards always false after .ts load"
+    },
+    {
+      "version": "0.12.91",
+      "date": "2026-04-04",
+      "note": "Feature: load .ts machine file (Phase 3 Step 2) — loadPair accepts .ts and .ts-containing ZIPs; sucrase strips types, bare specifiers resolved from importmap, machine.implementations reconstructed as services; actor logic pass-through in Runtime.start(); re-export after .ts load includes helpers preamble and real implementations via .config/.params unwrapping"
+    },
+    {
+      "version": "0.12.90",
+      "date": "2026-04-04",
+      "note": "Fix: TS export includes services preamble (helper vars like validators) before machine definition — inlined guard/action/actor functions can reference closure variables from services.js; preamble = everything before the first export keyword in services source"
+    },
+    {
+      "version": "0.12.89",
+      "date": "2026-04-04",
+      "note": "Feature: TS export inlines real implementations when services are loaded — guards/actors/actions extracted via fn.toString() and inlined into setup().createMachine() so Stately simulate can run end-to-end; falls back to stubs when no services loaded; Phase 3 Step 1"
+    },
+    {
+      "version": "0.12.88",
+      "date": "2026-04-04",
+      "note": "Fix: remove legacy trace field and record actions from smide-machine.json fixture — Phase 1 made record a no-op but left context.trace:[] and actions:[record] in place; context area showed empty trace array; cleaned up to match Phase 1 state of realtor machine"
+    },
+    {
+      "version": "0.12.87",
+      "date": "2026-04-04",
+      "note": "Fix: record self-loop trace steps — Runtime._onUpdate was skipping steps when a named event caused a same-state transition (stateChanged=false); now records a step when the current state has an explicit on: handler for the event, fixing smide test failures like flow_idle LOAD_FLOW→flow_idle"
+    },
     {
       "version": "0.12.86",
       "date": "2026-04-03",

@@ -116,7 +116,7 @@ async function boot() {
             console.warn('⚠️  No flow loaded — use Load Flow first');
             return Promise.resolve();
         }
-        return tracesModule.runAllTracesHeadless(config, activeServices, { pauseMs, servicesSource: window._loadedServicesSource, priorResults: window._testResults });
+        return tracesModule.runAllTracesHeadless(config, activeServices, { pauseMs, servicesSource: window._loadedServicesSource, priorResults: window._testResults, prebuiltMachine: window._loadedPrebuiltMachine ?? null });
     };
     window.loadTestResults       = (file) => tracesModule.loadTestResults(file);
     window._loadResultsFromCache = tracesModule.loadResultsFromCache;
@@ -128,7 +128,11 @@ async function boot() {
     };
     window.exportToTypeScript = async ({ nometa = false } = {}) => {
         if (!config) { console.warn('⚠️  No flow loaded — use Load first'); return null; }
-        return exportModule.exportToTypeScript(config, { nometa });
+        const services       = window.currentRuntime?.services ?? null;
+        const servicesSource = window._loadedServicesSource ?? null;
+        const preamble       = window._loadedTsPreamble ?? null;
+        const setupBlock     = window._loadedTsSetupBlock ?? null;
+        return exportModule.exportToTypeScript(config, { nometa, services, servicesSource, preamble, setupBlock });
     };
     window.drawerDump  = () => {
         const drawer  = document.getElementById('test-results-drawer');
@@ -197,10 +201,15 @@ async function boot() {
                     💡 Select <code style="color:#61dafb;">*-machine.json</code> alone, or together with<br>
                     <code style="color:#61dafb;">*-services.js</code> if the flow uses guards or async services.
                 </div>
-                <a href="./help.html" target="_blank" style="
-                    font-size:12px; color:#61dafb; text-decoration:none;
-                    opacity:0.8;
-                ">📖 Help &amp; examples</a>
+                <div style="display:flex; gap:12px; flex-wrap:wrap; justify-content:center;">
+                    <a href="#" onclick="window._loadFlowFromUrl('./test/fixtures/realtor-machine.json','./test/fixtures/realtor-services.js');return false" style="
+                        font-size:12px; color:#61dafb; text-decoration:none;
+                    ">🏠 Load Realtor example</a>
+                    <a href="./help.html" target="_blank" style="
+                        font-size:12px; color:#61dafb; text-decoration:none;
+                        opacity:0.8;
+                    ">📖 Help</a>
+                </div>
             </div>`;
 
         const mc = document.getElementById('mermaid-container');
@@ -333,9 +342,9 @@ async function boot() {
                     }
                     _setTestRunning(true);
                     _startProgressPolling();
-                    window.runAllTraces().then(() => {
+                    window.runAllTraces().then((results) => {
                         _stopProgressPolling();
-                        _setTestRunning(false, /* hadResults */ true);
+                        _setTestRunning(false, /* hadResults */ !!results);
                     }).catch(() => {
                         _stopProgressPolling();
                         _setTestRunning(false, /* hadResults */ !!window._testResults);
@@ -346,6 +355,84 @@ async function boot() {
             onSaveResults:   () => { window.downloadTestResults?.().then(ok => { if (ok) smideRuntime?.send('SAVE_RESULTS'); }); },
             onSaveFlow:      () => window.downloadPair(),
             onSaveFlowFiles: () => window.downloadFlowFiles(),
+            onExportTs:      () => window.exportToTypeScript(),
+            getSourceData:   () => {
+                const services       = window.currentRuntime?.services ?? null;
+                const servicesSource = window._loadedServicesSource ?? null;
+                const preamble       = window._loadedTsPreamble ?? null;
+                const setupBlock     = window._loadedTsSetupBlock ?? null;
+                const tsLoaded       = !!window._loadedPrebuiltMachine;
+                const ts = config ? exportModule.generateMachineTs(config, { services, servicesSource, preamble, setupBlock }) : null;
+
+                // Derive services.js from setup block when a .ts was loaded
+                let derivedServices = servicesSource;
+                if (!derivedServices && setupBlock) {
+                    // setupBlock is "setup({ ... })" — extract the inner object
+                    const inner = setupBlock.replace(/^setup\s*\(\s*/, '').replace(/\s*\)\s*$/, '');
+                    const sampleInputs = services?.SAMPLE_INPUTS;
+                    const sampleStr = sampleInputs && Object.keys(sampleInputs).length
+                        ? `\n  SAMPLE_INPUTS: ${JSON.stringify(sampleInputs, null, 2).replace(/\n/g, '\n  ')},`
+                        : '';
+
+                    // Check which xstate imports the setup uses
+                    const xstateImports = [];
+                    if (inner.includes('assign'))      xstateImports.push('assign');
+                    if (inner.includes('fromPromise'))  xstateImports.push('fromPromise');
+                    const importLine = xstateImports.length
+                        ? `import { ${xstateImports.join(', ')} } from 'xstate';\n\n`
+                        : '';
+
+                    const preambleStr = preamble ? preamble + '\n\n' : '';
+
+                    // Inject SAMPLE_INPUTS before the closing }
+                    let obj = inner;
+                    if (sampleStr) {
+                        const lastBrace = obj.lastIndexOf('}');
+                        if (lastBrace !== -1) {
+                            obj = obj.slice(0, lastBrace) + sampleStr + '\n' + obj.slice(lastBrace);
+                        }
+                    }
+
+                    derivedServices = `${importLine}${preambleStr}export default ${obj};\n`;
+                }
+
+                return {
+                    machine:    config ? JSON.stringify(config, null, 2) : null,
+                    services:   derivedServices,
+                    typescript: ts,
+                    flowId:     config?.id ?? null,
+                    tsLoaded,
+                };
+            },
+            onApplySource: async (type, data) => {
+                if (type === 'machine') {
+                    window._restartRuntime(data);
+                    smideRuntime?.send('LOAD_FLOW');
+                } else if (type === 'typescript') {
+                    try {
+                        await loadAndActivateTsFlow(data, 'editor.ts');
+                    } catch (e) {
+                        showToast(`Failed to load TypeScript: ${e.message}`, 'error');
+                    }
+                } else if (type === 'services') {
+                    window._reloadServicesFromSource?.(data, 'pasted-services.js');
+                }
+            },
+            getInputStates: () => {
+                if (!config?.states) return [];
+                // Check both the services source text and the in-memory services object
+                const inSource  = window._loadedServicesSource?.match(/SAMPLE_INPUTS\s*:\s*\{/) ? true : false;
+                const inMemory  = !!(activeServices?.SAMPLE_INPUTS && Object.keys(activeServices.SAMPLE_INPUTS).length);
+                if (inSource || inMemory) return [];   // already has SAMPLE_INPUTS
+                return Object.entries(config.states)
+                    .filter(([, s]) => s.meta?.input === 'text')
+                    .map(([id, s]) => ({
+                        id,
+                        type: s.meta.input,
+                        placeholder: s.meta.placeholder ?? null,
+                    }));
+            },
+            onSourceClose:   () => _updateToolbar?.({ sourceOpen: false }),
             onLoad:          () => document.getElementById('upload').click(),
             onAnalyze:       () => window.analyzeFlow(),
             onPackProd:    () => window.downloadProductionBundle(),
@@ -385,6 +472,10 @@ async function boot() {
                 console.log('🔗 Loading flow from shared link');
             },
         });
+
+        window._openSourceEditor = (tab) => {
+            _updateToolbar?.({ sourceOpen: true, sourceInitialTab: tab || 'machine' });
+        };
     }
 
     // ── smide Runtime — boots the machine, drives toolbar/pane via onSnapshot ──
@@ -677,7 +768,7 @@ async function boot() {
     // Exposed for _restoreCase in generate-traces.js — replaces direct innerHTML mutation
     window._setChatMessages = (msgs) => chatUI?._update({ messages: msgs ?? [] });
 
-    function _activateFlow(newConfig, keepOverrides = false) {
+    function _activateFlow(newConfig, keepOverrides = false, prebuiltMachine = null) {
         // Accept a fresh config object (not necessarily the same reference)
         if (!newConfig) return;
 
@@ -712,7 +803,7 @@ async function boot() {
         window._activeReplayConfig = null;   // cleared on new flow; _restoreCase sets per-case
 
         // Create the new runtime before wiring the chat area to it.
-        window.currentRuntime = new Runtime(config, activeServices, consoleLogger);
+        window.currentRuntime = new Runtime(config, activeServices, consoleLogger, { prebuiltMachine });
         window.currentRuntime.contextOverrides = contextOverrides ?? {};
 
         // Wire the chat area to the new runtime.
@@ -790,8 +881,12 @@ async function boot() {
     };
 
     // ── Save / Load Flow ──────────────────────────────────────────────────────
-    window.downloadPair = async () => {
+    window.downloadPair = () => {
         if (!config) { console.warn('⚠️  No flow loaded'); return; }
+        if (!window._loadedServicesSource && window._loadedPrebuiltMachine) {
+            showToast('TypeScript flow loaded — use Export TypeScript to save', 'warn');
+            return;
+        }
         const flowId      = config.id || 'flow';
         const machineStr  = strToU8(JSON.stringify(config, null, 2));
         const servicesStr = strToU8(window._loadedServicesSource || '// no services loaded');
@@ -800,68 +895,140 @@ async function boot() {
             [`${flowId}-services.js`]:  servicesStr,
         });
         const blob = new Blob([zipped], { type: 'application/zip' });
-        const filename = `${flowId}.zip`;
-
-        if ('showSaveFilePicker' in window) {
-            try {
-                const handle = await window.showSaveFilePicker({
-                    suggestedName: filename,
-                    types: [{ description: 'ZIP archive', accept: { 'application/zip': ['.zip'] } }],
-                });
-                const writable = await handle.createWritable();
-                await writable.write(blob);
-                await writable.close();
-                console.log('💾 Saved flow ZIP via FSA:', filename);
-            } catch (e) {
-                if (e.name !== 'AbortError') { console.error('❌ Save failed:', e); showToast('Save failed: ' + e.message); }
-                else { console.log('💾 Save cancelled'); }
-            }
-        } else {
-            const a    = document.createElement('a');
-            a.href     = URL.createObjectURL(blob);
-            a.download = filename;
-            a.click();
-            console.log('💾 Saved flow ZIP (blob fallback):', filename);
-        }
+        const a    = document.createElement('a');
+        a.href     = URL.createObjectURL(blob);
+        a.download = `${flowId}.zip`;
+        a.click();
     };
 
     // ── Save flow as separate editable files ──────────────────────────────────
     // Shift+click on Save Flow. FSA: showDirectoryPicker → writes both files at once.
     // Fallback: two sequential blob downloads.
-    window.downloadFlowFiles = async () => {
+    window.downloadFlowFiles = () => {
         if (!config) { console.warn('⚠️  No flow loaded'); return; }
+        if (!window._loadedServicesSource && window._loadedPrebuiltMachine) {
+            showToast('TypeScript flow loaded — use Export TypeScript to save', 'warn');
+            return;
+        }
         const flowId      = config.id || 'flow';
         const machineStr  = JSON.stringify(config, null, 2);
         const servicesStr = window._loadedServicesSource || '// no services loaded';
-
-        if ('showDirectoryPicker' in window) {
-            try {
-                const dir = await window.showDirectoryPicker({ mode: 'readwrite' });
-                const mh  = await dir.getFileHandle(`${flowId}-machine.json`,  { create: true });
-                const sh  = await dir.getFileHandle(`${flowId}-services.js`,   { create: true });
-                const mw  = await mh.createWritable(); await mw.write(machineStr);  await mw.close();
-                const sw  = await sh.createWritable(); await sw.write(servicesStr); await sw.close();
-                console.log(`💾 Saved ${flowId}-machine.json + ${flowId}-services.js`);
-            } catch (e) {
-                if (e.name !== 'AbortError') { console.error('❌ Save failed:', e); showToast('Save failed: ' + e.message); }
-            }
-        } else {
-            const dl = (content, name, type) => {
-                const a = document.createElement('a');
-                a.href = URL.createObjectURL(new Blob([content], { type }));
-                a.download = name; a.click();
-            };
-            dl(machineStr,  `${flowId}-machine.json`, 'application/json');
-            dl(servicesStr, `${flowId}-services.js`,  'text/javascript');
-            console.log(`💾 Saved ${flowId}-machine.json + ${flowId}-services.js (blob fallback)`);
-        }
+        const dl = (content, name, type) => {
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(new Blob([content], { type }));
+            a.download = name; a.click();
+        };
+        dl(machineStr,  `${flowId}-machine.json`, 'application/json');
+        dl(servicesStr, `${flowId}-services.js`,  'text/javascript');
     };
+
+    // ── TypeScript (.ts) load helpers ─────────────────────────────────────────
+
+    /** Reconstruct a services object from a pre-built XState v5 machine's implementations.
+     *  Guards are raw functions; actor logic uses .config to get the original promise factory;
+     *  actions use .params to get the original assignment function.
+     *  This lets Runtime.start() consume them the same way it handles a services.js object.
+     */
+    function reconstructServicesFromMachine(machine) {
+        const impls = machine.implementations ?? {};
+        if (!Object.keys(impls).length) console.warn('⚠️  machine.implementations is empty — implementations may not be inlined');
+        const services = {
+            guards:  { ...(impls.guards  ?? {}) },
+            actions: { ...(impls.actions ?? {}) },
+        };
+        for (const [name, logic] of Object.entries(impls.actors ?? {})) {
+            services[name] = logic;  // Runtime actor pass-through handles non-function actor logic
+        }
+        return services;
+    }
+
+    /**
+     * Extract the full `setup({...})` text from a stripped .ts source using balanced
+     * parenthesis counting, so it can be reused verbatim on re-export instead of
+     * reconstructing from machine.implementations (which is unreliable across XState versions).
+     * Returns null if not found.
+     */
+    function extractSetupBlock(strippedJs) {
+        const start = strippedJs.indexOf('setup(');
+        if (start === -1) return null;
+        let depth = 0;
+        let i = start + 'setup'.length; // points at first '('
+        for (; i < strippedJs.length; i++) {
+            if (strippedJs[i] === '(') depth++;
+            else if (strippedJs[i] === ')') {
+                depth--;
+                if (depth === 0) return strippedJs.slice(start, i + 1);
+            }
+        }
+        return null; // unbalanced — shouldn't happen
+    }
+
+    /** Extract helper variable declarations from a stripped .ts source for use as re-export preamble.
+     *  Takes everything before the first `export` keyword, then removes import statements so the
+     *  preamble can be safely prepended to a newly generated .ts without duplicating imports.
+     */
+    function extractTsPreamble(strippedJs) {
+        const exportIdx = strippedJs.search(/\bexport\b/);
+        if (exportIdx <= 0) return '';
+        let pre = strippedJs.slice(0, exportIdx);
+        // Strip import statements — they would duplicate the generated import line at the top
+        pre = pre.replace(/^import\s[^;]*;\s*\n?/gm, '');
+        return pre.trim();
+    }
+
+    /** Load a .ts machine file: strip types, resolve bare specifiers, execute, return config + services + preamble. */
+    async function loadTsFile(source) {
+        const { transform } = await import('https://esm.sh/sucrase');
+        const { code: jsCode } = transform(source, { transforms: ['typescript'] });
+
+        // Resolve bare specifiers (e.g. 'xstate') against the page importmap so the
+        // blob URL import can resolve them without inheriting the page's importmap.
+        const resolved = _resolveBareSpecifiers(jsCode);
+
+        const blob    = new Blob([resolved + `\n// ts-load: ${Date.now()}`], { type: 'text/javascript' });
+        const blobUrl = URL.createObjectURL(blob);
+        const mod     = await import(/* @vite-ignore */ blobUrl);
+        URL.revokeObjectURL(blobUrl);
+
+        const machine = mod.machine;
+        if (!machine?.config) throw new Error('No machine export found — expected: export const machine = setup(...).createMachine(...)');
+
+        const services = reconstructServicesFromMachine(machine);
+        if (mod.SAMPLE_INPUTS && typeof mod.SAMPLE_INPUTS === 'object') {
+            services.SAMPLE_INPUTS = mod.SAMPLE_INPUTS;
+        }
+
+        return {
+            config:     machine.config,
+            services,
+            preamble:   extractTsPreamble(jsCode),    // use pre-resolved js (import lines stripped separately)
+            setupBlock: extractSetupBlock(jsCode),    // raw setup({...}) text for verbatim re-export
+            machine,  // raw pre-built machine — passed to Runtime so it uses machine.implementations directly
+        };
+    }
+
+    /** Load a .ts source, update activeServices and window globals, activate flow. */
+    async function loadAndActivateTsFlow(source, label) {
+        const { config: tsConfig, services: tsServices, preamble: tsPreamble, setupBlock: tsSetupBlock, machine: tsMachine } = await loadTsFile(source);
+        activeServices                 = tsServices;
+        window._loadedServicesSource   = null;
+        window._loadedTsPreamble       = tsPreamble || null;
+        window._loadedTsSetupBlock     = tsSetupBlock || null;
+        window._loadedPrebuiltMachine  = tsMachine;
+        window._clearResultsCache?.();
+        window._testResults = null;
+        document.getElementById('test-results-drawer')?.remove();
+        _activateFlow(tsConfig, /* keepOverrides */ false, tsMachine);
+        smideRuntime?.send('LOAD_FLOW');
+        console.log('📂 TypeScript machine loaded:', label);
+    }
 
     window.loadPair = async (fileList) => {
         if (!fileList?.length) return;
         const files = Array.from(fileList);
 
         const zipFile  = files.find(f => f.name.endsWith('.zip'));
+        const tsFile   = files.find(f => f.name.endsWith('.ts'));
         const jsonFile = files.find(f => f.name.endsWith('.json'));
         const jsFile   = files.find(f => f.name.endsWith('.js'));
 
@@ -884,7 +1051,14 @@ async function boot() {
                 return;
             }
 
-            const machineEntry  = Object.keys(unzipped).find(k => k.endsWith('.json'));
+            // Stately-format ZIP: contains a .ts machine file (our exportToTypeScript output)
+            const tsEntry = Object.keys(unzipped).find(k => k.endsWith('.ts'));
+            if (tsEntry) {
+                try { await loadAndActivateTsFlow(strFromU8(unzipped[tsEntry]), tsEntry); } catch (e) { const m = `Failed to load .ts from ZIP: ${e.message}`; console.error('❌', m); showToast(m); }
+                return;
+            }
+
+            const machineEntry  = Object.keys(unzipped).find(k => k.endsWith('.json') && !k.endsWith('package.json'));
             const servicesEntry = Object.keys(unzipped).find(k => k.endsWith('.js'));
             if (!machineEntry)  { const m = 'ZIP contains no .json machine file'; console.error('❌', m); showToast(m); return; }
             if (!servicesEntry) { const m = 'ZIP contains no .js services file'; console.error('❌', m); showToast(m); return; }
@@ -893,7 +1067,12 @@ async function boot() {
             } catch (e) { const m = `Invalid machine JSON in ZIP: ${e.message}`; console.error('❌', m); showToast(m); return; }
             await reloadServices(strFromU8(unzipped[servicesEntry]), servicesEntry);
         } else {
-            if (!jsonFile && !jsFile) { const m = 'Unsupported file type — load a .zip, .json, or .js'; console.error('❌', m); showToast(m); return; }
+            if (!jsonFile && !jsFile && !tsFile) { const m = 'Unsupported file type — load a .zip, .json, .js, or .ts'; console.error('❌', m); showToast(m); return; }
+            // TypeScript machine file — standalone, no companion .js needed
+            if (tsFile && !jsonFile) {
+                try { await loadAndActivateTsFlow(await readText(tsFile), tsFile.name); } catch (e) { const m = `Failed to load TypeScript file: ${e.message}`; console.error('❌', m); showToast(m); }
+                return;
+            }
             if (jsonFile) {
                 const text = await readText(jsonFile);
                 try {
@@ -904,6 +1083,8 @@ async function boot() {
                         return;
                     }
                     newConfig = parsed;
+                    window._loadedPrebuiltMachine = null;
+                    window._loadedTsSetupBlock    = null;
                     if (!jsFile) activeServices = {};   // machine-only load — reset services
                 } catch (e) { const m = `Invalid machine JSON: ${e.message}`; console.error('❌', m); showToast(m); return; }
             }
@@ -951,15 +1132,32 @@ async function boot() {
         window._config = newConfig;
     };
 
+    // Resolve bare specifiers (e.g. 'xstate') in JS source against the page importmap.
+    // Blob URLs don't inherit the importmap, so `import { assign } from 'xstate'` would
+    // fail without this. Shared by reloadServices and loadTsFile.
+    const _importMap = (() => {
+        const s = document.querySelector('script[type="importmap"]');
+        return s ? (JSON.parse(s.textContent).imports ?? {}) : {};
+    })();
+    function _resolveBareSpecifiers(src) {
+        return src.replace(
+            /from\s+(['"])((?!\.\/|\.\.\/|\/)[^'"]+)\1/g,
+            (match, q, spec) => _importMap[spec] ? `from ${q}${_importMap[spec]}${q}` : match
+        );
+    }
+
     async function reloadServices(src, label) {
-        window._loadedServicesSource = src;
+        window._loadedServicesSource  = src;
+        window._loadedTsPreamble      = null;  // clear ts preamble — a .js services file takes over
+        window._loadedTsSetupBlock    = null;  // clear ts setup block — a .js services file takes over
+        window._loadedPrebuiltMachine = null;  // clear pre-built machine — .js services take over
         try {
+            // Resolve bare specifiers so `import { assign } from 'xstate'` works in blob URLs.
+            const resolved = _resolveBareSpecifiers(src);
             // Append a unique comment to bust the browser's ES module cache.
-            // Without this, Chrome reuses the cached module from a previous
-            // import of the same source, so reloading the same file has no effect.
             const cacheBust = `
 // cache-bust: ${Date.now()}`;
-            const blob    = new Blob([src + cacheBust], { type: 'text/javascript' });
+            const blob    = new Blob([resolved + cacheBust], { type: 'text/javascript' });
             const blobUrl = URL.createObjectURL(blob);
             const mod     = await import(/* @vite-ignore */ blobUrl);
             // Revoke after import resolves, not before — some browsers re-resolve
@@ -1390,8 +1588,8 @@ window.addEventListener('load', () => {
         `then undock DevTools before measuring.\n\n` +
         `  await window.contracts.ui()            — check (or capture) at 1024×768\n` +
         `  await window.contracts.ui('capture')   — force capture baseline\n\n` +
-        `── All (except UI) ──\n` +
-        `  await window.contracts.all()             — runtime + smide + load in one call\n\n` +
+        `── Full Suite ──\n` +
+        `  await window.contracts.full()            — load + runtime + smide + ui in one call\n\n` +
         `── Runtime Contracts ──\n` +
         `  await window.contracts.runtime()           — check (or capture)\n` +
         `  await window.contracts.runtime('capture')  — force capture baseline\n\n` +
@@ -1400,6 +1598,8 @@ window.addEventListener('load', () => {
         `  await window.contracts.smide('capture')  — force capture baseline\n\n` +
         `── Load Contracts ──\n` +
         `  await window.contracts.load()            — toolbar DOM + load routing + ZIP round-trip\n\n` +
+        `── TS Round-trip Contracts ──\n` +
+        `  await window.contracts.tsRoundtrip()     — TS export/load, derived services.js, bare specifiers\n\n` +
         `── Built-in Runtime Actions (no services.js needed) ──\n` +
         `  updateContext — parameterised action; merges params into context.\n` +
         `                  Session tracing (initTrace / record / recordService) is\n` +

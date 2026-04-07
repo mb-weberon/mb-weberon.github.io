@@ -7,9 +7,96 @@
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
 
+        /* ── Theme tokens ─────────────────────────────────────── */
+        :root {
+            --bg:           #1c1e21;
+            --fg:           #abb2bf;
+            --header-bg:    #21252b;
+            --border:       #3a3a3a;
+            --accent:       #61dafb;
+            --accent2:      #c678dd;
+            --muted:        #888;
+            --code-fg:      #e5c07b;
+            --code-bg:      #2c313a;
+            --pre-bg:       #21252b;
+            --pre-fg:       #abb2bf;
+            --kw:           #c678dd;
+            --str:          #98c379;
+            --key:          #61dafb;
+            --num:          #d19a66;
+            --cm:           #5c6370;
+            --callout-bg:   #2a2d35;
+            --callout-warn-bg: #2d2a1e;
+            --callout-warn-border: #e5c07b;
+            --flow-box-bg:  #2c313a;
+            --flow-box-border: #444;
+            --flow-arrow:   #555;
+            --th-bg:        #2c313a;
+            --td-border:    #2c313a;
+            --step-counter-fg: #1c1e21;
+        }
+
+        @media (prefers-color-scheme: light) {
+            :root:not([data-theme="dark"]) {
+                --bg:           #f8f9fa;
+                --fg:           #333;
+                --header-bg:    #e9ecef;
+                --border:       #ccc;
+                --accent:       #0070c0;
+                --accent2:      #8b2fc9;
+                --muted:        #666;
+                --code-fg:      #b35900;
+                --code-bg:      #e9ecef;
+                --pre-bg:       #f0f0f0;
+                --pre-fg:       #333;
+                --kw:           #8b2fc9;
+                --str:          #2a7a2a;
+                --key:          #0070c0;
+                --num:          #b35900;
+                --cm:           #999;
+                --callout-bg:   #e8f0fe;
+                --callout-warn-bg: #fef7e0;
+                --callout-warn-border: #c9a000;
+                --flow-box-bg:  #e9ecef;
+                --flow-box-border: #bbb;
+                --flow-arrow:   #999;
+                --th-bg:        #e9ecef;
+                --td-border:    #ddd;
+                --step-counter-fg: #fff;
+            }
+        }
+
+        [data-theme="light"] {
+            --bg:           #f8f9fa;
+            --fg:           #333;
+            --header-bg:    #e9ecef;
+            --border:       #ccc;
+            --accent:       #0070c0;
+            --accent2:      #8b2fc9;
+            --muted:        #666;
+            --code-fg:      #b35900;
+            --code-bg:      #e9ecef;
+            --pre-bg:       #f0f0f0;
+            --pre-fg:       #333;
+            --kw:           #8b2fc9;
+            --str:          #2a7a2a;
+            --key:          #0070c0;
+            --num:          #b35900;
+            --cm:           #999;
+            --callout-bg:   #e8f0fe;
+            --callout-warn-bg: #fef7e0;
+            --callout-warn-border: #c9a000;
+            --flow-box-bg:  #e9ecef;
+            --flow-box-border: #bbb;
+            --flow-arrow:   #999;
+            --th-bg:        #e9ecef;
+            --td-border:    #ddd;
+            --step-counter-fg: #fff;
+        }
+
         body {
-            background: #1c1e21;
-            color: #abb2bf;
+            background: var(--bg);
+            color: var(--fg);
             font-family: 'Segoe UI', system-ui, sans-serif;
             font-size: 14px;
             line-height: 1.7;
@@ -17,8 +104,8 @@
         }
 
         header {
-            background: #21252b;
-            border-bottom: 1px solid #3a3a3a;
+            background: var(--header-bg);
+            border-bottom: 1px solid var(--border);
             padding: 16px 32px;
             display: flex;
             align-items: center;
@@ -30,17 +117,29 @@
 
         header h1 {
             font-size: 18px;
-            color: #61dafb;
+            color: var(--accent);
             font-weight: 700;
         }
 
         header .back {
-            color: #888;
+            color: var(--muted);
             text-decoration: none;
             font-size: 13px;
         }
 
-        header .back:hover { color: #61dafb; }
+        header .back:hover { color: var(--accent); }
+
+        #theme-toggle {
+            margin-left: auto;
+            background: none;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--muted);
+            font-size: 13px;
+            padding: 3px 8px;
+            cursor: pointer;
+        }
+        #theme-toggle:hover { color: var(--accent); border-color: var(--accent); }
 
         .container {
             max-width: 760px;
@@ -49,16 +148,16 @@
         }
 
         h2 {
-            color: #61dafb;
+            color: var(--accent);
             font-size: 16px;
             font-weight: 700;
             margin: 36px 0 10px;
             padding-bottom: 6px;
-            border-bottom: 1px solid #2c313a;
+            border-bottom: 1px solid var(--td-border);
         }
 
         h3 {
-            color: #c678dd;
+            color: var(--accent2);
             font-size: 13px;
             font-weight: 700;
             margin: 20px 0 6px;
@@ -77,34 +176,34 @@
         code {
             font-family: 'Courier New', monospace;
             font-size: 12px;
-            color: #e5c07b;
-            background: #2c313a;
+            color: var(--code-fg);
+            background: var(--code-bg);
             padding: 1px 5px;
             border-radius: 3px;
         }
 
         pre {
-            background: #21252b;
-            border: 1px solid #3a3a3a;
+            background: var(--pre-bg);
+            border: 1px solid var(--border);
             border-radius: 6px;
             padding: 14px 16px;
             overflow-x: auto;
             font-family: 'Courier New', monospace;
             font-size: 12px;
             line-height: 1.6;
-            color: #abb2bf;
+            color: var(--pre-fg);
             margin: 10px 0;
         }
 
-        pre .kw  { color: #c678dd; }   /* keywords */
-        pre .str { color: #98c379; }   /* strings  */
-        pre .key { color: #61dafb; }   /* JSON keys */
-        pre .num { color: #d19a66; }   /* numbers  */
-        pre .cm  { color: #5c6370; font-style: italic; } /* comments */
+        pre .kw  { color: var(--kw); }    /* keywords */
+        pre .str { color: var(--str); }    /* strings  */
+        pre .key { color: var(--key); }    /* JSON keys */
+        pre .num { color: var(--num); }    /* numbers  */
+        pre .cm  { color: var(--cm); font-style: italic; } /* comments */
 
         .callout {
-            background: #2a2d35;
-            border-left: 3px solid #61dafb;
+            background: var(--callout-bg);
+            border-left: 3px solid var(--accent);
             border-radius: 0 6px 6px 0;
             padding: 10px 14px;
             margin: 12px 0;
@@ -112,8 +211,8 @@
         }
 
         .callout.warn {
-            border-color: #e5c07b;
-            background: #2d2a1e;
+            border-color: var(--callout-warn-border);
+            background: var(--callout-warn-bg);
         }
 
         .step-list {
@@ -132,8 +231,8 @@
 
         .step-list li::before {
             content: counter(steps);
-            background: #61dafb;
-            color: #1c1e21;
+            background: var(--accent);
+            color: var(--step-counter-fg);
             font-weight: 700;
             font-size: 11px;
             min-width: 20px;
@@ -155,20 +254,20 @@
         }
 
         .flow-box {
-            background: #2c313a;
-            border: 1px solid #444;
+            background: var(--flow-box-bg);
+            border: 1px solid var(--flow-box-border);
             border-radius: 4px;
             padding: 4px 10px;
             font-size: 12px;
             font-family: 'Courier New', monospace;
-            color: #61dafb;
+            color: var(--accent);
         }
 
-        .flow-box.invoke { border-color: #c678dd; color: #c678dd; }
-        .flow-box.final  { border-color: #98c379; color: #98c379; }
+        .flow-box.invoke { border-color: var(--accent2); color: var(--accent2); }
+        .flow-box.final  { border-color: var(--str); color: var(--str); }
 
         .flow-arrow {
-            color: #555;
+            color: var(--flow-arrow);
             font-size: 14px;
         }
 
@@ -182,15 +281,15 @@
         th {
             text-align: left;
             padding: 6px 10px;
-            background: #2c313a;
-            color: #61dafb;
+            background: var(--th-bg);
+            color: var(--accent);
             font-weight: 600;
-            border-bottom: 1px solid #3a3a3a;
+            border-bottom: 1px solid var(--border);
         }
 
         td {
             padding: 6px 10px;
-            border-bottom: 1px solid #2c313a;
+            border-bottom: 1px solid var(--td-border);
         }
 
         td code { font-size: 11px; }
@@ -201,7 +300,33 @@
 <header>
     <a class="back" href="./">← Back to SM-IDE</a>
     <h1>SM-IDE Help</h1>
+    <button id="theme-toggle" title="Cycle theme: system / light / dark"></button>
 </header>
+<script>
+(function () {
+    const LABELS = { system: 'System', light: 'Light', dark: 'Dark' };
+    const ICONS  = { system: '', light: '', dark: '' };
+    const btn    = document.getElementById('theme-toggle');
+    const root   = document.documentElement;
+
+    function apply(pref) {
+        if (pref === 'system') root.removeAttribute('data-theme');
+        else                   root.setAttribute('data-theme', pref);
+        btn.textContent = `${ICONS[pref]} ${LABELS[pref]}`;
+    }
+
+    const stored = localStorage.getItem('smide-help-theme') || 'system';
+    apply(stored);
+
+    btn.addEventListener('click', () => {
+        const order = ['system', 'light', 'dark'];
+        const cur   = localStorage.getItem('smide-help-theme') || 'system';
+        const next  = order[(order.indexOf(cur) + 1) % order.length];
+        localStorage.setItem('smide-help-theme', next);
+        apply(next);
+    });
+})();
+</script>
 
 <div class="container">
 
@@ -608,6 +733,29 @@
         data not needed by Stately), use:
         <code>window.exportToTypeScript({ nometa: true })</code>
     </div>
+
+    <h3>Manually converting a <code>.ts</code> back to <code>machine.json</code> + <code>services.js</code></h3>
+    <p>
+        The exported <code>{id}-machine.ts</code> is self-contained and human-readable — everything
+        needed to reconstruct the IDE's native format is inside it:
+    </p>
+    <ul>
+        <li><strong>Preamble helpers</strong> — constants, validators, or other variables declared
+            above <code>setup({…})</code> can be copied as-is into <code>services.js</code>.</li>
+        <li><strong>Guards</strong> — each entry in <code>guards: { … }</code> is a plain arrow function.
+            Copy them into <code>exports.guards = { isSoon: fn, … }</code> in <code>services.js</code>.</li>
+        <li><strong>Actors</strong> — each entry is <code>fromPromise(async ({ input }) =&gt; { … })</code>.
+            Copy the async function out and wrap it:
+            <code>exports.fetchRoute = fromPromise(async ({ input }) =&gt; { … })</code>.</li>
+        <li><strong>Actions</strong> — each entry is <code>assign(fn)</code>.
+            Copy as <code>exports.actions = { setEmail: fn, … }</code>.</li>
+        <li><strong>Machine config</strong> — the argument to <code>.createMachine({…})</code> is the
+            state graph. Save it as <code>{id}-machine.json</code>.</li>
+    </ul>
+    <p>
+        The extraction is mechanical: no minification, no mangling. The <code>.ts</code> is
+        written in the same readable style the IDE generates.
+    </p>
 
     <!-- ── Context viewer ── -->
     <h2>Context Viewer</h2>

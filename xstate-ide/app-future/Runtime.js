@@ -23,9 +23,10 @@ function msSinceLastStep(trace) {
 
 
 export class Runtime {
-    constructor(config, services = {}, logger = nullLogger, { headless = false } = {}) {
-        this.config       = config;
-        this.services     = services;
+    constructor(config, services = {}, logger = nullLogger, { headless = false, prebuiltMachine = null } = {}) {
+        this.config           = config;
+        this.services         = services;
+        this._prebuiltMachine = prebuiltMachine;  // pre-built XState machine from .ts load
         this.logger       = logger;
         this.actor        = null;
         this.choices      = [];
@@ -78,14 +79,23 @@ export class Runtime {
             }
         });
 
+        const RESERVED_KEYS = new Set(['guards', 'actions', 'actors', 'types', 'SAMPLE_INPUTS']);
         const actorsMap = {};
-        Object.entries(this.services).forEach(([name, fn]) => {
-            if (name === 'guards')        return;
-            if (name === 'actions')       return;
-            if (name === 'SAMPLE_INPUTS') return;
+        const addActor = (name, fn) => {
             if (typeof fn === 'function') {
                 actorsMap[name] = fromPromise(({ input }) => fn({ input }));
+            } else if (fn && typeof fn === 'object') {
+                actorsMap[name] = fn;   // pre-built actor logic (fromPromise/fromMachine result)
             }
+        };
+        // Top-level actor entries (legacy format)
+        Object.entries(this.services).forEach(([name, fn]) => {
+            if (RESERVED_KEYS.has(name)) return;
+            addActor(name, fn);
+        });
+        // Nested actors: { ... } key (matches setup() format)
+        Object.entries(this.services.actors ?? {}).forEach(([name, fn]) => {
+            addActor(name, fn);
         });
 
         const rawGuards = this.services.guards ?? {};
@@ -102,10 +112,13 @@ export class Runtime {
         // Named context-update actions from services.actions.
         // Plain functions (returning a partial context object) are wrapped with
         // assign here so services.js stays self-contained with no XState import.
-        // Pre-built XState action objects are passed through as-is.
+        // Pre-built XState action objects (from assign() in new-format services or
+        // .ts loads) are passed through as-is — detected by the .type property that
+        // XState attaches to action creators. Without this check, assign() results
+        // (which are functions in XState v5) get double-wrapped.
         const actionsMap = {};
         Object.entries(this.services.actions ?? {}).forEach(([name, fn]) => {
-            actionsMap[name] = typeof fn === 'function' ? assign(fn) : fn;
+            actionsMap[name] = (typeof fn === 'function' && !fn.type) ? assign(fn) : fn;
         });
         this.logger.log('⚙️  Registered actions:', Object.keys(actionsMap));
 
@@ -137,11 +150,17 @@ export class Runtime {
             );
         })(config);
 
-        const machine = createMachine(config).provide({
-            actors:  actorsMap,
-            guards:  guardsMap,
-            actions: actionsMap,
-        });
+        // When loaded from a .ts file the machine already has implementations baked in via
+        // setup(). Use machine.implementations directly so XState processes guards/actions/actors
+        // in its own format (assign() objects, fromPromise logic, raw guard fns) without
+        // re-wrapping. Fall back to the reconstructed maps for JSON+JS loads.
+        const machine = this._prebuiltMachine
+            ? createMachine(config).provide(this._prebuiltMachine.implementations ?? {})
+            : createMachine(config).provide({
+                actors:  actorsMap,
+                guards:  guardsMap,
+                actions: actionsMap,
+            });
 
         // Capture service completion events via the inspect API so _onUpdate
         // can record them without machine.json needing recordService actions.
@@ -374,6 +393,21 @@ export class Runtime {
                 ms:      msSinceLastStep(this._trace),
             });
             this._errorRecordedForEvent = true;
+        } else if (!stateChanged && this._lastEvent && this._trace) {
+            // Self-loop: a named event was sent and the machine re-entered the same
+            // state (e.g. flow_idle → LOAD_FLOW → flow_idle). Only record if the
+            // current state explicitly defines a transition for this event — this
+            // filters out ignored events where XState still fires the subscriber.
+            const currentState = this.config.states[stateId];
+            if (currentState?.on?.[this._lastEvent.type]) {
+                this._trace.steps.push({
+                    stateId: this.lastId ?? 'unknown',
+                    value:   this._lastEvent.value ?? this._lastEvent.type,
+                    at:      new Date().toISOString(),
+                    ms:      msSinceLastStep(this._trace),
+                });
+            }
+            this._lastEvent = null;
         }
 
         // userInput for this transition — passed to onSnapshot so consumers
@@ -426,7 +460,7 @@ export class Runtime {
             if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
             const n = parseInt(e.key);
             if (n > 0 && n <= this.choices.length) {
-                this.actor.send({ type: this.choices[n - 1] });
+                this.send(this.choices[n - 1]);   // use send() so _lastEvent is set → user bubble appears
             }
         });
     }

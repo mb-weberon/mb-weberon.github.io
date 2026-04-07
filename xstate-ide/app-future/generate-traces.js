@@ -59,113 +59,6 @@ export async function clearResultsCache() {
 }
 
 
-// ── Sample inputs modal ───────────────────────────────────────────────────────
-
-function _showSampleInputsModal(missingIds, onSubmit, noServices, onCancel, prefillValues = {}) {
-    const existing = document.getElementById('smide-sample-inputs-dialog');
-    if (existing) existing.remove();
-
-    const isCorrection = missingIds.some(id => prefillValues[id]);
-
-    const note = noServices
-        ? '<p style="margin:0 0 12px;font-size:12px;color:#b08800;background:#fffbe6;border-radius:4px;padding:6px 10px;">No services file loaded — guards will not run. You can still test states that only need sample inputs.</p>'
-        : '';
-
-    const fields = missingIds.map(id => `
-        <div style="margin-bottom:10px;">
-            <label style="display:block;font-size:12px;font-weight:600;color:#555;margin-bottom:3px;">${id}</label>
-            <input data-state="${id}" type="text" placeholder="sample value for ${id}"
-                value="${(prefillValues[id] ?? '').replace(/"/g, '&quot;')}"
-                style="width:100%;box-sizing:border-box;
-                font-family:monospace;font-size:13px;
-                border:1px solid ${prefillValues[id] ? '#e00' : '#ccc'};border-radius:4px;padding:6px 8px;">
-        </div>`).join('');
-
-    const dialog = document.createElement('dialog');
-    dialog.id = 'smide-sample-inputs-dialog';
-    dialog.style.cssText = `
-        border:none; border-radius:8px; padding:0;
-        box-shadow:0 8px 32px rgba(0,0,0,0.25);
-        max-width:420px; width:100%;
-        font-family:'Segoe UI', sans-serif;
-    `;
-
-    dialog.innerHTML = `
-        <div id="smide-modal-body" style="padding:20px 24px 0;">
-            <h3 style="margin:0 0 8px;font-size:15px;color:#1c1e21;">${
-                isCorrection ? '⚠️ Inputs rejected by guards — correct and re-run' : 'Sample inputs needed'
-            }</h3>
-            <p style="margin:0 0 12px;font-size:13px;color:#444;">${
-                isCorrection
-                    ? 'The highlighted values were rejected by guards. Correct them below and re-run.'
-                    : 'Enter a sample value for each text-input state. These are used by the test runner to simulate user input.'
-            }</p>
-            ${note}
-            ${fields}
-        </div>
-        <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 24px 16px;">
-            <button id="smide-snippet-run" style="
-                padding:6px 14px;border-radius:5px;border:none;cursor:pointer;
-                background:#0084ff;color:#fff;font-size:13px;
-            ">Run Tests</button>
-            <button id="smide-snippet-close" style="
-                padding:6px 14px;border-radius:5px;border:1px solid #ddd;cursor:pointer;
-                background:#fff;color:#333;font-size:13px;
-            ">Cancel</button>
-        </div>
-    `;
-
-    document.body.appendChild(dialog);
-    dialog.showModal();
-    dialog.querySelector('input')?.focus();
-
-    let _submitted = false;
-
-    dialog.querySelector('#smide-snippet-run').onclick = () => {
-        const inputs = {};
-        dialog.querySelectorAll('input[data-state]').forEach(el => {
-            if (el.value.trim()) inputs[el.dataset.state] = el.value.trim();
-        });
-        const stillMissing = missingIds.filter(id => !inputs[id]);
-        if (stillMissing.length > 0) {
-            dialog.querySelectorAll('input[data-state]').forEach(el => {
-                el.style.borderColor = stillMissing.includes(el.dataset.state) ? '#e00' : '#ccc';
-            });
-            return;
-        }
-
-        _submitted = true;
-
-        // Run tests and get back snippet + propagation info for the confirmation view
-        const { snippet, hasServices } = onSubmit(inputs);
-
-        // Replace input phase with confirmation phase — tests are already running.
-        // Source patching is deferred until the run completes without validation failures.
-        const propagationMsg = '⏳ If tests pass, your services file will be updated automatically. '
-            + 'If any inputs are rejected by guards, you will be prompted to correct them.';
-
-        dialog.querySelector('#smide-modal-body').innerHTML = `
-            <h3 style="margin:0 0 8px;font-size:15px;color:#1c1e21;">Tests are running…</h3>
-            <p style="margin:0 0 10px;font-size:13px;color:#444;">
-                To avoid this prompt in future, add or replace SAMPLE_INPUTS inside your services object:
-            </p>
-            <textarea readonly rows="4" style="
-                width:100%;box-sizing:border-box;
-                font-family:monospace;font-size:12px;
-                background:#1e1e1e;color:#61dafb;
-                border:1px solid #444;border-radius:4px;
-                padding:10px;resize:vertical;margin-bottom:10px;
-            ">${snippet}</textarea>
-            <p style="margin:0;font-size:12px;color:#444;line-height:1.5;">${propagationMsg}</p>
-        `;
-
-        dialog.querySelector('#smide-snippet-run').style.display = 'none';
-        dialog.querySelector('#smide-snippet-close').textContent = 'Got it';
-    };
-
-    dialog.querySelector('#smide-snippet-close').onclick = () => dialog.close();
-    dialog.addEventListener('close', () => { dialog.remove(); if (!_submitted) onCancel?.(); });
-}
 
 // ── Path enumeration ──────────────────────────────────────────────────────────
 
@@ -415,47 +308,6 @@ export async function runAllTraces(config, replayFn, getTrace, getStateId, pause
 
 // ── Sample inputs source patcher ─────────────────────────────────────────────
 
-/**
- * Inject SAMPLE_INPUTS into a services JS source string.
- * If a SAMPLE_INPUTS block already exists it is replaced in-place (brace-depth
- * tracking handles nested values). Otherwise the block is inserted immediately
- * after the opening { of the exported object.
- * Returns the original string unchanged if neither pattern is found.
- */
-function injectSampleInputs(source, inputs) {
-    const entries = Object.entries(inputs)
-        .map(([k, v]) => `    ${k}: ${JSON.stringify(v)},`)
-        .join('\n');
-    const newBlock = `  SAMPLE_INPUTS: {\n${entries}\n  },`;
-
-    // Replace an existing SAMPLE_INPUTS block in-place.
-    const keyMatch = /\bSAMPLE_INPUTS\s*:\s*\{/.exec(source);
-    if (keyMatch) {
-        const openBrace = source.indexOf('{', keyMatch.index);
-        let depth = 0, closePos = -1;
-        for (let i = openBrace; i < source.length; i++) {
-            if (source[i] === '{') depth++;
-            else if (source[i] === '}') { if (--depth === 0) { closePos = i; break; } }
-        }
-        if (closePos !== -1) {
-            // Find the start of the line containing SAMPLE_INPUTS.
-            let lineStart = keyMatch.index;
-            while (lineStart > 0 && source[lineStart - 1] !== '\n') lineStart--;
-            // Consume trailing comma and one newline after the closing brace.
-            let tail = closePos + 1;
-            if (source[tail] === ',') tail++;
-            if (source[tail] === '\n') tail++;
-            return source.slice(0, lineStart) + newBlock + '\n' + source.slice(tail);
-        }
-    }
-
-    // No existing block — insert after the export object's opening '{'.
-    return source.replace(
-        /(\bexport\s+(?:default\s*\{|const\s+\w+\s*=\s*\{))/,
-        `$1\n${newBlock}\n`
-    );
-}
-
 // ── Headless runner ───────────────────────────────────────────────────────────
 //
 // Runs all paths without touching the DOM during replay — no ChatUI rendering,
@@ -470,10 +322,16 @@ function injectSampleInputs(source, inputs) {
 //   runAllTraces()       — headless, instant (default)
 //   runAllTraces(500)    — headless with 500ms pause between paths (for watching)
 
-export async function runAllTracesHeadless(config, services, { pauseMs = 0, servicesSource = null, priorResults = null } = {}) {
+export async function runAllTracesHeadless(config, services, { pauseMs = 0, servicesSource = null, priorResults = null, prebuiltMachine = null } = {}) {
     _interrupted = false;
     _skipCurrent = false;
     _dismissDrawer();
+
+    // Services are "available" if a source .js file was loaded OR if the services
+    // object already has implementations (e.g. reconstructed from a .ts load).
+    const noServices = !servicesSource
+        && !Object.keys(services.guards  ?? {}).length
+        && !Object.keys(services.actions ?? {}).length;
 
     // ── Pre-flight: check that all text-input states have a sample value ───────
     const sampleInputs = services.SAMPLE_INPUTS ?? {};
@@ -482,48 +340,12 @@ export async function runAllTracesHeadless(config, services, { pauseMs = 0, serv
         .map(([id]) => id);
     if (missingInputs.length > 0) {
         console.warn('⚠️  Tests blocked — no sample input for:', missingInputs.join(', '));
-        return new Promise(resolve => {
-            _showSampleInputsModal(missingInputs, (extraInputs) => {
-                // 1. Patch in-memory services object
-                const mergedInputs = { ...sampleInputs, ...extraInputs };
-                services.SAMPLE_INPUTS = mergedInputs;
-
-                // 2. Build snippet for the confirmation view — show the full merged
-                //    set so the user can paste it and never see this prompt again.
-                const entries = Object.entries(mergedInputs)
-                    .map(([k, v]) => `    ${k}: ${JSON.stringify(v)},`)
-                    .join('\n');
-                const snippet = `  SAMPLE_INPUTS: {\n${entries}\n  },`;
-
-                // 3. Compute patched source but do NOT apply yet — only persist after
-                //    the run completes without validation failures.
-                //    Use the full merged set so pre-existing partial SAMPLE_INPUTS are
-                //    not silently dropped from the injected source.
-                const patchedSource = window._loadedServicesSource
-                    ? injectSampleInputs(window._loadedServicesSource, mergedInputs)
-                    : null;
-
-                // 4. Re-run and resolve the outer promise only when the real run finishes
-                //    (including any correction cycles if guards reject the inputs).
-                //    Apply source patch only if the final run had no validation aborts.
-                //    Capture current source reference so a nested correction modal that
-                //    already applied a better patch is not overwritten here.
-                const sourceBeforeRun = window._loadedServicesSource;
-                runAllTracesHeadless(config, services, { pauseMs, servicesSource: patchedSource ?? servicesSource, priorResults })
-                    .then(results => {
-                        const anyAbort = results?.cases?.some(c => c.validationAborted);
-                        if (!anyAbort && patchedSource && window._loadedServicesSource === sourceBeforeRun) {
-                            window._loadedServicesSource = patchedSource;
-                            console.log('✅ Services source patched with SAMPLE_INPUTS');
-                        }
-                        resolve(results);
-                    });
-
-                // 5. Return info for the modal confirmation view.
-                //    Source patching is deferred so hasServices is not confirmed yet.
-                return { snippet, hasServices: false };
-            }, !servicesSource, resolve);  // onCancel: resolve immediately so toolbar resets
-        });
+        window.showToast?.(
+            `Add SAMPLE_INPUTS for: ${missingInputs.join(', ')}. Use Save Flow → View/Edit Source.`,
+            'warn'
+        );
+        window._openSourceEditor?.('services');
+        return null;
     }
 
     const traces = getAllTraces(config, sampleInputs);
@@ -602,7 +424,7 @@ export async function runAllTracesHeadless(config, services, { pauseMs = 0, serv
         console.log(`\n▶ Path ${i + 1} / ${total}: ${JSON.stringify(expected)}`);
         drawerHandle.updateRow(i, 'running', null);
 
-        const runtime      = new Runtime(config, services, undefined, { headless: true });
+        const runtime      = new Runtime(config, services, undefined, { headless: true, prebuiltMachine });
         const bubbles      = [];
         const visitedEdges = [];
         let   _lastStateId = null;
@@ -671,43 +493,15 @@ export async function runAllTracesHeadless(config, services, { pauseMs = 0, serv
         if (pauseMs > 0) await new Promise(r => setTimeout(r, pauseMs));
     }
 
-    // ── Correction modal: re-prompt if any paths were blocked by guard rejection ─
+    // ── Correction: re-prompt if any paths were blocked by guard rejection ─
     if (_validationAbortedIds.size > 0) {
-        const currentInputs = services.SAMPLE_INPUTS ?? {};
-        drawerHandle.setSummary('⚠️ Stop tests; invalid inputs', '#e5c07b');
-        console.groupEnd();
-        return new Promise(resolve => {
-            _showSampleInputsModal(
-                [..._validationAbortedIds],
-                (correctedInputs) => {
-                    const mergedInputs = { ...currentInputs, ...correctedInputs };
-                    services.SAMPLE_INPUTS = mergedInputs;
-                    const entries = Object.entries(mergedInputs)
-                        .map(([k, v]) => `    ${k}: ${JSON.stringify(v)},`)
-                        .join('\n');
-                    const snippet = `  SAMPLE_INPUTS: {\n${entries}\n  },`;
-                    // Use the full merged set (pre-flight + correction) so the patched
-                    // source carries every input, not just the correction delta.
-                    const patchedSource = window._loadedServicesSource
-                        ? injectSampleInputs(window._loadedServicesSource, mergedInputs)
-                        : null;
-                    const sourceBeforeRun = window._loadedServicesSource;
-                    runAllTracesHeadless(config, services, { pauseMs, servicesSource: patchedSource ?? servicesSource, priorResults: null })
-                        .then(results => {
-                            const anyAbort = results?.cases?.some(c => c.validationAborted);
-                            if (!anyAbort && patchedSource && window._loadedServicesSource === sourceBeforeRun) {
-                                window._loadedServicesSource = patchedSource;
-                                console.log('✅ Services source patched with corrected SAMPLE_INPUTS');
-                            }
-                            resolve(results);
-                        });
-                    return { snippet, hasServices: false };
-                },
-                !servicesSource,
-                resolve,       // onCancel: resolve immediately, toolbar resets cleanly
-                currentInputs  // pre-fill current (bad) values highlighted in red
-            );
-        });
+        drawerHandle.setSummary('⚠️ Inputs rejected by guards', '#e5c07b');
+        console.warn('⚠️  Guard rejected inputs for:', [..._validationAbortedIds].join(', '));
+        window.showToast?.(
+            `Guards rejected inputs for: ${[..._validationAbortedIds].join(', ')}. Correct in View/Edit Source, then re-run.`,
+            'warn'
+        );
+        window._openSourceEditor?.('services');
     }
 
     const passCount = cases.filter(c => c.passed).length;

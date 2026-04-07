@@ -68,7 +68,7 @@ async function suiteToolbarDOM() {
         ['save-results-btn present',            () => !!document.getElementById('save-results-btn')],
         ['load-btn enabled in flow_idle',       () => !document.getElementById('load-btn')?.disabled],
         ['save-results-btn disabled in flow_idle', () => document.getElementById('save-results-btn')?.disabled === true],
-        ['save-flow-btn hidden in flow_idle',   () => document.getElementById('save-flow-btn')?.style.display === 'none'],
+        ['save-flow-btn visible in flow_idle',  () => document.getElementById('save-flow-btn')?.style.display !== 'none'],
     ];
 
     for (const [label, check] of checks) {
@@ -244,9 +244,11 @@ window.contracts.clear = () => {
     console.log('🧹 Regression session cleared — user restore state is unaffected');
 };
 
-// Run all contracts except ui (no fixed viewport required).
-window.contracts.all = async () => {
+// Run all contracts including ui (opens a popup for the viewport test).
+window.contracts.full = async () => {
+    await window.contracts.load();
+    await window.contracts.tsRoundtrip();
     await window.contracts.runtime();
     await window.contracts.smide();
-    await window.contracts.load();
+    await window.contracts.ui();
 };
