@@ -1389,6 +1389,9 @@ async function _callGroq(systemPrompt, userInput, passages, signal) {
   const reqHeaders = { 'Content-Type': 'application/json' };
   if (proxyUrl) {
     reqHeaders['X-Proxy-Token'] = RAGConfig.get('groq.proxyToken');
+    // Send visitor ID for conversation tracking
+    const vid = _storageGet('wllmrag_visitor_id');
+    if (vid) reqHeaders['X-Visitor-Id'] = vid;
   } else {
     reqHeaders['Authorization'] = 'Bearer ' + apiKey;
   }
@@ -1439,6 +1442,10 @@ async function _callGroq(systemPrompt, userInput, passages, signal) {
     }
     throw new Error('Groq API ' + resp.status + ': ' + msg);
   }
+
+  // Store visitor ID from proxy response
+  const respVisitorId = resp.headers.get('X-Visitor-Id');
+  if (respVisitorId) _storageSet('wllmrag_visitor_id', respVisitorId);
 
   const reader  = resp.body.getReader();
   const decoder = new TextDecoder();
