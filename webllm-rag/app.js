@@ -2377,11 +2377,21 @@ function renderMessages() {
         traceSourceChips = `<div class="msg-source-chips">${chips}</div>`;
       }
       const traceText = (m.traceLines || []).join('\n');
+      // Related question chips
+      const traceRelated = messageRelated.get(i) || [];
+      let traceRelatedHtml = '';
+      if (traceRelated.length) {
+        const chips = traceRelated.map(q =>
+          `<button class="msg-question-chip" data-question="${escHtml(q)}">${escHtml(q)}</button>`
+        ).join('');
+        traceRelatedHtml = `<div class="msg-related-chips">${chips}</div>`;
+      }
       return `
         <div class="flex justify-start">
           <div class="bg-white border shadow-sm max-w-[85%] sm:max-w-xl p-3 sm:p-4 rounded-2xl text-sm sm:text-base text-left">
             ${ac.replace(/\n/g, '<br>')}
             ${traceSourceChips}
+            ${traceRelatedHtml}
             <details class="msg-trace-details">
               <summary class="msg-trace-summary">Pipeline trace</summary>
               <pre class="msg-trace-pre">${escHtml(traceText)}</pre>
