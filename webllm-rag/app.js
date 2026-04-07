@@ -1418,6 +1418,7 @@ async function _callGroq(systemPrompt, userInput, passages, signal) {
 
   const resp = await fetch(endpoint, {
     method: 'POST',
+    credentials: proxyUrl ? 'include' : 'omit',
     headers: reqHeaders,
     body: JSON.stringify({
       model,
