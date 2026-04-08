@@ -220,7 +220,13 @@ function renderTimeline(visitorId, timeline) {
     if (isEvent) {
       try {
         const d = JSON.parse(entry.content);
-        content = `<a href="${esc(d.url)}" target="_blank" class="text-blue-500 hover:underline">${esc(d.title || d.url)}</a>`;
+        if (d.type === 'question') {
+          label = 'Question click';
+          labelColor = 'text-purple-600';
+          content = `<em>${esc(d.title)}</em>`;
+        } else {
+          content = `<a href="${esc(d.url)}" target="_blank" class="text-blue-500 hover:underline">${esc(d.title || d.url)}</a>`;
+        }
       } catch { /* use raw */ }
     }
 
