@@ -313,25 +313,20 @@ function updateEngineStatus() {
   // Disable input when proxy token is missing; auto-prompt in simple mode
   const inputEl  = document.getElementById('input');
   const sendBtn  = document.getElementById('send-btn');
+  const inputBar = document.getElementById('input-bar');
   const needsToken = isGroqProvider && RAGConfig.get('groq.proxyUrl') && !RAGConfig.get('groq.proxyToken');
   if (inputEl) {
     inputEl.disabled = needsToken;
     inputEl.placeholder = needsToken ? 'Access token required — click here to enter' : 'Ask about the site…';
-    if (needsToken && !inputEl._tokenClickWired) {
-      inputEl._tokenClickWired = true;
-      inputEl.addEventListener('click', () => {
-        if (inputEl.disabled) _promptForToken();
-      });
-    }
   }
-  if (sendBtn) {
-    sendBtn.disabled = needsToken;
-    if (needsToken && !sendBtn._tokenClickWired) {
-      sendBtn._tokenClickWired = true;
-      sendBtn.addEventListener('click', () => {
-        if (sendBtn.disabled) _promptForToken();
-      });
-    }
+  if (sendBtn) sendBtn.disabled = needsToken;
+  // Overlay click handler on input bar — disabled elements don't fire click,
+  // so we listen on the parent and check if token is needed
+  if (inputBar && !inputBar._tokenClickWired) {
+    inputBar._tokenClickWired = true;
+    inputBar.addEventListener('click', () => {
+      if (inputEl?.disabled) _promptForToken();
+    });
   }
 
   // When provider is groq, show only the Groq badge
