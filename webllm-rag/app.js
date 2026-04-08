@@ -3073,7 +3073,7 @@ function _onPipelineInput() {
 }
 
 // Wire up Send button, Enter key, and message chip clicks
-document.addEventListener('DOMContentLoaded', function() {
+function _initApp() {
   const sendBtn = document.getElementById('send-btn');
   const input   = document.getElementById('input');
 
@@ -3172,4 +3172,10 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   loadIndex();
-});
+}
+// Dynamic script loading may miss DOMContentLoaded — handle both cases
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _initApp);
+} else {
+  _initApp();
+}

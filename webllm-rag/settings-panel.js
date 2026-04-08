@@ -482,7 +482,7 @@ function _esc(str) {
 // ---------------------------------------------------------------------------
 // Init — wire up events after DOM ready
 // ---------------------------------------------------------------------------
-document.addEventListener('DOMContentLoaded', () => {
+function _initSettingsPanel() {
   // Gear button
   const gearBtn = document.getElementById('settings-gear-btn');
   if (gearBtn) gearBtn.addEventListener('click', openSettingsPanel);
@@ -516,4 +516,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Init sliders
   initSliders();
-});
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _initSettingsPanel);
+} else {
+  _initSettingsPanel();
+}

@@ -376,8 +376,13 @@ console.log('✅ RAGConfig loaded', {
   modelCount: _state.models.length,
 });
 
-// Stamp version into the header as soon as the DOM is ready
-document.addEventListener('DOMContentLoaded', () => {
+// Stamp version into the header
+function _stampVersion() {
   const el = document.getElementById('app-version');
   if (el) el.textContent = APP_VERSION;
-});
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _stampVersion);
+} else {
+  _stampVersion();
+}
