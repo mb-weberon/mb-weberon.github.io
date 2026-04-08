@@ -52,6 +52,7 @@ const DEFAULT_SETTINGS = {
     footnoteSnippetLength:  120,
   },
   ui: {
+    mode:                'advanced',   // 'simple' = clean chat only, 'advanced' = full settings/pipeline
     systemCommandPrefix: '//',
     welcomeMessage:      '👋 Welcome! This site has **{{pages.count}} pages** covering {{topics.slice(6).join(", ")}}.\n\nAsk me anything about it.',
   },

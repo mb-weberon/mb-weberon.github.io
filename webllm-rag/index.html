@@ -446,11 +446,11 @@
       <div class="flex items-center justify-between">
         <h1 class="text-lg font-bold tracking-tight">📚 Site Notebook <span id="app-version" class="text-xs font-normal text-gray-400 ml-1"></span></h1>
         <div class="flex items-center gap-3">
-          <button onclick="refreshIndex()" class="text-xs text-gray-400 hover:text-blue-500 active:text-blue-600" title="Refresh index">↻</button>
-          <button onclick="downloadChat()" class="text-xs text-gray-400 hover:text-blue-500 active:text-blue-600" title="Download chat as JSON">⬇️</button>
+          <button id="refresh-index-btn" onclick="refreshIndex()" class="text-xs text-gray-400 hover:text-blue-500 active:text-blue-600" title="Refresh index">↻</button>
+          <button id="download-chat-btn" onclick="downloadChat()" class="text-xs text-gray-400 hover:text-blue-500 active:text-blue-600" title="Download chat as JSON">⬇️</button>
           <button id="trace-toggle-btn" onclick="toggleTraceMode()" class="text-xs text-gray-400 hover:text-purple-500 active:text-purple-600 px-1 font-mono" title="Trace mode OFF — click to enable">TRACE</button>
           <button id="settings-gear-btn" class="text-gray-400 hover:text-gray-700 active:text-gray-900 text-base px-1" title="Settings">⚙️</button>
-          <button onclick="clearChat()" class="text-xs text-gray-400 hover:text-red-500 active:text-red-500" title="Clear chat">🗑</button>
+          <button id="clear-chat-btn" onclick="clearChat()" class="text-xs text-gray-400 hover:text-red-500 active:text-red-500" title="Clear chat">🗑</button>
           <button id="questions-toggle-btn" onclick="toggleQuestionsDrawer()" class="text-gray-400 hover:text-blue-500 active:text-blue-500 text-base px-1" title="Suggested questions">💬</button>
         </div>
       </div>
@@ -815,6 +815,9 @@
   -->
   <script>
   window.RAGServerConfig = {
+    ui: {
+      mode: 'simple',         // 'simple' = clean chat only, 'advanced' = full settings/pipeline
+    },
     groq: {
       proxyUrl: 'https://aiproxy.subhikksha.workers.dev',
     },

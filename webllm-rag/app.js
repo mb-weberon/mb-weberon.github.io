@@ -11,6 +11,22 @@ function storageSet(key, val) {
 
 let messages = JSON.parse(storageGet(RAGConfig.KEYS.chatMessages) || '[]');
 
+// ---------------------------------------------------------------------------
+// Simple / Advanced UI mode
+// ---------------------------------------------------------------------------
+function applyUIMode() {
+  const simple = RAGConfig.get('ui.mode') === 'simple';
+  const hide = id => { const el = document.getElementById(id); if (el) el.classList.toggle('hidden', simple); };
+  hide('settings-gear-btn');
+  hide('trace-toggle-btn');
+  hide('engine-status');
+  hide('model-selector-row');
+  hide('pipeline-strip');
+  hide('refresh-index-btn');
+  hide('download-chat-btn');
+  hide('clear-chat-btn');
+}
+
 // Detect iOS Safari — WebGPU exists but web-llm compute shaders don't work,
 // and Transformers.js WASM threading requires COOP/COEP headers not sent by basic servers
 function isIOSSafari() {
@@ -2040,6 +2056,12 @@ function syncDropdownToLoadedModel(modelId) {
 // RAG + LLM generation
 async function chat(query, signal = null) {
 
+  // --- Simple mode: skip pipeline commands ---
+  if (RAGConfig.get('ui.mode') === 'simple') {
+    // Go straight to RAG pipeline, no // command parsing
+    return await _ragPipeline(query, signal, 'llm');
+  }
+
   // --- Pipeline: // prefix triggers power-user expression mode ---
   const _sysPrefix   = RAGConfig.get('ui.systemCommandPrefix') || '//';
   const _sysPrefixRe = new RegExp('^' + _sysPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*');
@@ -3080,6 +3102,9 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     });
   }
+
+  // Apply simple/advanced UI mode
+  applyUIMode();
 
   // Build model dropdown from config
   buildModelDropdown();
