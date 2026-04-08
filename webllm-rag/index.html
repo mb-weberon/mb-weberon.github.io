@@ -825,12 +825,14 @@
   window.APP_VERSION = 'v2.6.1';
   </script>
   <script>
-  ['config.js','settings-panel.js','app.js','app-hot.js'].forEach(f => {
+  // Load scripts sequentially — each depends on the previous
+  (function loadScripts(list) {
+    if (!list.length) return;
     const s = document.createElement('script');
-    s.src = f + '?v=' + (window.APP_VERSION || Date.now());
-    s.defer = true;
+    s.src = list[0] + '?v=' + (window.APP_VERSION || Date.now());
+    s.onload = () => loadScripts(list.slice(1));
     document.head.appendChild(s);
-  });
+  })(['config.js','settings-panel.js','app.js','app-hot.js']);
   </script>
 </body>
 </html>
