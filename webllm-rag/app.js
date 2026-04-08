@@ -1397,7 +1397,7 @@ function _sendProxyEvent(payload) {
   if (!proxyUrl) return;
   const proxyToken = RAGConfig.get('groq.proxyToken');
   const vid = _storageGet('wllmrag_visitor_id');
-  const body = JSON.stringify({ ...payload, _token: proxyToken, _vid: vid });
+  const body = JSON.stringify({ ...payload, _token: proxyToken, _vid: vid, _ts: new Date().toISOString() });
   // Use sendBeacon for reliability (survives tab navigation / target="_blank")
   if (navigator.sendBeacon) {
     navigator.sendBeacon(proxyUrl, new Blob([body], { type: 'application/json' }));
