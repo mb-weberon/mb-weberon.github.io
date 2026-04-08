@@ -215,9 +215,23 @@ function renderTimeline(visitorId, timeline) {
     </div>
   `;
 
+  // Build depth map: exchange_id → depth (0 for roots, +1 for each branch)
+  const depthMap = {};
+  for (const entry of timeline) {
+    if (!entry.exchange_id) continue;
+    if (depthMap[entry.exchange_id] !== undefined) continue;
+    if (!entry.parent_exchange_id) {
+      depthMap[entry.exchange_id] = 0;
+    } else {
+      depthMap[entry.exchange_id] = (depthMap[entry.parent_exchange_id] || 0) + 1;
+    }
+  }
+
   const rowParts = [];
   for (let idx = 0; idx < timeline.length; idx++) {
     const entry = timeline[idx];
+    const depth = depthMap[entry.exchange_id] || 0;
+    const indent = depth * 24;
     const isChat = entry.type === 'chat';
     const isUser = entry.role === 'user';
     const isAssistant = entry.role === 'assistant';
@@ -231,10 +245,12 @@ function renderTimeline(visitorId, timeline) {
       const next = timeline[idx + 1];
       if (next && next.role === 'user' && next.type === 'chat' && next.content.trim() === qTitle.trim()) {
         // Collapsed: show as "Asked via question chip" in purple
+        const nextDepth = depthMap[next.exchange_id] || 0;
+        const nextIndent = nextDepth * 24;
         rowParts.push(`
-          <div class="timeline-event pl-4 py-3 mb-2 bg-purple-50 rounded-r-lg shadow-sm" style="border-left-color:#9333ea">
+          <div class="timeline-event pl-4 py-3 mb-2 bg-purple-50 rounded-r-lg shadow-sm" style="border-left-color:#9333ea;margin-left:${nextIndent}px">
             <div class="flex items-center justify-between mb-1">
-              <span class="text-xs font-semibold text-purple-600">User picked a suggested question</span>
+              <span class="text-xs font-semibold text-purple-600">${nextDepth > 0 ? '↳ ' : ''}User picked a suggested question</span>
               <span class="text-xs text-gray-400">${formatDate(entry.created_at)}</span>
             </div>
             <div class="text-sm text-purple-800 italic">${esc(qTitle)}</div>
@@ -293,10 +309,11 @@ function renderTimeline(visitorId, timeline) {
       } catch {}
     }
 
+    const branchLabel = (depth > 0 && isUser) ? '↳ ' : '';
     rowParts.push(`
-      <div class="${borderClass} pl-4 py-3 mb-2 bg-white rounded-r-lg shadow-sm">
+      <div class="${borderClass} pl-4 py-3 mb-2 bg-white rounded-r-lg shadow-sm" style="${indent ? 'margin-left:' + indent + 'px' : ''}">
         <div class="flex items-center justify-between mb-1">
-          <span class="text-xs font-semibold ${labelColor}">${label}</span>
+          <span class="text-xs font-semibold ${labelColor}">${branchLabel}${label}</span>
           <span class="text-xs text-gray-400">${formatDate(entry.created_at)}</span>
         </div>
         <div class="text-sm text-gray-700 whitespace-pre-wrap">${content}</div>

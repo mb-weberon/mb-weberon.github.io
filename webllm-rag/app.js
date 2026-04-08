@@ -1520,6 +1520,8 @@ async function _callGroq(systemPrompt, userInput, passages, signal) {
       max_tokens:  RAGConfig.get('llm.maxTokens'),
       stream: true,
       ...(window._pendingQuestionClick ? { _questionClick: window._pendingQuestionClick } : {}),
+      ...(window._currentExchangeId ? { _exchangeId: window._currentExchangeId } : {}),
+      ...(window._currentParentExchangeId ? { _parentExchangeId: window._currentParentExchangeId } : {}),
     }),
     signal,
   });
@@ -2254,8 +2256,16 @@ window.ask = async function() {
       <rect x="6" y="6" width="12" height="12" rx="1"/>
     </svg>`;
 
+  // Generate exchange ID for this conversation round
+  const exchangeId = crypto.randomUUID();
+  const parentExchangeId = window._pendingParentExchange || null;
+  window._pendingParentExchange = null;
+  // Store for _callGroq to include in request body
+  window._currentExchangeId = exchangeId;
+  window._currentParentExchangeId = parentExchangeId;
+
   // Add user message
-  messages.push({ role: 'user', content: query });
+  messages.push({ role: 'user', content: query, exchangeId });
   saveMessages();
   renderMessages();
 
@@ -2334,6 +2344,7 @@ window.ask = async function() {
       isPipelineCmd: effectivePipelineCmd,
       pipelineQuery: effectivePipelineCmd ? query : undefined,
       isTraced, traceLines,
+      exchangeId,
     });
     saveMessages();
     renderMessages();
@@ -2463,8 +2474,9 @@ function renderMessages() {
         ).join('');
         traceRelatedHtml = `<div class="msg-related-chips">${chips}</div>`;
       }
+      const traceExchAttr = m.exchangeId ? ` data-exchange-id="${escHtml(m.exchangeId)}"` : '';
       return `
-        <div class="flex justify-start">
+        <div class="flex justify-start"${traceExchAttr}>
           <div class="bg-white border shadow-sm max-w-[85%] sm:max-w-xl p-3 sm:p-4 rounded-2xl text-sm sm:text-base text-left">
             ${ac.replace(/\n/g, '<br>')}
             ${traceSourceChips}
@@ -2522,8 +2534,9 @@ function renderMessages() {
     }
 
     const isUser = m.role === 'user';
+    const exchAttr = m.exchangeId ? ` data-exchange-id="${escHtml(m.exchangeId)}"` : '';
     return `
-      <div class="${isUser ? 'flex justify-end' : 'flex justify-start'}">
+      <div class="${isUser ? 'flex justify-end' : 'flex justify-start'}"${exchAttr}>
         <div class="${
           isUser
             ? 'bg-blue-500 text-white cursor-pointer select-none'
@@ -3106,6 +3119,9 @@ function _initApp() {
     const chip = e.target.closest('[data-question]');
     if (chip && !_abortController) {
       window._pendingQuestionClick = chip.dataset.question;
+      // Find parent exchange ID from the message containing this chip
+      const msgEl = chip.closest('[data-exchange-id]');
+      window._pendingParentExchange = msgEl?.dataset?.exchangeId || null;
       input.value = chip.dataset.question;
       ask();
     }
