@@ -1405,18 +1405,66 @@ function _sendProxyEvent(payload) {
 }
 
 // ---------------------------------------------------------------------------
+// Token prompt — simple dialog for users to enter proxy token
+// ---------------------------------------------------------------------------
+function _promptForToken() {
+  // If advanced mode, open full settings panel
+  if (RAGConfig.get('ui.mode') !== 'simple') {
+    if (typeof openSettingsPipeline === 'function') openSettingsPipeline();
+    return;
+  }
+  // Simple mode: show a minimal dialog
+  let dialog = document.getElementById('token-dialog');
+  if (!dialog) {
+    dialog = document.createElement('div');
+    dialog.id = 'token-dialog';
+    dialog.innerHTML = `
+      <div style="position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:9999;display:flex;align-items:center;justify-content:center">
+        <div style="background:white;border-radius:12px;padding:24px;width:90%;max-width:360px;box-shadow:0 8px 30px rgba(0,0,0,0.2)">
+          <h3 style="margin:0 0 8px;font-size:15px;font-weight:600">Access Token Required</h3>
+          <p style="margin:0 0 16px;font-size:13px;color:#6b7280">Enter the access token provided by the site operator.</p>
+          <input id="token-dialog-input" type="password" placeholder="Paste token here"
+            style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;box-sizing:border-box">
+          <div style="display:flex;gap:8px;margin-top:14px;justify-content:flex-end">
+            <button id="token-dialog-cancel"
+              style="padding:6px 16px;border:1px solid #d1d5db;border-radius:8px;background:white;font-size:13px;cursor:pointer">Cancel</button>
+            <button id="token-dialog-save"
+              style="padding:6px 16px;border:none;border-radius:8px;background:#3b82f6;color:white;font-size:13px;cursor:pointer">Connect</button>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(dialog);
+    document.getElementById('token-dialog-cancel').onclick = () => dialog.remove();
+    document.getElementById('token-dialog-save').onclick = () => {
+      const val = document.getElementById('token-dialog-input').value.trim();
+      if (val) {
+        RAGConfig.set('groq.proxyToken', val);
+        if (typeof updateEngineStatus === 'function') updateEngineStatus();
+      }
+      dialog.remove();
+    };
+    document.getElementById('token-dialog-input').addEventListener('keydown', e => {
+      if (e.key === 'Enter') document.getElementById('token-dialog-save').click();
+    });
+  }
+  document.getElementById('token-dialog-input').value = '';
+  document.getElementById('token-dialog-input').focus();
+}
+
+// ---------------------------------------------------------------------------
 // Groq streaming helper — used by Collection.groq()
 // ---------------------------------------------------------------------------
 async function _callGroq(systemPrompt, userInput, passages, signal) {
   const proxyUrl = RAGConfig.get('groq.proxyUrl');
   const apiKey   = RAGConfig.get('groq.apiKey');
   if (!proxyUrl && !apiKey) {
-    if (typeof openSettingsPipeline === 'function') openSettingsPipeline();
+    _promptForToken();
     return { answer: null };
   }
 
   if (proxyUrl && !RAGConfig.get('groq.proxyToken')) {
-    if (typeof openSettingsPipeline === 'function') openSettingsPipeline();
+    _promptForToken();
     return { answer: null };
   }
 
@@ -1474,7 +1522,7 @@ async function _callGroq(systemPrompt, userInput, passages, signal) {
     const err = await resp.json().catch(() => ({}));
     const msg = err?.error?.message || resp.statusText;
     if (resp.status === 401 || resp.status === 403) {
-      if (typeof openSettingsPipeline === 'function') openSettingsPipeline();
+      _promptForToken();
       return { answer: null };
     }
     throw new Error('Groq API ' + resp.status + ': ' + msg);

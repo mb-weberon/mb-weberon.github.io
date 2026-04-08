@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin — Conversation Viewer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    .timeline-user { border-left: 3px solid #3b82f6; }
+    .timeline-assistant { border-left: 3px solid #10b981; }
+    .timeline-event { border-left: 3px solid #f59e0b; }
+    .sources-json, .questions-json { font-size: 11px; color: #6b7280; }
+    pre { white-space: pre-wrap; word-break: break-word; }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+  <!-- Auth screen -->
+  <div id="auth-screen" class="flex items-center justify-center min-h-screen">
+    <div class="bg-white p-8 rounded-xl shadow-md w-full max-w-sm">
+      <h1 class="text-xl font-bold mb-4">Admin Login</h1>
+      <input id="proxy-url" type="text" class="w-full border rounded-lg px-3 py-2 mb-3 text-sm"
+        placeholder="Proxy URL (https://aiproxy...workers.dev)" value="">
+      <input id="admin-token" type="password" class="w-full border rounded-lg px-3 py-2 mb-4 text-sm"
+        placeholder="Admin token">
+      <button onclick="doLogin()" class="w-full bg-blue-500 text-white rounded-lg px-4 py-2 hover:bg-blue-600">
+        Connect
+      </button>
+      <p id="auth-error" class="text-red-500 text-sm mt-2 hidden"></p>
+    </div>
+  </div>
+
+  <!-- Main dashboard -->
+  <div id="dashboard" class="hidden">
+    <!-- Header -->
+    <div class="bg-white border-b px-6 py-4 flex items-center justify-between">
+      <h1 class="text-lg font-bold">Conversation Admin</h1>
+      <div class="flex items-center gap-4">
+        <div id="stats" class="text-xs text-gray-500 flex gap-4"></div>
+        <button onclick="doLogout()" class="text-xs text-gray-400 hover:text-red-500">Logout</button>
+      </div>
+    </div>
+
+    <div class="flex h-[calc(100vh-65px)]">
+      <!-- Visitor list -->
+      <div class="w-80 border-r bg-white overflow-y-auto flex-shrink-0">
+        <div class="p-3 border-b">
+          <input id="visitor-search" type="text" class="w-full border rounded-lg px-3 py-1.5 text-sm"
+            placeholder="Filter visitors..." oninput="filterVisitors()">
+        </div>
+        <div id="visitor-list" class="divide-y"></div>
+        <div class="p-3">
+          <button onclick="loadMoreVisitors()" id="load-more-btn"
+            class="w-full text-xs text-blue-500 hover:text-blue-700 py-1">Load more</button>
+        </div>
+      </div>
+
+      <!-- Timeline -->
+      <div class="flex-1 overflow-y-auto p-6" id="timeline-panel">
+        <div class="text-gray-400 text-sm text-center mt-20">Select a visitor from the left panel</div>
+      </div>
+    </div>
+  </div>
+
+<script>
+let PROXY_URL = '';
+let ADMIN_TOKEN = '';
+let allVisitors = [];
+let visitorOffset = 0;
+
+// --- Auth ---
+function doLogin() {
+  PROXY_URL = document.getElementById('proxy-url').value.trim();
+  ADMIN_TOKEN = document.getElementById('admin-token').value.trim();
+  if (!PROXY_URL || !ADMIN_TOKEN) {
+    showAuthError('Both fields required');
+    return;
+  }
+  // Save to sessionStorage
+  sessionStorage.setItem('admin_proxy', PROXY_URL);
+  sessionStorage.setItem('admin_token', ADMIN_TOKEN);
+  loadDashboard();
+}
+
+function doLogout() {
+  sessionStorage.removeItem('admin_proxy');
+  sessionStorage.removeItem('admin_token');
+  document.getElementById('auth-screen').classList.remove('hidden');
+  document.getElementById('dashboard').classList.add('hidden');
+}
+
+function showAuthError(msg) {
+  const el = document.getElementById('auth-error');
+  el.textContent = msg;
+  el.classList.remove('hidden');
+}
+
+// --- API helper ---
+async function adminAPI(action, params = {}) {
+  const resp = await fetch(PROXY_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Admin-Token': ADMIN_TOKEN,
+      'X-Proxy-Token': ADMIN_TOKEN,  // also satisfies proxy token check
+    },
+    body: JSON.stringify({ action, ...params }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err.error?.message || `HTTP ${resp.status}`);
+  }
+  return resp.json();
+}
+
+// --- Dashboard ---
+async function loadDashboard() {
+  try {
+    const stats = await adminAPI('admin-stats');
+    document.getElementById('auth-screen').classList.add('hidden');
+    document.getElementById('dashboard').classList.remove('hidden');
+    renderStats(stats);
+    visitorOffset = 0;
+    allVisitors = [];
+    await loadMoreVisitors();
+  } catch (e) {
+    showAuthError(e.message);
+  }
+}
+
+function renderStats(s) {
+  document.getElementById('stats').innerHTML = `
+    <span>Visitors: <strong>${s.totalVisitors}</strong></span>
+    <span>Messages: <strong>${s.totalMessages}</strong></span>
+    <span>Clicks: <strong>${s.totalClicks}</strong></span>
+    <span>Active today: <strong>${s.activeToday}</strong></span>
+  `;
+}
+
+// --- Visitors ---
+async function loadMoreVisitors() {
+  try {
+    const data = await adminAPI('admin-visitors', { limit: 50, offset: visitorOffset });
+    allVisitors = allVisitors.concat(data.visitors);
+    visitorOffset += data.visitors.length;
+    renderVisitorList();
+    if (data.visitors.length < 50) {
+      document.getElementById('load-more-btn').classList.add('hidden');
+    }
+  } catch (e) {
+    console.error('Failed to load visitors:', e);
+  }
+}
+
+function renderVisitorList() {
+  const filter = (document.getElementById('visitor-search').value || '').toLowerCase();
+  const container = document.getElementById('visitor-list');
+  const filtered = filter
+    ? allVisitors.filter(v => v.visitor_id.toLowerCase().includes(filter))
+    : allVisitors;
+
+  container.innerHTML = filtered.map(v => `
+    <div class="px-4 py-3 hover:bg-blue-50 cursor-pointer transition-colors" onclick="loadTimeline('${v.visitor_id}')">
+      <div class="text-xs font-mono text-gray-500 truncate">${v.visitor_id}</div>
+      <div class="flex items-center justify-between mt-1">
+        <span class="text-xs text-gray-400">${v.message_count} messages</span>
+        <span class="text-xs text-gray-400">${formatDate(v.last_seen)}</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+function filterVisitors() {
+  renderVisitorList();
+}
+
+// --- Timeline ---
+async function loadTimeline(visitorId) {
+  const panel = document.getElementById('timeline-panel');
+  panel.innerHTML = '<div class="text-gray-400 text-sm text-center mt-20">Loading...</div>';
+
+  // Highlight selected visitor
+  document.querySelectorAll('#visitor-list > div').forEach(el => el.classList.remove('bg-blue-50'));
+
+  try {
+    const data = await adminAPI('admin-timeline', { visitor_id: visitorId });
+    renderTimeline(visitorId, data.timeline);
+  } catch (e) {
+    panel.innerHTML = `<div class="text-red-500 text-sm text-center mt-20">Error: ${esc(e.message)}</div>`;
+  }
+}
+
+function renderTimeline(visitorId, timeline) {
+  const panel = document.getElementById('timeline-panel');
+
+  const header = `
+    <div class="mb-6">
+      <h2 class="text-sm font-bold text-gray-700">Visitor Timeline</h2>
+      <div class="text-xs font-mono text-gray-400 mt-1">${esc(visitorId)}</div>
+      <div class="text-xs text-gray-400 mt-1">${timeline.length} events</div>
+    </div>
+  `;
+
+  const rows = timeline.map(entry => {
+    const isChat = entry.type === 'chat';
+    const isUser = entry.role === 'user';
+    const isAssistant = entry.role === 'assistant';
+    const isEvent = entry.type === 'event';
+
+    let borderClass = 'timeline-event';
+    let label = entry.role;
+    let labelColor = 'text-yellow-600';
+
+    if (isUser) { borderClass = 'timeline-user'; labelColor = 'text-blue-600'; label = 'User'; }
+    if (isAssistant) { borderClass = 'timeline-assistant'; labelColor = 'text-green-600'; label = 'Assistant'; }
+    if (isEvent) { label = 'Click'; labelColor = 'text-yellow-600'; }
+
+    let content = esc(entry.content || '');
+    if (isEvent) {
+      try {
+        const d = JSON.parse(entry.content);
+        content = `<a href="${esc(d.url)}" target="_blank" class="text-blue-500 hover:underline">${esc(d.title || d.url)}</a>`;
+      } catch { /* use raw */ }
+    }
+
+    // Sources
+    let sourcesHtml = '';
+    if (entry.sources) {
+      try {
+        const srcs = JSON.parse(entry.sources);
+        if (srcs.length) {
+          sourcesHtml = `<div class="sources-json mt-1">Sources: ${srcs.map(s =>
+            `<a href="${esc(s.url)}" target="_blank" class="text-blue-400 hover:underline">${esc(s.title || s.url)}</a>`
+          ).join(', ')}</div>`;
+        }
+      } catch {}
+    }
+
+    // Related questions
+    let questionsHtml = '';
+    if (entry.related_questions) {
+      try {
+        const qs = JSON.parse(entry.related_questions);
+        if (qs.length) {
+          questionsHtml = `<div class="questions-json mt-1">Related: ${qs.map(q => `<em>${esc(q)}</em>`).join(' | ')}</div>`;
+        }
+      } catch {}
+    }
+
+    return `
+      <div class="${borderClass} pl-4 py-3 mb-2 bg-white rounded-r-lg shadow-sm">
+        <div class="flex items-center justify-between mb-1">
+          <span class="text-xs font-semibold ${labelColor}">${label}</span>
+          <span class="text-xs text-gray-400">${formatDate(entry.created_at)}</span>
+        </div>
+        <div class="text-sm text-gray-700 whitespace-pre-wrap">${content}</div>
+        ${sourcesHtml}
+        ${questionsHtml}
+      </div>
+    `;
+  }).join('');
+
+  panel.innerHTML = header + rows;
+}
+
+// --- Helpers ---
+function formatDate(iso) {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso + 'Z');
+    return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  } catch { return iso; }
+}
+
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// --- Auto-login from session ---
+window.addEventListener('DOMContentLoaded', () => {
+  const savedProxy = sessionStorage.getItem('admin_proxy');
+  const savedToken = sessionStorage.getItem('admin_token');
+  if (savedProxy && savedToken) {
+    PROXY_URL = savedProxy;
+    ADMIN_TOKEN = savedToken;
+    document.getElementById('proxy-url').value = savedProxy;
+    loadDashboard();
+  }
+});
+</script>
+</body>
+</html>
