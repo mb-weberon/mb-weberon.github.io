@@ -320,13 +320,9 @@ function updateEngineStatus() {
     inputEl.placeholder = needsToken ? 'Access token required — click here to enter' : 'Ask about the site…';
   }
   if (sendBtn) sendBtn.disabled = needsToken;
-  // Overlay click handler on input bar — disabled elements don't fire click,
-  // so we listen on the parent and check if token is needed
-  if (inputBar && !inputBar._tokenClickWired) {
-    inputBar._tokenClickWired = true;
-    inputBar.addEventListener('click', () => {
-      if (inputEl?.disabled) _promptForToken();
-    });
+  // Auto-show token dialog when token is needed
+  if (needsToken && !document.getElementById('token-dialog')) {
+    setTimeout(_promptForToken, 300);
   }
 
   // When provider is groq, show only the Groq badge
@@ -3107,6 +3103,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     const chip = e.target.closest('[data-question]');
     if (chip && !_abortController) {
+      _sendProxyEvent({ action: 'click', url: '', title: chip.dataset.question, type: 'question' });
       input.value = chip.dataset.question;
       ask();
     }

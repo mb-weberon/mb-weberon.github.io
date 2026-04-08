@@ -214,15 +214,17 @@ function renderTimeline(visitorId, timeline) {
 
     if (isUser) { borderClass = 'timeline-user'; labelColor = 'text-blue-600'; label = 'User'; }
     if (isAssistant) { borderClass = 'timeline-assistant'; labelColor = 'text-green-600'; label = 'Assistant'; }
-    if (isEvent) { label = 'Click'; labelColor = 'text-yellow-600'; }
+    if (isEvent && entry.role === 'question') {
+      label = 'Question click'; labelColor = 'text-purple-600';
+    } else if (isEvent) {
+      label = 'Link click'; labelColor = 'text-yellow-600';
+    }
 
     let content = esc(entry.content || '');
     if (isEvent) {
       try {
         const d = JSON.parse(entry.content);
-        if (d.type === 'question') {
-          label = 'Question click';
-          labelColor = 'text-purple-600';
+        if (entry.role === 'question') {
           content = `<em>${esc(d.title)}</em>`;
         } else {
           content = `<a href="${esc(d.url)}" target="_blank" class="text-blue-500 hover:underline">${esc(d.title || d.url)}</a>`;

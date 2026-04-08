@@ -822,10 +822,15 @@
       proxyUrl: 'https://aiproxy.subhikksha.workers.dev',
     },
   };
+  window.APP_VERSION = 'v2.5';
   </script>
-  <script src="config.js" defer></script>
-  <script src="settings-panel.js" defer></script>
-  <script src="app.js" defer></script>
-  <script src="app-hot.js" defer></script>
+  <script>
+  ['config.js','settings-panel.js','app.js','app-hot.js'].forEach(f => {
+    const s = document.createElement('script');
+    s.src = f + '?v=' + (window.APP_VERSION || Date.now());
+    s.defer = true;
+    document.head.appendChild(s);
+  });
+  </script>
 </body>
 </html>
