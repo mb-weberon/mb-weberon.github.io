@@ -56,9 +56,7 @@
         btn.addEventListener('click', () => {
           const input = document.getElementById('input');
           if (!input) return;
-          if (typeof _sendProxyEvent === 'function') {
-            _sendProxyEvent({ action: 'click', url: '', title: item.question, type: 'question' });
-          }
+          window._pendingQuestionClick = item.question;
           input.value = item.question;
           document.getElementById('questions-panel')?.classList.remove('open');
           document.getElementById('questions-backdrop')?.classList.remove('open');

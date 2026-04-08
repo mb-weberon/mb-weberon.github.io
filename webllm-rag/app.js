@@ -1519,9 +1519,11 @@ async function _callGroq(systemPrompt, userInput, passages, signal) {
       temperature: RAGConfig.get('llm.temperature'),
       max_tokens:  RAGConfig.get('llm.maxTokens'),
       stream: true,
+      ...(window._pendingQuestionClick ? { _questionClick: window._pendingQuestionClick } : {}),
     }),
     signal,
   });
+  window._pendingQuestionClick = null;
 
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}));
@@ -3103,7 +3105,7 @@ function _initApp() {
     }
     const chip = e.target.closest('[data-question]');
     if (chip && !_abortController) {
-      _sendProxyEvent({ action: 'click', url: '', title: chip.dataset.question, type: 'question' });
+      window._pendingQuestionClick = chip.dataset.question;
       input.value = chip.dataset.question;
       ask();
     }
