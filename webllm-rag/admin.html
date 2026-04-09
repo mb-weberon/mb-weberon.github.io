@@ -12,6 +12,18 @@
     .timeline-event { border-left: 3px solid #f59e0b; }
     .sources-json, .questions-json { font-size: 11px; color: #6b7280; }
     pre { white-space: pre-wrap; word-break: break-word; }
+    /* Tree lines */
+    .tree-line { width: 16px; flex-shrink: 0; border-left: 2px solid #d1d5db; margin-left: 6px; }
+    .tree-line-purple { border-left-color: #c084fc; }
+    .tree-row { display: flex; align-items: stretch; margin-bottom: 6px; }
+    .tree-content { flex: 1; min-width: 0; }
+    /* Collapsible entries */
+    .entry-collapsed .entry-full { display: none; }
+    .entry-collapsed .entry-snippet { display: block; }
+    .entry-expanded .entry-full { display: block; }
+    .entry-expanded .entry-snippet { display: none; }
+    .entry-snippet { font-size: 12px; color: #6b7280; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+    .entry-toggle { cursor: pointer; user-select: none; }
   </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
@@ -215,21 +227,44 @@ function renderTimeline(visitorId, timeline) {
     </div>
   `;
 
-  // Build lookup: exchange_id → short label (first user message in that exchange)
-  const exchangeLabel = {};
-  const exchangeRowId = {};  // exchange_id → DOM id for scroll-to
+  // Build lookups
+  const exchangeLabel = {};   // exchange_id → short label
+  const exchangeRowId = {};   // exchange_id → DOM id for scroll-to
+  const depthMap = {};        // exchange_id → depth (0 = root)
   let rowCounter = 0;
+
   for (const entry of timeline) {
     if (!entry.exchange_id) continue;
     if (!exchangeLabel[entry.exchange_id] && entry.role === 'user' && entry.type === 'chat') {
-      exchangeLabel[entry.exchange_id] = entry.content.substring(0, 60) + (entry.content.length > 60 ? '…' : '');
+      exchangeLabel[entry.exchange_id] = entry.content.substring(0, 50) + (entry.content.length > 50 ? '…' : '');
     }
+    if (depthMap[entry.exchange_id] === undefined) {
+      depthMap[entry.exchange_id] = entry.parent_exchange_id
+        ? (depthMap[entry.parent_exchange_id] || 0) + 1
+        : 0;
+    }
+  }
+
+  // Helper: render N tree lines for depth
+  function treeLines(depth) {
+    let html = '';
+    for (let d = 0; d < depth; d++) {
+      html += `<div class="tree-line${d === depth - 1 ? ' tree-line-purple' : ''}"></div>`;
+    }
+    return html;
+  }
+
+  // Helper: snippet text (first 80 chars, no HTML)
+  function snippet(text) {
+    const plain = text.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+    return plain.substring(0, 80) + (plain.length > 80 ? '…' : '');
   }
 
   const rowParts = [];
   for (let idx = 0; idx < timeline.length; idx++) {
     const entry = timeline[idx];
     const rowId = 'row-' + (rowCounter++);
+    const depth = depthMap[entry.exchange_id] || 0;
     const isChat = entry.type === 'chat';
     const isUser = entry.role === 'user';
     const isAssistant = entry.role === 'assistant';
@@ -237,36 +272,38 @@ function renderTimeline(visitorId, timeline) {
     const isQuestionClick = isEvent && entry.role === 'question';
     const hasBranch = isChat && entry.parent_exchange_id;
 
-    // Track first row per exchange for scroll targets
     if (entry.exchange_id && !exchangeRowId[entry.exchange_id]) {
       exchangeRowId[entry.exchange_id] = rowId;
     }
 
-    // Merge: if this is a question click and the next entry is a user message with the same text, collapse
+    // Merge question click + duplicate user message
     if (isQuestionClick) {
       let qTitle = '';
       try { qTitle = JSON.parse(entry.content).title || ''; } catch {}
       const next = timeline[idx + 1];
       if (next && next.role === 'user' && next.type === 'chat' && next.content.trim() === qTitle.trim()) {
         const nextRowId = 'row-' + (rowCounter++);
+        const nextDepth = depthMap[next.exchange_id] || 0;
         if (next.exchange_id) exchangeRowId[next.exchange_id] = nextRowId;
-        // Back-link to parent
         const parentLabel = exchangeLabel[next.parent_exchange_id] || '';
         const parentRowTarget = exchangeRowId[next.parent_exchange_id] || '';
         const backLink = parentLabel
-          ? `<div class="text-xs text-purple-400 mt-1 cursor-pointer hover:text-purple-600" onclick="document.getElementById('${parentRowTarget}')?.scrollIntoView({behavior:'smooth',block:'center'})">↳ branched from: <em>${esc(parentLabel)}</em></div>`
+          ? ` <span class="text-xs text-purple-400 cursor-pointer hover:text-purple-600" onclick="event.stopPropagation();document.getElementById('${parentRowTarget}')?.scrollIntoView({behavior:'smooth',block:'center'})">(from: ${esc(parentLabel)})</span>`
           : '';
         rowParts.push(`
-          <div id="${nextRowId}" class="timeline-event pl-4 py-3 mb-2 bg-purple-50 rounded-r-lg shadow-sm" style="border-left-color:#9333ea">
-            <div class="flex items-center justify-between mb-1">
-              <span class="text-xs font-semibold text-purple-600">User picked a suggested question</span>
-              <span class="text-xs text-gray-400">${formatDate(entry.created_at)}</span>
+          <div id="${nextRowId}" class="tree-row">
+            ${treeLines(nextDepth)}
+            <div class="tree-content timeline-event pl-3 py-2 bg-purple-50 rounded-r-lg shadow-sm" style="border-left-color:#9333ea">
+              <div class="text-xs">
+                <span class="font-semibold text-purple-600">↳ Suggested Q:</span>
+                <span class="text-purple-800 italic">${esc(qTitle)}</span>
+                ${backLink}
+                <span class="text-gray-400 float-right">${formatDate(entry.created_at)}</span>
+              </div>
             </div>
-            <div class="text-sm text-purple-800 italic">${esc(qTitle)}</div>
-            ${backLink}
           </div>
         `);
-        idx++; // skip the next user message
+        idx++;
         continue;
       }
     }
@@ -274,14 +311,12 @@ function renderTimeline(visitorId, timeline) {
     let borderClass = 'timeline-event';
     let label = entry.role;
     let labelColor = 'text-yellow-600';
+    let bgClass = 'bg-white';
 
-    if (isUser) { borderClass = 'timeline-user'; labelColor = 'text-blue-600'; label = 'User'; }
+    if (isUser) { borderClass = 'timeline-user'; labelColor = 'text-blue-600'; label = 'User'; bgClass = 'bg-blue-50'; }
     if (isAssistant) { borderClass = 'timeline-assistant'; labelColor = 'text-green-600'; label = 'Assistant'; }
-    if (isQuestionClick) {
-      label = 'Question click'; labelColor = 'text-purple-600';
-    } else if (isEvent) {
-      label = 'Link click'; labelColor = 'text-yellow-600';
-    }
+    if (isQuestionClick) { label = 'Question'; labelColor = 'text-purple-600'; }
+    else if (isEvent) { label = 'Click'; labelColor = 'text-yellow-600'; }
 
     let content = esc(entry.content || '');
     if (isEvent) {
@@ -292,16 +327,16 @@ function renderTimeline(visitorId, timeline) {
         } else {
           content = `<a href="${esc(d.url)}" target="_blank" class="text-blue-500 hover:underline">${esc(d.title || d.url)}</a>`;
         }
-      } catch { /* use raw */ }
+      } catch {}
     }
 
-    // Back-link for branched user messages (not collapsed with question click)
+    // Back-link
     let backLinkHtml = '';
     if (hasBranch && isUser) {
       const parentLabel = exchangeLabel[entry.parent_exchange_id] || '';
       const parentRowTarget = exchangeRowId[entry.parent_exchange_id] || '';
       if (parentLabel) {
-        backLinkHtml = `<div class="text-xs text-purple-400 mt-1 cursor-pointer hover:text-purple-600" onclick="document.getElementById('${parentRowTarget}')?.scrollIntoView({behavior:'smooth',block:'center'})">↳ branched from: <em>${esc(parentLabel)}</em></div>`;
+        backLinkHtml = ` <span class="text-xs text-purple-400 cursor-pointer hover:text-purple-600" onclick="event.stopPropagation();document.getElementById('${parentRowTarget}')?.scrollIntoView({behavior:'smooth',block:'center'})">(from: ${esc(parentLabel)})</span>`;
       }
     }
 
@@ -329,16 +364,22 @@ function renderTimeline(visitorId, timeline) {
       } catch {}
     }
 
+    const snippetText = snippet(content);
+    const isLong = content.length > 100;
+
     rowParts.push(`
-      <div id="${rowId}" class="${borderClass} pl-4 py-3 mb-2 bg-white rounded-r-lg shadow-sm">
-        <div class="flex items-center justify-between mb-1">
-          <span class="text-xs font-semibold ${labelColor}">${label}</span>
-          <span class="text-xs text-gray-400">${formatDate(entry.created_at)}</span>
+      <div id="${rowId}" class="tree-row">
+        ${treeLines(depth)}
+        <div class="tree-content ${borderClass} pl-3 py-2 ${bgClass} rounded-r-lg shadow-sm ${isLong ? 'entry-collapsed entry-toggle' : ''}" ${isLong ? 'onclick="this.classList.toggle(\'entry-collapsed\');this.classList.toggle(\'entry-expanded\')"' : ''}>
+          <div class="flex items-center justify-between mb-0.5">
+            <span class="text-xs font-semibold ${labelColor}">${label}${backLinkHtml}</span>
+            <span class="text-xs text-gray-400">${formatDate(entry.created_at)}</span>
+          </div>
+          ${isLong ? `<div class="entry-snippet">${esc(snippetText)}</div>` : ''}
+          <div class="${isLong ? 'entry-full' : ''} text-sm text-gray-700 whitespace-pre-wrap">${content}</div>
+          ${sourcesHtml}
+          ${questionsHtml}
         </div>
-        <div class="text-sm text-gray-700 whitespace-pre-wrap">${content}</div>
-        ${backLinkHtml}
-        ${sourcesHtml}
-        ${questionsHtml}
       </div>
     `);
   }
