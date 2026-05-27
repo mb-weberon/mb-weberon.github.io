@@ -480,6 +480,24 @@ header.main-header h1 { margin: 0; font-size: 1.4rem; font-weight: 600; letter-s
 .ent-row .ent-name { font-size: 0.82rem; font-weight: 600; color: #475569; }
 .ent-row input::placeholder { color: #cbd5e1; }
 
+/* CSV picker rows */
+.csv-file-row {
+    display: flex; align-items: center; justify-content: space-between;
+    width: 100%; text-align: left;
+    padding: 10px 12px; margin-bottom: 6px;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: #fff; cursor: pointer; font-family: inherit;
+    transition: background 0.12s, border-color 0.12s;
+}
+.csv-file-row:hover { background: #f1f5f9; border-color: var(--primary); }
+.csv-file-row.newest { border-color: #bfdbfe; background: #eff6ff; }
+.csv-file-name { font-size: 0.82rem; color: #334155; word-break: break-all; }
+.csv-newest-tag {
+    font-size: 0.6rem; font-weight: 700; text-transform: uppercase;
+    background: var(--primary); color: #fff; padding: 2px 7px; border-radius: 9px;
+    margin-left: 10px; flex-shrink: 0;
+}
+
 /* Help button */
 .help-btn {
     position: absolute;
@@ -600,13 +618,25 @@ header.main-header { position: relative; }
 
 <!-- Persistence sub-bar -->
 <div class="subbar hidden" id="persistBar">
-    <span class="subbar-label">Database:</span>
-    <button class="btn" id="connectFileBtn">Connect leave_db.json</button>
+    <span class="subbar-label">Workspace:</span>
+    <button class="btn" id="connectFolderBtn">Connect folder</button>
     <button class="btn" id="grantPermBtn" style="display:none;">Reconnect (grant permission)</button>
     <button class="btn" id="importBtn">Import JSON</button>
     <button class="btn" id="exportBtn">Export JSON</button>
     <input type="file" id="importInput" class="file-input" accept=".json,application/json">
     <span class="subbar-note" id="persistNote"></span>
+</div>
+
+<!-- CSV picker overlay (lists CSVs in the connected workspace folder) -->
+<div class="modal-overlay hidden" id="csvPickerModal">
+    <div class="modal">
+        <div class="modal-head"><h3>Load attendance CSV</h3><button class="modal-x" data-close="csvPickerModal">×</button></div>
+        <div class="modal-body" id="csvPickerBody"></div>
+        <div class="modal-foot">
+            <span class="modal-note">Files in your workspace folder.</span>
+            <button class="btn" id="browseElsewhereBtn">Browse elsewhere…</button>
+        </div>
+    </div>
 </div>
 
 <!-- Leave Accounting view -->
@@ -675,7 +705,7 @@ header.main-header { position: relative; }
             <h4>Saving the leave database</h4>
             <p>The leave data lives in a JSON database. How it's saved depends on where you open the app:</p>
             <ul>
-                <li><strong>Auto-save (recommended):</strong> when the app runs from a local server or a hosted site in Chrome/Edge, click <em>Connect leave_db.json</em> and pick (or create) the file. After that it saves automatically about a second after each change. Put the file inside a Google Drive (or similar) synced folder and your data is backed up to the cloud and shared across machines — no accounts or keys needed. The dot in the toolbar shows <em>Saving / Saved / Unsaved</em>.</li>
+                <li><strong>Auto-save (recommended):</strong> when the app runs from a local server or a hosted site in Chrome/Edge, click <em>Connect folder</em> and pick the folder that holds your <code>leave_db.json</code> and your attendance CSV exports. The database auto-saves to that folder about a second after each change, and your CSVs in the same folder show up in the <em>Load attendance CSV</em> list. Put the folder inside Google Drive (or similar) and everything is backed up to the cloud and shared across machines — no accounts or keys needed. The dot in the toolbar shows <em>Saving / Saved / Unsaved</em>.</li>
                 <li><strong>Import / Export:</strong> always available. <em>Export</em> downloads <code>leave_db.json</code>; <em>Import</em> loads one back. Use this if auto-save isn't available in your setup — the file format is identical either way.</li>
             </ul>
             <p class="help-tip"><strong>To enable auto-save locally:</strong> put the HTML file in a folder, run <code>python3 -m http.server 8000</code> in that folder, and open <code>http://localhost:8000/</code> (then the file name). Opening the file directly by double-clicking won't allow auto-save — use Import/Export there.</p>
@@ -1565,36 +1595,38 @@ function renderDay(d) {
 }
 
 /* =========================================================================
- * PERSISTENCE LAYER
+ * PERSISTENCE LAYER — WORKSPACE FOLDER MODEL
  * =========================================================================
- * Capability-detecting storage for the leave db. Two transports behind one
- * interface; the data (a normalized leave-db JSON) is identical either way.
+ * Capability-detecting storage. The data (a normalized leave-db JSON) is
+ * identical across transports.
  *
- *   A) File System Access (Chromium, secure context incl. http://localhost):
- *      - User connects a leave_db.json file (or creates one) via picker.
- *      - The FileSystemFileHandle is cached in IndexedDB so the app remembers
- *        the file across reloads (browser still re-grants write permission,
- *        usually one click per session).
- *      - Saves are DEBOUNCED (~1s trailing) and flushed on visibility/unload.
- *      - Point the file at a Google-Drive-synced folder for cloud backup.
+ *   A) Workspace folder (Chromium, secure context incl. http://localhost):
+ *      - User connects ONE directory via showDirectoryPicker().
+ *      - leave_db.json is read/written inside that folder (auto-saved,
+ *        debounced ~1s, flushed on hide/unload).
+ *      - Attendance CSVs living in the same folder are listed for loading.
+ *      - The directory handle is cached in IndexedDB so the workspace is
+ *        remembered across reloads (browser re-grants permission, usually
+ *        one click per session).
+ *      - Point the folder at Google Drive (or similar) for cloud backup.
  *
  *   B) Fallback (file://, preview sandbox, Firefox/Safari):
- *      - Manual Import (file input) / Export (download) of the same JSON.
+ *      - Manual Import/Export of the JSON; manual file upload for CSVs.
  *
  * Single-editor model. A lightweight "changed since load" guard compares the
- * on-disk updatedAt with what we last wrote, warning before clobbering.
+ * on-disk updatedAt with what we last wrote.
  * ========================================================================= */
 
 const fsaSupported = (typeof window !== 'undefined') &&
-    typeof window.showSaveFilePicker === 'function' &&
-    typeof window.showOpenFilePicker === 'function';
+    typeof window.showDirectoryPicker === 'function';
 
 const AUTOSAVE_DEBOUNCE_MS = 1000;
+const DB_FILENAME = 'leave_db.json';
 
-/* --- tiny IndexedDB helper to persist the file handle across reloads --- */
+/* --- IndexedDB helper to persist the directory handle across reloads --- */
 const HANDLE_DB = 'wspl-leave-store';
 const HANDLE_STORE = 'handles';
-const HANDLE_KEY = 'leaveDbFile';
+const HANDLE_KEY = 'workspaceDir';
 
 function idbOpen() {
     return new Promise((resolve, reject) => {
@@ -1650,8 +1682,10 @@ async function verifyPermission(handle, write) {
 /* --- the storage controller --- */
 const storage = {
     mode: fsaSupported ? 'fsa' : 'fallback',  // current transport
-    handle: null,             // FileSystemFileHandle when connected
-    connected: false,         // true once a file is connected (fsa)
+    dirHandle: null,          // FileSystemDirectoryHandle (the workspace)
+    dbFileHandle: null,       // FileSystemFileHandle for leave_db.json inside dir
+    connected: false,         // true once a workspace folder is connected
+    workspaceName: '',        // folder name for display
     lastWrittenAt: null,      // updatedAt string we last persisted
     saveState: 'idle',        // 'idle' | 'saving' | 'saved' | 'unsaved' | 'error'
     _debounceTimer: null,
@@ -1668,68 +1702,100 @@ const storage = {
         return JSON.stringify(db, null, 2);
     },
 
-    /* Connect (pick/create) a leave_db.json via FS Access. Returns loaded db or null. */
-    async connectFile() {
-        if (!fsaSupported) throw new Error('File System Access not supported in this browser.');
-        const handle = await window.showSaveFilePicker({
-            suggestedName: 'leave_db.json',
-            types: [{ description: 'Leave database (JSON)', accept: { 'application/json': ['.json'] } }]
-        });
-        if (!(await verifyPermission(handle, true))) throw new Error('Write permission denied.');
-        this.handle = handle;
+    /* Connect (pick) a workspace folder. Returns loaded db or null (empty/new). */
+    async connectFolder() {
+        if (!fsaSupported) throw new Error('Folder access not supported in this browser.');
+        const dir = await window.showDirectoryPicker({ mode: 'readwrite' });
+        if (!(await verifyPermission(dir, true))) throw new Error('Read/write permission denied.');
+        this.dirHandle = dir;
+        this.workspaceName = dir.name || 'workspace';
         this.connected = true;
-        await idbPutHandle(handle);
-        // Try to read existing content (may be an empty new file).
-        const loaded = await this.readFromHandle();
+        await idbPutHandle(dir);
+        const loaded = await this._loadDbFromDir();
         this._setState('saved', 'Connected');
         return loaded;
     },
 
-    /* Reconnect a previously-cached handle on startup. Returns loaded db or null. */
+    /* Reconnect a previously-cached directory handle on startup. */
     async tryReconnect() {
         if (!fsaSupported) return null;
-        const handle = await idbGetHandle();
-        if (!handle) return null;
-        // Don't force a permission prompt on load; only reconnect if already granted.
-        const opts = { mode: 'readwrite' };
-        const perm = await handle.queryPermission(opts);
-        this.handle = handle;
+        const dir = await idbGetHandle();
+        if (!dir) return null;
+        this.dirHandle = dir;
+        this.workspaceName = dir.name || 'workspace';
         this.connected = true;
+        // Don't force a prompt on load; only proceed if already granted.
+        const perm = await dir.queryPermission({ mode: 'readwrite' });
         if (perm === 'granted') {
-            const loaded = await this.readFromHandle();
+            const loaded = await this._loadDbFromDir();
             this._setState('saved', 'Reconnected');
             return loaded;
         }
-        // Permission needs a user gesture — signal "needs permission".
         this._setState('unsaved', 'Reconnect — permission needed');
         return null;
     },
 
-    /* Re-request permission on the cached handle (call from a click). */
+    /* Re-request permission on the cached directory (call from a click). */
     async grantReconnect() {
-        if (!this.handle) return null;
-        if (!(await verifyPermission(this.handle, true))) throw new Error('Permission denied.');
-        const loaded = await this.readFromHandle();
+        if (!this.dirHandle) return null;
+        if (!(await verifyPermission(this.dirHandle, true))) throw new Error('Permission denied.');
+        const loaded = await this._loadDbFromDir();
         this._setState('saved', 'Reconnected');
         return loaded;
     },
 
-    async readFromHandle() {
-        if (!this.handle) return null;
-        const file = await this.handle.getFile();
-        const text = await file.text();
-        if (!text || !text.trim()) return null; // brand-new empty file
-        const parsed = JSON.parse(text);
-        const db = normalizeLeaveDb(parsed);
-        this.lastWrittenAt = db.updatedAt;
-        return db;
+    /* Get (creating if needed) the leave_db.json file handle inside the folder. */
+    async _ensureDbFileHandle(create) {
+        if (!this.dirHandle) return null;
+        this.dbFileHandle = await this.dirHandle.getFileHandle(DB_FILENAME, { create: !!create });
+        return this.dbFileHandle;
     },
 
-    /* Check whether the on-disk file changed since we last wrote (conflict guard). */
-    async diskChangedSinceWrite() {
-        if (!this.handle) return false;
+    /* Read leave_db.json from the folder; create it if absent. Returns db or null. */
+    async _loadDbFromDir() {
         try {
-            const file = await this.handle.getFile();
+            const fh = await this._ensureDbFileHandle(true);
+            const file = await fh.getFile();
+            const text = await file.text();
+            if (!text || !text.trim()) return null; // newly-created empty file
+            const db = normalizeLeaveDb(JSON.parse(text));
+            this.lastWrittenAt = db.updatedAt;
+            return db;
+        } catch (e) {
+            console.warn('_loadDbFromDir failed', e);
+            return null;
+        }
+    },
+
+    /* List .csv files in the workspace folder, newest-first by name (date-stamped). */
+    async listCsvFiles() {
+        if (!this.dirHandle) return [];
+        const out = [];
+        try {
+            for await (const [name, handle] of this.dirHandle.entries()) {
+                if (handle.kind === 'file' && /\.csv$/i.test(name)) {
+                    out.push({ name, handle });
+                }
+            }
+        } catch (e) { console.warn('listCsvFiles failed', e); }
+        // Sort descending by name; Anviz exports embed the date range, so this
+        // puts the most recent range first in the common case.
+        out.sort((a, b) => b.name.localeCompare(a.name, undefined, { numeric: true }));
+        return out;
+    },
+
+    /* Read a CSV file's text from a handle obtained via listCsvFiles(). */
+    async readCsvFromHandle(handle) {
+        const file = await handle.getFile();
+        return file.text();
+    },
+
+    /* Check whether leave_db.json changed since we last wrote (conflict guard). */
+    async diskChangedSinceWrite() {
+        if (!this.dirHandle) return false;
+        try {
+            const fh = await this._ensureDbFileHandle(false);
+            const file = await fh.getFile();
             const text = await file.text();
             if (!text || !text.trim()) return false;
             const onDisk = JSON.parse(text);
@@ -1738,11 +1804,12 @@ const storage = {
     },
 
     async writeNow(db) {
-        if (!this.handle) { this._setState('unsaved', 'No file connected'); return false; }
+        if (!this.dirHandle) { this._setState('unsaved', 'No workspace connected'); return false; }
         try {
             this._setState('saving');
+            const fh = await this._ensureDbFileHandle(true);
             const json = this.serialize(db);
-            const writable = await this.handle.createWritable();
+            const writable = await fh.createWritable();
             await writable.write(json);
             await writable.close();
             this._setState('saved', new Date().toLocaleTimeString());
@@ -1757,7 +1824,6 @@ const storage = {
     /* Debounced save: schedule a write ~1s after the last change. */
     scheduleSave(db) {
         if (this.mode !== 'fsa' || !this.connected) {
-            // Fallback mode: mark dirty so the UI can prompt Export.
             this._setState('unsaved', 'Export to persist');
             return;
         }
@@ -1779,8 +1845,10 @@ const storage = {
     async disconnect() {
         clearTimeout(this._debounceTimer);
         this._debounceTimer = null;
-        this.handle = null;
+        this.dirHandle = null;
+        this.dbFileHandle = null;
         this.connected = false;
+        this.workspaceName = '';
         await idbClearHandle();
         this._setState('idle', 'Disconnected');
     }
@@ -1922,39 +1990,7 @@ function handleFile(file) {
     const reader = new FileReader();
     reader.onload = (evt) => {
         try {
-            const text = evt.target.result;
-            const rows = parseCSV(text);
-            const records = rowsToRecords(rows);
-
-            // Stash state for re-filtering.
-            state.records = records;
-            state.fileName = file.name;
-            state.naturalRange = getDataDateRange(records);
-
-            // Initialise the date inputs to the full data range and set the
-            // selectable bounds so users can't pick outside the data.
-            const minV = dateToInputValue(state.naturalRange.start);
-            const maxV = dateToInputValue(state.naturalRange.end);
-            filterStartInput.value = minV;
-            filterEndInput.value = maxV;
-            filterStartInput.min = minV; filterStartInput.max = maxV;
-            filterEndInput.min = minV;   filterEndInput.max = maxV;
-
-            // Initial render of the attendance report (kept ready behind the toggle).
-            rebuild(state.naturalRange.start, state.naturalRange.end);
-
-            // Close the upload overlay. Do NOT switch modes — stay where we are
-            // (Leave Accounting is the home base). The attendance report is built
-            // and available via the toggle.
-            uploadScreen.classList.add('hidden');
-
-            // CSV is loaded: enable leave processing.
-            processRangeBtn.disabled = false;
-            processRangeBtn.title = 'Detect leaves in the current date range and merge into the database (idempotent)';
-
-            // Prepare the leave view for this dataset (seeds employee identities).
-            onCsvLoadedForLeave();
-            if (leaveState.mode === 'leave') renderLeaveView();
+            loadCsvText(evt.target.result, file.name);
         } catch (err) {
             console.error(err);
             errorMsg.textContent = err && err.message ? err.message : 'Failed to parse the CSV file.';
@@ -1962,6 +1998,41 @@ function handleFile(file) {
     };
     reader.onerror = () => { errorMsg.textContent = 'Unable to read the file.'; };
     reader.readAsText(file);
+}
+
+/* Shared CSV ingestion — used by both the OS upload and the in-folder picker.
+ * Parses, stashes state, builds the report, and refreshes the leave view.
+ * Stays in the current mode (Leave Accounting is the home base). */
+function loadCsvText(text, fileName) {
+    const rows = parseCSV(text);
+    const records = rowsToRecords(rows);
+
+    // Stash state for re-filtering.
+    state.records = records;
+    state.fileName = fileName;
+    state.naturalRange = getDataDateRange(records);
+
+    // Initialise the date inputs to the full data range and bound them.
+    const minV = dateToInputValue(state.naturalRange.start);
+    const maxV = dateToInputValue(state.naturalRange.end);
+    filterStartInput.value = minV;
+    filterEndInput.value = maxV;
+    filterStartInput.min = minV; filterStartInput.max = maxV;
+    filterEndInput.min = minV;   filterEndInput.max = maxV;
+
+    // Build the attendance report (kept ready behind the toggle).
+    rebuild(state.naturalRange.start, state.naturalRange.end);
+
+    // Close any open upload UI; do NOT switch modes.
+    uploadScreen.classList.add('hidden');
+
+    // CSV is loaded: enable leave processing.
+    processRangeBtn.disabled = false;
+    processRangeBtn.title = 'Detect leaves in the current date range and merge into the database (idempotent)';
+
+    // Prepare the leave view for this dataset (seeds employee identities).
+    onCsvLoadedForLeave();
+    if (leaveState.mode === 'leave') renderLeaveView();
 }
 
 /* =========================================================================
@@ -1992,7 +2063,7 @@ const persistBar = document.getElementById('persistBar');
 const saveDot = document.getElementById('saveDot');
 const saveLabel = document.getElementById('saveLabel');
 const processRangeBtn = document.getElementById('processRangeBtn');
-const connectFileBtn = document.getElementById('connectFileBtn');
+const connectFolderBtn = document.getElementById('connectFolderBtn');
 const grantPermBtn = document.getElementById('grantPermBtn');
 const importBtn = document.getElementById('importBtn');
 const exportBtn = document.getElementById('exportBtn');
@@ -2077,23 +2148,23 @@ function buildLeaveEmptyState() {
     let dbStep;
     if (needPerm) {
         dbStep = `<div class="gs-step"><span class="gs-num">1</span>
-            <div><strong>Reconnect your leave database.</strong> A previously used file was found — grant permission to continue.
+            <div><strong>Reconnect your workspace.</strong> A previously used folder was found — grant permission to continue.
             <div class="gs-actions"><button class="btn btn-primary" onclick="document.getElementById('grantPermBtn').click()">Reconnect (grant permission)</button></div></div></div>`;
     } else if (connected) {
         dbStep = `<div class="gs-step done"><span class="gs-num">✓</span>
-            <div><strong>Leave database connected.</strong> ${storage.mode === 'fsa' ? 'Changes auto-save.' : 'Use Export to save.'}</div></div>`;
+            <div><strong>Workspace connected${storage.workspaceName ? ' — ' + escapeHtml(storage.workspaceName) : ''}.</strong> ${storage.mode === 'fsa' ? 'Changes auto-save to leave_db.json in this folder.' : 'Use Export to save.'}</div></div>`;
     } else if (fsaSupported) {
         dbStep = `<div class="gs-step"><span class="gs-num">1</span>
-            <div><strong>Connect a leave database.</strong> Pick or create a <code>leave_db.json</code> file (put it in a synced folder like Google Drive for backup). Changes then save automatically.
+            <div><strong>Connect a workspace folder.</strong> Pick the folder that holds (or will hold) your <code>leave_db.json</code> and your attendance CSV exports — one folder for everything. Put it inside Google Drive (or similar) for cloud backup. Changes then save automatically.
             <div class="gs-actions">
-                <button class="btn btn-primary" onclick="document.getElementById('connectFileBtn').click()">Connect leave_db.json</button>
+                <button class="btn btn-primary" onclick="document.getElementById('connectFolderBtn').click()">Connect folder</button>
                 <button class="btn" onclick="document.getElementById('importBtn').click()">Import existing JSON</button>
             </div></div></div>`;
     } else {
         dbStep = `<div class="gs-step"><span class="gs-num">1</span>
-            <div><strong>Load a leave database.</strong> Auto-save isn't available here (it needs a local server or hosted site in Chrome/Edge), so import an existing <code>leave_db.json</code> or start fresh and Export when done.
+            <div><strong>Load a leave database.</strong> Folder auto-save isn't available here (it needs a local server or hosted site in Chrome/Edge), so import an existing <code>leave_db.json</code> or start fresh and Export when done.
             <div class="gs-actions"><button class="btn btn-primary" onclick="document.getElementById('importBtn').click()">Import JSON</button></div>
-            <div class="gs-hint">Tip: run <code>python3 -m http.server 8000</code> in this file's folder and open <code>http://localhost:8000/</code> to enable auto-save.</div></div></div>`;
+            <div class="gs-hint">Tip: run <code>python3 -m http.server 8000</code> in this file's folder and open <code>http://localhost:8000/</code> to enable the workspace folder &amp; auto-save.</div></div></div>`;
     }
 
     // Step 2: configure types/entitlements (always available).
@@ -2231,9 +2302,9 @@ processRangeBtn.addEventListener('click', () => {
 });
 
 /* ----- Persistence buttons ----- */
-connectFileBtn.addEventListener('click', async () => {
+connectFolderBtn.addEventListener('click', async () => {
     try {
-        const loaded = await storage.connectFile();
+        const loaded = await storage.connectFolder();
         if (loaded) {
             // Merge identities from current CSV into the loaded db.
             leaveState.db = loaded;
@@ -2243,12 +2314,12 @@ connectFileBtn.addEventListener('click', async () => {
                 }
             }
         } else {
-            // New/empty file — write current db immediately.
+            // New/empty leave_db.json in the folder — write current db immediately.
             await storage.writeNow(leaveState.db);
         }
         grantPermBtn.style.display = 'none';
         renderLeaveView();
-        persistNote.textContent = 'Database connected. Auto-save is on (debounced).';
+        persistNote.textContent = `Workspace "${storage.workspaceName}" connected. Auto-save is on (debounced).`;
     } catch (e) {
         persistNote.textContent = 'Connect cancelled or failed: ' + (e.message || e);
     }
@@ -2406,9 +2477,60 @@ function openUploadOverlay() {
     errorMsg.textContent = '';
     uploadScreen.classList.remove('hidden');
 }
-document.getElementById('loadCsvBtn').addEventListener('click', openUploadOverlay);
 document.getElementById('uploadCloseBtn').addEventListener('click', () => uploadScreen.classList.add('hidden'));
 uploadScreen.addEventListener('click', (e) => { if (e.target === uploadScreen) uploadScreen.classList.add('hidden'); });
+
+/* ----- "Load attendance CSV": folder list when connected, else OS dialog ----- */
+const csvPickerModal = document.getElementById('csvPickerModal');
+const csvPickerBody = document.getElementById('csvPickerBody');
+
+document.getElementById('loadCsvBtn').addEventListener('click', async () => {
+    if (storage.mode === 'fsa' && storage.connected && storage.dirHandle) {
+        await openCsvPicker();
+    } else {
+        openUploadOverlay();
+    }
+});
+
+async function openCsvPicker() {
+    csvPickerBody.innerHTML = `<div class="leave-empty-note">Reading folder…</div>`;
+    csvPickerModal.classList.remove('hidden');
+    let files = [];
+    try {
+        files = await storage.listCsvFiles();
+    } catch (e) {
+        csvPickerBody.innerHTML = `<div class="leave-empty-note">Couldn't read the folder: ${escapeHtml(e.message || String(e))}</div>`;
+        return;
+    }
+    if (!files.length) {
+        csvPickerBody.innerHTML = `<div class="leave-empty-note">No CSV files found in <strong>${escapeHtml(storage.workspaceName)}</strong>. Drop your Anviz exports into that folder, or use “Browse elsewhere…”.</div>`;
+        return;
+    }
+    csvPickerBody.innerHTML = files.map((f, i) =>
+        `<button class="csv-file-row${i === 0 ? ' newest' : ''}" data-idx="${i}">
+            <span class="csv-file-name">${escapeHtml(f.name)}</span>
+            ${i === 0 ? '<span class="csv-newest-tag">newest</span>' : ''}
+        </button>`).join('');
+    csvPickerBody.querySelectorAll('.csv-file-row').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const f = files[+btn.dataset.idx];
+            try {
+                const text = await storage.readCsvFromHandle(f.handle);
+                csvPickerModal.classList.add('hidden');
+                loadCsvText(text, f.name);
+            } catch (e) {
+                csvPickerBody.innerHTML = `<div class="leave-empty-note">Failed to read ${escapeHtml(f.name)}: ${escapeHtml(e.message || String(e))}</div>`;
+            }
+        });
+    });
+}
+
+/* "Browse elsewhere" — fall back to the OS file dialog. */
+document.getElementById('browseElsewhereBtn').addEventListener('click', () => {
+    csvPickerModal.classList.add('hidden');
+    openUploadOverlay();
+});
+
 
 /* =========================================================================
  * APP BOOT
@@ -2420,8 +2542,8 @@ uploadScreen.addEventListener('click', (e) => { if (e.target === uploadScreen) u
 async function startupReconnect() {
     if (!fsaSupported) {
         // Fallback environment: no auto-save; steer toward Import/Export.
-        persistNote.textContent = 'Auto-save needs a localhost/https origin (Chromium). Use Import/Export here.';
-        connectFileBtn.style.display = 'none';
+        persistNote.textContent = 'Folder auto-save needs a localhost/https origin (Chromium). Use Import/Export here.';
+        connectFolderBtn.style.display = 'none';
         return;
     }
     try {
