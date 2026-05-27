@@ -1,0 +1,2316 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>WSPL Attendance Report</title>
+<style>
+:root {
+    --primary: #1e3a8a;
+    --bg: #f8fafc;
+    --text: #334155;
+    --border: #e2e8f0;
+    --grid-cols: 2.8fr 0.6fr 0.6fr 0.6fr 0.6fr 0.6fr 0.6fr;
+    --danger: #ef4444;
+    --success: #059669;
+    --level0-bg: #f1f5f9;
+    --level0-text: #1e3a8a;
+    --holiday-bg: #fef9c3;
+    --leave-bg: #fee2e2;
+    --half-day-bg: #e0f2fe;
+}
+html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; }
+body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+}
+header.main-header {
+    background: var(--primary);
+    color: white;
+    padding: 1rem;
+    text-align: center;
+    flex-shrink: 0;
+}
+header.main-header h1 { margin: 0; font-size: 1.4rem; font-weight: 600; letter-spacing: 0.02em; }
+
+/* Upload screen */
+.upload-screen {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+.upload-card {
+    width: 100%;
+    max-width: 520px;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 36px 32px;
+    box-shadow: 0 6px 24px rgba(15, 23, 42, 0.06);
+    text-align: center;
+}
+.upload-card h2 {
+    margin: 0 0 6px;
+    color: var(--primary);
+    font-size: 1.25rem;
+    font-weight: 700;
+}
+.upload-card .subtitle {
+    color: #64748b;
+    font-size: 0.85rem;
+    margin: 0 0 22px;
+}
+.dropzone {
+    border: 2px dashed #cbd5e1;
+    border-radius: 8px;
+    padding: 30px 20px;
+    transition: background 0.15s, border-color 0.15s;
+    cursor: pointer;
+}
+.dropzone.dragover {
+    border-color: var(--primary);
+    background: #eff6ff;
+}
+.dropzone .icon-large {
+    font-size: 2.2rem;
+    color: #94a3b8;
+    margin-bottom: 8px;
+    display: block;
+}
+.dropzone .hint {
+    color: #475569;
+    font-size: 0.9rem;
+    margin-bottom: 4px;
+}
+.dropzone .sub-hint {
+    color: #94a3b8;
+    font-size: 0.75rem;
+}
+.file-input { display: none; }
+.choose-btn {
+    margin-top: 18px;
+    padding: 10px 20px;
+    background: var(--primary);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+.choose-btn:hover { background: #1e40af; }
+.error-msg {
+    margin-top: 14px;
+    color: var(--danger);
+    font-size: 0.8rem;
+    font-weight: 600;
+    min-height: 1em;
+}
+.info-line {
+    margin-top: 16px;
+    color: #64748b;
+    font-size: 0.72rem;
+    line-height: 1.5;
+}
+
+/* Report controls */
+.controls {
+    background: #fff;
+    padding: 8px 20px;
+    display: flex;
+    gap: 10px;
+    border-bottom: 1px solid var(--border);
+    justify-content: flex-end;
+    align-items: center;
+    flex-shrink: 0;
+}
+.controls .meta {
+    margin-right: auto;
+    font-size: 0.72rem;
+    color: #64748b;
+}
+.controls .meta strong { color: #334155; font-weight: 600; }
+.btn {
+    padding: 5px 12px;
+    font-size: 0.7rem;
+    border-radius: 4px;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: white;
+    color: #334155;
+    transition: background 0.12s;
+}
+.btn:hover { background: #f1f5f9; }
+.btn-primary {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+}
+.btn-primary:hover { background: #1e40af; }
+
+/* Date-range filter */
+.date-filter {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-right: 6px;
+    margin-right: 6px;
+    border-right: 1px solid var(--border);
+}
+.date-filter-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: #64748b;
+}
+.date-input {
+    font-family: inherit;
+    font-size: 0.72rem;
+    padding: 4px 6px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: #334155;
+    background: #fff;
+}
+.date-input:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px rgba(30, 58, 138, 0.12);
+}
+.filter-warn {
+    color: var(--danger);
+    font-size: 0.68rem;
+    font-weight: 600;
+    margin-left: 4px;
+}
+
+/* Empty state */
+.empty-state {
+    padding: 60px 20px;
+    text-align: center;
+    color: #94a3b8;
+    font-size: 0.95rem;
+}
+.empty-state strong { color: #64748b; }
+
+/* Report tree */
+.scroll-container {
+    flex: 1;
+    overflow-y: scroll;
+    background: #fff;
+    width: 100%;
+    max-width: 1500px;
+    margin: 0 auto;
+}
+.header-row {
+    display: grid;
+    grid-template-columns: var(--grid-cols);
+    background: #f8fafc;
+    padding: 12px 20px;
+    font-weight: 800;
+    text-transform: uppercase;
+    font-size: 0.65rem;
+    color: #64748b;
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+    border-bottom: 2px solid var(--border);
+}
+.tree { list-style: none; padding: 0; margin: 0; }
+.row-item {
+    display: grid;
+    grid-template-columns: var(--grid-cols);
+    align-items: center;
+    padding: 10px 20px;
+    cursor: pointer;
+    border-bottom: 1px solid #f1f5f9;
+}
+.level-0-row {
+    background: var(--level0-bg);
+    color: var(--level0-text);
+    font-weight: 800;
+    font-size: 1.15rem;
+    border-bottom: 2px solid #e2e8f0;
+}
+.level-1-row {
+    background: #fff;
+    color: #475569;
+    font-weight: 700;
+    border-bottom: 1px solid #f1f5f9;
+}
+.level-2-row { font-weight: 600; color: #64748b; }
+.level-2-row .col-1 { padding-left: 40px; }
+.holiday-row .level-2-row { background-color: var(--holiday-bg) !important; color: #b45309 !important; }
+.leave-row .level-2-row { background-color: var(--leave-bg) !important; color: #991b1b !important; }
+.half-day-row .level-2-row { background-color: var(--half-day-bg) !important; color: #0369a1 !important; }
+.movement-header-row {
+    background: #f8fafc;
+    font-weight: 800;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    color: #94a3b8;
+}
+.level-3-row { font-size: 0.8rem; background: #fcfcfc; }
+.level-3-row .col-1 { padding-left: 70px; }
+.children { display: none; }
+.expanded > .children { display: block; }
+.icon {
+    width: 18px;
+    display: inline-block;
+    transition: transform 0.2s;
+    margin-right: 8px;
+    color: #94a3b8;
+}
+.icon-error { color: var(--danger) !important; }
+.expanded > .row-item .icon { transform: rotate(90deg); }
+.no-movements .icon { visibility: hidden; }
+.badge {
+    font-size: 0.6rem;
+    background: #f1f5f9;
+    padding: 2px 6px;
+    border-radius: 10px;
+    margin-left: 8px;
+    color: #64748b;
+    border: 1px solid #e2e8f0;
+}
+.badge-leave { background: #fee2e2; color: #991b1b; border-color: #fecaca; }
+.in-time { color: var(--success); font-weight: 600; }
+.missing-log { color: var(--danger) !important; font-weight: bold !important; }
+.worked-val { color: var(--success); font-weight: 700; }
+.hours-val { color: #1e3a8a; font-weight: 600; }
+.device-val { color: #94a3b8; font-size: 0.7rem; }
+
+.hidden { display: none !important; }
+
+/* Mode toggle */
+.mode-toggle {
+    display: inline-flex;
+    gap: 0;
+    margin-top: 10px;
+    background: rgba(255,255,255,0.12);
+    border-radius: 7px;
+    padding: 3px;
+}
+.mode-btn {
+    border: none;
+    background: transparent;
+    color: rgba(255,255,255,0.7);
+    font-size: 0.78rem;
+    font-weight: 600;
+    padding: 6px 16px;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+.mode-btn.active { background: #fff; color: var(--primary); }
+
+/* Save status indicator */
+.save-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.7rem;
+    color: #64748b;
+    padding: 0 6px;
+    margin-right: 6px;
+    border-right: 1px solid var(--border);
+}
+.save-dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: #cbd5e1; display: inline-block;
+}
+.save-dot.saving { background: #f59e0b; animation: pulse 1s infinite; }
+.save-dot.saved  { background: var(--success); }
+.save-dot.unsaved{ background: #f59e0b; }
+.save-dot.error  { background: var(--danger); }
+@keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
+
+/* Persistence sub-bar */
+.subbar {
+    background: #f8fafc;
+    border-bottom: 1px solid var(--border);
+    padding: 6px 20px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+}
+.subbar-label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; color: #94a3b8; letter-spacing: 0.03em; }
+.subbar-note { font-size: 0.7rem; color: #64748b; margin-left: 4px; }
+
+/* Leave tree rows */
+.leave-emp-row {
+    display: grid;
+    grid-template-columns: 3fr repeat(4, 1fr);
+    align-items: center;
+    padding: 10px 20px;
+    cursor: pointer;
+    background: #fff;
+    color: #475569;
+    font-weight: 700;
+    border-bottom: 1px solid #f1f5f9;
+}
+.leave-emp-row .balances {
+    grid-column: 2 / -1;
+    display: flex;
+    gap: 6px;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+}
+.bal-chip {
+    font-size: 0.62rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+    border: 1px solid #e2e8f0;
+    background: #f8fafc;
+    color: #475569;
+    white-space: nowrap;
+}
+.bal-chip .rem-neg { color: var(--danger); font-weight: 800; }
+.bal-chip.untagged { background: #fef9c3; border-color: #fde68a; color: #b45309; }
+.leave-day-header {
+    display: grid;
+    grid-template-columns: 1.4fr 0.7fr 1.3fr 1.6fr 0.9fr;
+    padding: 8px 20px 8px 56px;
+    background: #f8fafc;
+    font-size: 0.62rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    color: #94a3b8;
+}
+.leave-day-row {
+    display: grid;
+    grid-template-columns: 1.4fr 0.7fr 1.3fr 1.6fr 0.9fr;
+    align-items: center;
+    padding: 8px 20px 8px 56px;
+    border-bottom: 1px solid #f5f5f5;
+    font-size: 0.82rem;
+}
+.leave-day-row .ld-date { font-weight: 600; color: #475569; }
+.leave-day-row .ld-kind { font-size: 0.68rem; color: #94a3b8; }
+.leave-day-row select, .leave-day-row input[type="text"] {
+    font-family: inherit; font-size: 0.78rem;
+    padding: 4px 6px; border: 1px solid var(--border); border-radius: 4px;
+    background: #fff; color: #334155; width: 100%;
+}
+.leave-day-row select.untagged-sel { border-color: #fbbf24; background: #fffbeb; }
+.qty-pill {
+    font-size: 0.66rem; font-weight: 700; padding: 2px 7px; border-radius: 9px;
+    background: #e0f2fe; color: #0369a1; display: inline-block;
+}
+.qty-pill.full { background: #fee2e2; color: #991b1b; }
+.leave-empty-note { padding: 8px 20px 14px 56px; color: #94a3b8; font-size: 0.78rem; }
+
+/* Modals */
+.modal-overlay {
+    position: fixed; inset: 0; background: rgba(15,23,42,0.45);
+    display: flex; align-items: center; justify-content: center; z-index: 2000;
+}
+.modal {
+    background: #fff; border-radius: 10px; width: 92%; max-width: 460px;
+    max-height: 84vh; display: flex; flex-direction: column;
+    box-shadow: 0 20px 60px rgba(15,23,42,0.3);
+}
+.modal-wide { max-width: 720px; }
+.modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--border); }
+.modal-head h3 { margin: 0; color: var(--primary); font-size: 1.05rem; }
+.modal-x { border: none; background: none; font-size: 1.5rem; line-height: 1; cursor: pointer; color: #94a3b8; }
+.modal-body { padding: 16px 20px; overflow-y: auto; }
+.modal-foot { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 14px 20px; border-top: 1px solid var(--border); }
+.modal-note { margin-right: auto; font-size: 0.72rem; color: #94a3b8; }
+.type-edit-row, .ent-row {
+    display: grid; align-items: center; gap: 8px; margin-bottom: 8px;
+}
+.type-edit-row { grid-template-columns: 0.8fr 1.6fr 0.8fr auto; }
+.ent-row { grid-template-columns: 1.6fr repeat(var(--ent-cols, 3), 1fr); }
+.type-edit-row input, .ent-row input {
+    font-family: inherit; font-size: 0.8rem; padding: 5px 7px;
+    border: 1px solid var(--border); border-radius: 4px; width: 100%;
+}
+.type-edit-row .del-type { color: var(--danger); cursor: pointer; border: none; background: none; font-size: 1rem; }
+.ent-head { display: grid; grid-template-columns: 1.6fr repeat(var(--ent-cols, 3), 1fr); gap: 8px; font-size: 0.62rem; font-weight: 800; text-transform: uppercase; color: #94a3b8; margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+.ent-row .ent-name { font-size: 0.82rem; font-weight: 600; color: #475569; }
+.ent-row input::placeholder { color: #cbd5e1; }
+
+/* Help button */
+.help-btn {
+    position: absolute;
+    top: 14px; right: 16px;
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    border: 1.5px solid rgba(255,255,255,0.5);
+    background: rgba(255,255,255,0.12);
+    color: #fff;
+    font-size: 0.95rem; font-weight: 700;
+    cursor: pointer; line-height: 1;
+    transition: background 0.15s;
+}
+.help-btn:hover { background: rgba(255,255,255,0.25); }
+header.main-header { position: relative; }
+
+/* Help modal content */
+.help-body { font-size: 0.84rem; line-height: 1.55; color: #334155; }
+.help-body h4 {
+    margin: 18px 0 6px; color: var(--primary); font-size: 0.92rem;
+    border-bottom: 1px solid var(--border); padding-bottom: 4px;
+}
+.help-body h4:first-child { margin-top: 0; }
+.help-body p { margin: 6px 0; }
+.help-body ul { margin: 6px 0 6px 0; padding-left: 20px; }
+.help-body li { margin: 4px 0; }
+.help-body code {
+    background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 3px;
+    padding: 1px 5px; font-size: 0.8rem; color: #1e3a8a;
+}
+.help-body .help-tip {
+    background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px;
+    padding: 10px 12px; margin: 10px 0; font-size: 0.8rem;
+}
+.help-body .hl { padding: 1px 6px; border-radius: 4px; font-weight: 600; font-size: 0.78rem; white-space: nowrap; }
+.hl-holiday { background: var(--holiday-bg); color: #b45309; }
+.hl-leave   { background: var(--leave-bg);   color: #991b1b; }
+.hl-half    { background: var(--half-day-bg); color: #0369a1; }
+.hl-err     { background: #fee2e2; color: var(--danger); }
+
+</style>
+</head>
+<body>
+
+<header class="main-header">
+    <h1>WSPL Attendance Report</h1>
+    <button class="help-btn" id="helpBtn" title="How to use this app" aria-label="Help">?</button>
+    <div class="mode-toggle hidden" id="modeToggle">
+        <button class="mode-btn active" id="modeAttendanceBtn" data-mode="attendance">Attendance Report</button>
+        <button class="mode-btn" id="modeLeaveBtn" data-mode="leave">Leave Accounting</button>
+    </div>
+</header>
+
+<!-- Upload screen -->
+<div id="uploadScreen" class="upload-screen">
+    <div class="upload-card">
+        <h2>Generate Attendance Report</h2>
+        <p class="subtitle">Upload an Anviz CX5 attendance CSV file to generate the report.</p>
+        <label class="dropzone" id="dropzone" for="fileInput">
+            <span class="icon-large">⬆</span>
+            <div class="hint"><strong>Click to choose a file</strong> or drag &amp; drop here</div>
+            <div class="sub-hint">CSV file from the Anviz CX5 device export</div>
+            <input type="file" id="fileInput" class="file-input" accept=".csv,text/csv">
+        </label>
+        <button class="choose-btn" id="chooseBtn" type="button">Choose CSV File</button>
+        <div class="error-msg" id="errorMsg"></div>
+        <div class="info-line">
+            Expected columns: First Name, Last Name, Employee No., Position, Department, Date (DD/MM/YYYY), Check Time (HH:MM AM/PM), Device.
+        </div>
+    </div>
+</div>
+
+<!-- Report controls (hidden until report rendered) -->
+<div class="controls hidden" id="reportControls">
+    <div class="meta" id="reportMeta"></div>
+    <div class="date-filter" id="dateFilter">
+        <label class="date-filter-label">From
+            <input type="date" id="filterStart" class="date-input">
+        </label>
+        <label class="date-filter-label">To
+            <input type="date" id="filterEnd" class="date-input">
+        </label>
+        <button class="btn" id="applyFilterBtn">Apply</button>
+        <button class="btn" id="resetFilterBtn">Reset</button>
+    </div>
+    <button class="btn" onclick="expandAll()">Expand All</button>
+    <button class="btn" onclick="collapseAll()">Collapse All</button>
+    <button class="btn btn-primary" id="newFileBtn">New File</button>
+</div>
+
+<!-- Report container (hidden until report rendered) -->
+<div class="scroll-container hidden" id="reportContainer">
+    <div class="header-row">
+        <div>Month / Employee / Date (Day) [Tag]</div>
+        <div>Device</div>
+        <div>Time In</div>
+        <div>Device</div>
+        <div>Time Out</div>
+        <div>Total Hours</div>
+        <div>Worked Hours</div>
+    </div>
+    <ul class="tree" id="mainTree"></ul>
+</div>
+
+<!-- Leave Accounting controls -->
+<div class="controls hidden" id="leaveControls">
+    <div class="meta" id="leaveMeta"></div>
+    <div class="save-status" id="saveStatus" title="Persistence status">
+        <span class="save-dot" id="saveDot"></span><span id="saveLabel">No database</span>
+    </div>
+    <button class="btn" id="processRangeBtn" title="Detect leaves in the current date range and merge into the database (idempotent)">Process Range → DB</button>
+    <button class="btn" id="manageTypesBtn">Leave Types</button>
+    <button class="btn" id="manageEntBtn">Entitlements</button>
+    <button class="btn btn-primary" id="newFileBtn2">New File</button>
+</div>
+
+<!-- Persistence sub-bar -->
+<div class="subbar hidden" id="persistBar">
+    <span class="subbar-label">Database:</span>
+    <button class="btn" id="connectFileBtn">Connect leave_db.json</button>
+    <button class="btn" id="grantPermBtn" style="display:none;">Reconnect (grant permission)</button>
+    <button class="btn" id="importBtn">Import JSON</button>
+    <button class="btn" id="exportBtn">Export JSON</button>
+    <input type="file" id="importInput" class="file-input" accept=".json,application/json">
+    <span class="subbar-note" id="persistNote"></span>
+</div>
+
+<!-- Leave Accounting view -->
+<div class="scroll-container hidden" id="leaveContainer">
+    <ul class="tree" id="leaveTree"></ul>
+</div>
+
+<!-- Modal: Leave Types editor -->
+<div class="modal-overlay hidden" id="typesModal">
+    <div class="modal">
+        <div class="modal-head"><h3>Leave Types</h3><button class="modal-x" data-close="typesModal">×</button></div>
+        <div class="modal-body" id="typesModalBody"></div>
+        <div class="modal-foot">
+            <button class="btn" id="addTypeBtn">+ Add Type</button>
+            <button class="btn btn-primary" id="saveTypesBtn">Done</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Entitlements editor -->
+<div class="modal-overlay hidden" id="entModal">
+    <div class="modal modal-wide">
+        <div class="modal-head"><h3>Per-Employee Entitlements</h3><button class="modal-x" data-close="entModal">×</button></div>
+        <div class="modal-body" id="entModalBody"></div>
+        <div class="modal-foot">
+            <span class="modal-note">Blank = use the leave type's default annual quota.</span>
+            <button class="btn btn-primary" id="saveEntBtn">Done</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Help -->
+<div class="modal-overlay hidden" id="helpModal">
+    <div class="modal modal-wide">
+        <div class="modal-head"><h3>How to use this app</h3><button class="modal-x" data-close="helpModal">×</button></div>
+        <div class="modal-body help-body">
+
+            <h4>Getting started</h4>
+            <p>Export an attendance CSV from the Anviz CX5 device (or CrosschexCloud), then drag it onto the upload box or click <em>Choose CSV File</em>. Everything runs in your browser — the CSV is never uploaded anywhere.</p>
+
+            <h4>Two modes</h4>
+            <p>Use the toggle in the header to switch between them. Both work off the same loaded CSV.</p>
+            <ul>
+                <li><strong>Attendance Report</strong> — the hierarchical Month → Employee → Day view with hours worked, movements (breaks), and day tags.</li>
+                <li><strong>Leave Accounting</strong> — detects leave days, lets you classify them by type, and tracks per-employee balances in a saved database.</li>
+            </ul>
+
+            <h4>Attendance Report</h4>
+            <ul>
+                <li>Click any row to expand it. <em>Expand All</em> / <em>Collapse All</em> act on everything.</li>
+                <li><strong>Date filter</strong> (From / To) limits the report to a range. Handy when an export includes stray days — e.g. an "April" download that also contains 1 May. Set the range and click <em>Apply</em>; <em>Reset</em> restores the full file.</li>
+                <li><strong>Day tags:</strong> <span class="hl hl-holiday">Weekly Holiday / Alternate Saturday / public holidays</span> (yellow), <span class="hl hl-leave">Not Moved In</span> (red — a working day with no punches), <span class="hl hl-half">Half Day Leave</span> (blue — under 5 worked hours).</li>
+                <li>A <span class="hl hl-err">red arrow</span> flags a day with an odd number of punches (a missing in/out), which bubbles up to the employee.</li>
+                <li><strong>Total Hours</strong> = first punch to last punch. <strong>Worked Hours</strong> = total minus the time out on breaks.</li>
+            </ul>
+
+            <h4>Leave Accounting</h4>
+            <ul>
+                <li><strong>Process Range → DB</strong> scans the current date range and adds detected leave days (full-day absences = 1.0, half-days = 0.5) to the database. It's safe to run repeatedly — the same day is never counted twice, and any leave type you've set by hand is kept.</li>
+                <li><strong>Tagging:</strong> expand an employee and pick a <em>Leave Type</em> for each day (Earned, Sick, Without Pay, …). Add an optional note. Days left untagged show an amber highlight and an "untagged" chip.</li>
+                <li><strong>Balances</strong> per employee show as chips like <code>EL: 9/12</code> (remaining / entitlement). They update as you tag.</li>
+                <li><strong>Leave Types</strong> button — add or edit types and their default annual quotas.</li>
+                <li><strong>Entitlements</strong> button — override the quota for a specific employee; leave a cell blank to use the type's default.</li>
+            </ul>
+
+            <h4>Saving the leave database</h4>
+            <p>The leave data lives in a JSON database. How it's saved depends on where you open the app:</p>
+            <ul>
+                <li><strong>Auto-save (recommended):</strong> when the app runs from a local server or a hosted site in Chrome/Edge, click <em>Connect leave_db.json</em> and pick (or create) the file. After that it saves automatically about a second after each change. Put the file inside a Google Drive (or similar) synced folder and your data is backed up to the cloud and shared across machines — no accounts or keys needed. The dot in the toolbar shows <em>Saving / Saved / Unsaved</em>.</li>
+                <li><strong>Import / Export:</strong> always available. <em>Export</em> downloads <code>leave_db.json</code>; <em>Import</em> loads one back. Use this if auto-save isn't available in your setup — the file format is identical either way.</li>
+            </ul>
+            <p class="help-tip"><strong>To enable auto-save locally:</strong> put the HTML file in a folder, run <code>python3 -m http.server 8000</code> in that folder, and open <code>http://localhost:8000/</code> (then the file name). Opening the file directly by double-clicking won't allow auto-save — use Import/Export there.</p>
+
+            <h4>Good to know</h4>
+            <ul>
+                <li>The app shows exactly what's in the CSV. If an export includes an unexpected day, that day really is in the file — use the date filter to scope it out.</li>
+                <li>Leave days are keyed by employee + date, so re-processing a range is always safe.</li>
+                <li>Single editor at a time is assumed. If the same database file is edited from two places via cloud sync, the last save wins.</li>
+            </ul>
+
+        </div>
+        <div class="modal-foot">
+            <button class="btn btn-primary" data-close="helpModal">Got it</button>
+        </div>
+    </div>
+</div>
+
+<script>
+/* =========================================================================
+ * WSPL Attendance Report Generator
+ * Single-page app that takes an Anviz CX5 attendance CSV and renders the
+ * same hierarchical interactive report as the reference HTML.
+ * ========================================================================= */
+
+/* ---------- Public holiday list (2026) ---------- */
+const PUBLIC_HOLIDAYS = {
+    '01-01': 'New Years Day',
+    '15-01': 'Makara Sankranti',
+    '26-01': 'Republic Day',
+    '19-03': 'Chandramana Ugadi',
+    '21-03': 'Ramadan',
+    '14-09': 'Ganesha Chaturthi',
+    '02-10': 'Gandhi Jayanthi',
+    '20-10': 'Ayudha Pooja',
+    '10-11': 'Deepavali',
+    '25-12': 'Christmas'
+};
+
+const MONTH_NAMES = ['January','February','March','April','May','June',
+                     'July','August','September','October','November','December'];
+const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun',
+                     'Jul','Aug','Sep','Oct','Nov','Dec'];
+const DAY_SHORT   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+/* ---------- CSV parsing ---------- */
+/**
+ * Parse CSV text into an array of row arrays.
+ * Handles quoted fields, escaped quotes (""), CRLF, and a leading BOM.
+ */
+function parseCSV(text) {
+    if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1); // strip BOM
+    const rows = [];
+    let row = [];
+    let field = '';
+    let inQuotes = false;
+    for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        if (inQuotes) {
+            if (c === '"') {
+                if (text[i + 1] === '"') { field += '"'; i++; }
+                else inQuotes = false;
+            } else field += c;
+        } else {
+            if (c === '"') inQuotes = true;
+            else if (c === ',') { row.push(field); field = ''; }
+            else if (c === '\r') { /* skip */ }
+            else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
+            else field += c;
+        }
+    }
+    // last field/row
+    if (field.length > 0 || row.length > 0) { row.push(field); rows.push(row); }
+    return rows.filter(r => r.length > 1 || (r.length === 1 && r[0].trim() !== ''));
+}
+
+/**
+ * Convert raw rows (first row = header) into structured records.
+ */
+function rowsToRecords(rows) {
+    if (rows.length < 2) throw new Error('CSV is empty or has no data rows.');
+    const header = rows[0].map(h => h.trim().toLowerCase());
+    const idx = {
+        firstName: header.indexOf('first name'),
+        lastName:  header.indexOf('last name'),
+        empNo:     header.indexOf('employee no.'),
+        position:  header.indexOf('position'),
+        department:header.indexOf('department'),
+        date:      header.indexOf('date'),
+        checkTime: header.indexOf('check time'),
+        device:    header.indexOf('device')
+    };
+    const required = ['date', 'checkTime'];
+    for (const k of required) {
+        if (idx[k] === -1) throw new Error(`Missing required column: "${k}". Found headers: ${header.join(', ')}`);
+    }
+    if (idx.firstName === -1 && idx.lastName === -1) {
+        throw new Error('Missing both First Name and Last Name columns.');
+    }
+    const records = [];
+    for (let r = 1; r < rows.length; r++) {
+        const row = rows[r];
+        if (!row || row.every(c => !c || c.trim() === '')) continue;
+        const first = idx.firstName !== -1 ? (row[idx.firstName] || '').trim() : '';
+        const last  = idx.lastName  !== -1 ? (row[idx.lastName]  || '').trim() : '';
+        const fullName = (first && last) ? `${first} ${last}` : (last || first || 'Unknown');
+        const empNo = idx.empNo !== -1 ? (row[idx.empNo] || '').trim() : '';
+        const dateStr = (row[idx.date] || '').trim();
+        const timeStr = (row[idx.checkTime] || '').trim();
+        const device = idx.device !== -1 ? (row[idx.device] || '').trim() : '';
+        if (!dateStr || !timeStr) continue;
+        const dt = parseDateTime(dateStr, timeStr);
+        if (!dt) continue;
+        records.push({
+            fullName,
+            empNo,
+            position: idx.position !== -1 ? (row[idx.position] || '').trim() : '',
+            department: idx.department !== -1 ? (row[idx.department] || '').trim() : '',
+            date: dt,                // Date object representing date+time
+            dateKey: ymdKey(dt),     // YYYY-MM-DD
+            monthKey: ymKey(dt),     // YYYY-MM
+            device
+        });
+    }
+    if (records.length === 0) throw new Error('No valid rows found after parsing.');
+    return records;
+}
+
+/**
+ * Parse "DD/MM/YYYY" + "HH:MM AM/PM" into a Date.
+ */
+function parseDateTime(dateStr, timeStr) {
+    const dm = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (!dm) return null;
+    const day = parseInt(dm[1], 10);
+    const month = parseInt(dm[2], 10);
+    const year = parseInt(dm[3], 10);
+    const tm = timeStr.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+    if (!tm) return null;
+    let hour = parseInt(tm[1], 10);
+    const minute = parseInt(tm[2], 10);
+    const meridian = tm[3].toUpperCase();
+    if (meridian === 'AM') { if (hour === 12) hour = 0; }
+    else { if (hour !== 12) hour += 12; }
+    const d = new Date(year, month - 1, day, hour, minute, 0, 0);
+    if (isNaN(d.getTime())) return null;
+    return d;
+}
+
+function pad2(n) { return n < 10 ? '0' + n : '' + n; }
+function ymdKey(d) { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
+function ymKey(d)  { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`; }
+
+/* ---------- Calendar helpers ---------- */
+function isPublicHoliday(d) {
+    const k = `${pad2(d.getDate())}-${pad2(d.getMonth() + 1)}`;
+    return PUBLIC_HOLIDAYS[k] || null;
+}
+
+/**
+ * Returns 1..N indicating which N-th occurrence of this weekday within the
+ * month the date is (e.g., 2nd Saturday → 2).
+ */
+function nthWeekdayOfMonth(d) {
+    return Math.floor((d.getDate() - 1) / 7) + 1;
+}
+
+/**
+ * Classify a calendar day. Returns one of:
+ *  - { kind: 'public_holiday', name }
+ *  - { kind: 'weekly_holiday' }      // Sunday
+ *  - { kind: 'alternate_saturday' }  // 2nd/4th/5th Saturday
+ *  - { kind: 'working_day' }
+ */
+function classifyDay(d) {
+    const dow = d.getDay(); // 0 = Sun
+    const ph = isPublicHoliday(d);
+    if (ph) return { kind: 'public_holiday', name: ph };
+    if (dow === 0) return { kind: 'weekly_holiday' };
+    if (dow === 6) {
+        const n = nthWeekdayOfMonth(d);
+        if (n === 2 || n === 4 || n === 5) return { kind: 'alternate_saturday' };
+    }
+    return { kind: 'working_day' };
+}
+
+/* ---------- Time / hours formatting ---------- */
+function formatHM(totalMinutes) {
+    if (totalMinutes < 0) totalMinutes = 0;
+    const h = Math.floor(totalMinutes / 60);
+    const m = totalMinutes % 60;
+    return `${h}h ${m}m`;
+}
+function formatClockTime(d) {
+    let h = d.getHours();
+    const m = d.getMinutes();
+    const ap = h >= 12 ? 'PM' : 'AM';
+    h = h % 12; if (h === 0) h = 12;
+    return `${pad2(h)}:${pad2(m)} ${ap}`;
+}
+function diffMinutes(a, b) {
+    return Math.round((b.getTime() - a.getTime()) / 60000);
+}
+
+/* ---------- Build the daily report shape ----------
+ * For each (employee, date) compute:
+ *  - logs sorted ascending
+ *  - timeIn, timeOut (or notSignedOut)
+ *  - movements (breaks)
+ *  - grossMinutes, workedMinutes
+ *  - status flags
+ */
+function buildDailyEntry(logs, calendarDay) {
+    // logs: array of records on this date for this employee, must be sorted.
+    const sorted = [...logs].sort((a, b) => a.date - b.date);
+    const numLogs = sorted.length;
+    const entry = {
+        logs: sorted,
+        numLogs,
+        timeIn: null,
+        timeOut: null,
+        deviceIn: '',
+        deviceOut: '',
+        notSignedOut: false,
+        grossMinutes: 0,
+        workedMinutes: 0,
+        movements: [],         // [{ outLog, inLog?, durationMin? }]
+        hasOddLogs: false,
+        isPresent: numLogs > 0,
+        isNotMovedIn: false,
+        isHalfDay: false,
+        tag: null,             // string in brackets like "Weekly Holiday"
+        rowClass: ''           // holiday-row / leave-row / half-day-row
+    };
+
+    if (numLogs === 0) {
+        // depends on calendarDay
+        if (calendarDay.kind === 'weekly_holiday') {
+            entry.tag = 'Weekly Holiday';
+            entry.rowClass = 'holiday-row';
+        } else if (calendarDay.kind === 'public_holiday') {
+            entry.tag = calendarDay.name;
+            entry.rowClass = 'holiday-row';
+        } else if (calendarDay.kind === 'alternate_saturday') {
+            entry.tag = 'Alternate Saturday';
+            entry.rowClass = 'holiday-row';
+        } else {
+            entry.isNotMovedIn = true;
+            entry.tag = 'Not Moved In';
+            entry.rowClass = 'leave-row';
+        }
+        return entry;
+    }
+
+    // Present with at least one log
+    entry.timeIn = sorted[0].date;
+    entry.deviceIn = sorted[0].device || '';
+    if (numLogs === 1) {
+        entry.notSignedOut = true;
+        entry.deviceOut = entry.deviceIn; // reference repeats the in-device
+        entry.grossMinutes = 0;
+        entry.workedMinutes = 0;
+        entry.hasOddLogs = true; // 1 is odd
+    } else {
+        entry.timeOut = sorted[numLogs - 1].date;
+        entry.deviceOut = sorted[numLogs - 1].device || '';
+        entry.grossMinutes = diffMinutes(entry.timeIn, entry.timeOut);
+        entry.hasOddLogs = (numLogs % 2 !== 0);
+
+        // Pair logs as In-Out: (0,1), (2,3), ...
+        let worked = 0;
+        for (let i = 0; i + 1 < numLogs; i += 2) {
+            worked += diffMinutes(sorted[i].date, sorted[i + 1].date);
+        }
+        entry.workedMinutes = worked;
+
+        // Movements are the pairs between first IN and last OUT.
+        // Break k is (out = sorted[2k+1], in = sorted[2k+2]) for k = 0,1,...
+        // i.e., out-going pairs at odd indices, return pairs at even indices > 0.
+        for (let k = 0; (2 * k + 1) < (numLogs - 1); k++) {
+            const outLog = sorted[2 * k + 1];
+            const inLog = sorted[2 * k + 2]; // may be undefined if odd
+            if (inLog) {
+                entry.movements.push({
+                    outLog,
+                    inLog,
+                    durationMin: diffMinutes(outLog.date, inLog.date)
+                });
+            } else {
+                entry.movements.push({ outLog, inLog: null, durationMin: null });
+            }
+        }
+        // If odd-count > 1, the final unpaired log is also a break with missing IN.
+        if (entry.hasOddLogs && numLogs > 1) {
+            const lastLog = sorted[numLogs - 1];
+            // Already covered by loop only if numLogs - 1 is even-index pair.
+            // The loop above iterates while (2k+1) < (numLogs-1).
+            // For numLogs odd, e.g. 3: indices 0,1,2. Loop runs while (1) < 2 → k=0
+            //   adds (out=1, in=2). That treats the last as a return, but in odd case
+            //   the LAST log is missing its OUT pair. We need to instead treat the
+            //   last log as the unpaired one and recompute.
+            // Simpler: rebuild movements from scratch using the convention:
+            //   - First log = day's In.
+            //   - For i in [1..numLogs-2] inclusive, pair them as breaks: (out,in)
+            //   - Last log = day's Out.
+            //   - If middle-count is odd, the last middle log has missing in/out.
+        }
+
+        // Rebuild movements with the correct convention (overrides loop above)
+        entry.movements = [];
+        const middle = sorted.slice(1, numLogs - 1); // logs between first-In and last-Out
+        for (let i = 0; i < middle.length; i += 2) {
+            const outLog = middle[i];
+            const inLog  = middle[i + 1];
+            if (inLog) {
+                entry.movements.push({
+                    outLog,
+                    inLog,
+                    durationMin: diffMinutes(outLog.date, inLog.date)
+                });
+            } else {
+                entry.movements.push({ outLog, inLog: null, durationMin: null });
+            }
+        }
+    }
+
+    // Half-day: worked < 5h, but only flag if there IS productive time (i.e. not the
+    // single-log case which is treated separately with its own tag).
+    // Reference shows: single-log day is tagged [Half Day Leave] AND icon-error,
+    //   because numLogs=1 implies workedMinutes=0 (< 5h).
+    if (entry.workedMinutes < 5 * 60 && entry.isPresent) {
+        // Don't apply half-day on holiday rows
+        if (calendarDay.kind === 'working_day') {
+            entry.isHalfDay = true;
+            entry.tag = 'Half Day Leave';
+            entry.rowClass = 'half-day-row';
+        } else {
+            // Worked < 5h on a holiday — still show "Half Day Leave"? Reference behaviour
+            // is ambiguous, but the spec says "Any day where Worked Hours < 5 hours".
+            // Apply, but keep holiday-row styling priority.
+            entry.isHalfDay = true;
+            // Keep the existing tag (holiday name) — half-day on a holiday is unusual
+            // and the reference doesn't show this combination; safest is to keep the
+            // holiday tag and skip the half-day tag override.
+        }
+    }
+
+    return entry;
+}
+
+/* ---------- Data date-range helper ---------- */
+/**
+ * Returns the natural { start, end } date-only range covering all records.
+ */
+function getDataDateRange(records) {
+    let minDate = records[0].date, maxDate = records[0].date;
+    for (const r of records) {
+        if (r.date < minDate) minDate = r.date;
+        if (r.date > maxDate) maxDate = r.date;
+    }
+    return {
+        start: new Date(minDate.getFullYear(), minDate.getMonth(), minDate.getDate()),
+        end:   new Date(maxDate.getFullYear(), maxDate.getMonth(), maxDate.getDate())
+    };
+}
+
+/* ---------- Aggregate into months / employees ----------
+ * filterStart / filterEnd (optional Date objects, date-only) constrain the
+ * report to that inclusive range. When omitted, the natural min/max of the
+ * data is used. Records outside the range are excluded entirely, so totals,
+ * present/leave counts and the employee list all reflect only the range.
+ */
+function buildReportModel(records, filterStart, filterEnd) {
+    // Determine the active range.
+    const natural = getDataDateRange(records);
+    const startDate = filterStart
+        ? new Date(filterStart.getFullYear(), filterStart.getMonth(), filterStart.getDate())
+        : natural.start;
+    const endDate = filterEnd
+        ? new Date(filterEnd.getFullYear(), filterEnd.getMonth(), filterEnd.getDate())
+        : natural.end;
+
+    // Filter records to the active range (inclusive of both ends).
+    const startMs = startDate.getTime();
+    const endMs = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate(), 23, 59, 59, 999).getTime();
+    const inRange = records.filter(r => {
+        const t = r.date.getTime();
+        return t >= startMs && t <= endMs;
+    });
+
+    if (inRange.length === 0) {
+        return {
+            months: [],
+            dateRange: { start: startDate, end: endDate },
+            naturalRange: natural,
+            employees: [],
+            totalRecords: 0,
+            empty: true
+        };
+    }
+
+    // Unique employees (sorted alphabetically by full name) — within the range only.
+    const employeesMap = new Map();
+    for (const r of inRange) {
+        if (!employeesMap.has(r.fullName)) {
+            employeesMap.set(r.fullName, {
+                fullName: r.fullName,
+                empNo: r.empNo,
+                position: r.position,
+                department: r.department
+            });
+        }
+    }
+    const employees = [...employeesMap.values()].sort((a, b) =>
+        a.fullName.localeCompare(b.fullName, undefined, { sensitivity: 'base' })
+    );
+
+    // Index records by (employee, dateKey)
+    const recIndex = new Map(); // key: name|||dateKey → records[]
+    for (const r of inRange) {
+        const key = `${r.fullName}|||${r.dateKey}`;
+        if (!recIndex.has(key)) recIndex.set(key, []);
+        recIndex.get(key).push(r);
+    }
+
+    // Enumerate months in range, descending
+    const months = []; // [{ key, year, month (0-based), label, days: [Date desc] }]
+    const monthKeys = new Set();
+    {
+        const cur = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+        const last = new Date(endDate.getFullYear(),  endDate.getMonth(),  1);
+        while (cur <= last) {
+            monthKeys.add(ymKey(cur));
+            cur.setMonth(cur.getMonth() + 1);
+        }
+    }
+    const monthList = [...monthKeys].sort().reverse(); // descending
+    for (const mk of monthList) {
+        const [yStr, mStr] = mk.split('-');
+        const y = parseInt(yStr, 10), m = parseInt(mStr, 10) - 1;
+        // Compute the in-range day list for this month, descending.
+        const monthFirst = new Date(y, m, 1);
+        const monthLast  = new Date(y, m + 1, 0);
+        const from = monthFirst < startDate ? startDate : monthFirst;
+        const to   = monthLast  > endDate   ? endDate   : monthLast;
+        const days = [];
+        for (let d = new Date(to); d >= from; d.setDate(d.getDate() - 1)) {
+            days.push(new Date(d));
+        }
+        months.push({
+            key: mk,
+            year: y,
+            month: m,
+            label: `${MONTH_NAMES[m]} ${y}`,
+            days
+        });
+    }
+
+    // For each month → each employee → each day, compute the entry
+    const model = {
+        months: [],
+        dateRange: { start: startDate, end: endDate },
+        naturalRange: natural,
+        employees,
+        totalRecords: inRange.length,
+        empty: false
+    };
+    for (const mo of months) {
+        const monthBlock = {
+            label: mo.label,
+            year: mo.year, month: mo.month,
+            employees: [],
+            totalGross: 0,
+            totalWorked: 0
+        };
+        for (const emp of employees) {
+            const empBlock = {
+                fullName: emp.fullName,
+                days: [],
+                presentDaysCount: 0,
+                halfDaysCount: 0,
+                notMovedInCount: 0,
+                totalGross: 0,
+                totalWorked: 0,
+                hasError: false
+            };
+            for (const day of mo.days) {
+                const cls = classifyDay(day);
+                const key = `${emp.fullName}|||${ymdKey(day)}`;
+                const dayLogs = recIndex.get(key) || [];
+                const entry = buildDailyEntry(dayLogs, cls);
+                entry.date = new Date(day);
+                entry.classification = cls;
+                empBlock.days.push(entry);
+                // Aggregate
+                if (entry.isPresent) {
+                    if (entry.isHalfDay) empBlock.halfDaysCount += 1;
+                    else empBlock.presentDaysCount += 1;
+                } else if (entry.isNotMovedIn) {
+                    empBlock.notMovedInCount += 1;
+                }
+                empBlock.totalGross += entry.grossMinutes;
+                empBlock.totalWorked += entry.workedMinutes;
+                if (entry.hasOddLogs) empBlock.hasError = true;
+            }
+            // Present = full + 0.5 * halfDay
+            empBlock.presentDays = empBlock.presentDaysCount + 0.5 * empBlock.halfDaysCount;
+            empBlock.leaves = empBlock.notMovedInCount + 0.5 * empBlock.halfDaysCount;
+            monthBlock.employees.push(empBlock);
+            monthBlock.totalGross += empBlock.totalGross;
+            monthBlock.totalWorked += empBlock.totalWorked;
+        }
+        model.months.push(monthBlock);
+    }
+
+    return model;
+}
+
+/* =========================================================================
+ * LEAVE ACCOUNTING
+ * =========================================================================
+ * Data model (the "leave db") — a plain JSON object, persisted via the
+ * storage layer below. Schema version lets us migrate later.
+ *
+ *   {
+ *     schema: 1,
+ *     updatedAt: "<ISO timestamp of last save>",
+ *     leaveTypes: [ { code, label, annualQuota } ],   // editable in UI
+ *     employees: {                                     // keyed by empNo
+ *       "<empNo>": {
+ *         empNo, fullName,
+ *         entitlements: { "<typeCode>": <number> },    // overrides annualQuota
+ *         leaves: {                                    // keyed by dateKey (YYYY-MM-DD)
+ *           "<dateKey>": {
+ *             date,                  // YYYY-MM-DD
+ *             qty,                   // 0.5 or 1.0
+ *             typeCode,              // null = detected but untagged
+ *             source,                // 'auto' | 'manual'
+ *             manualTag: <bool>,     // true once a human sets/clears the type
+ *             note,                  // optional free text
+ *             detectedKind           // 'not_moved_in' | 'half_day' (why auto-flagged)
+ *           }
+ *         }
+ *       }
+ *     }
+ *   }
+ *
+ * Idempotency contract (see processLeaveRange):
+ *   - Re-processing the same range never duplicates a leave (keyed by date).
+ *   - Auto-detection only creates/updates the EXISTENCE of a leave day; it
+ *     never overwrites a typeCode the user set by hand (manualTag === true).
+ *   - DEFERRED (next iteration): a date that was a detected leave but later
+ *     shows attendance is NOT removed here. We leave it in place so manual
+ *     work is never destroyed. The reconcile-and-confirm flow goes where
+ *     marked "RECONCILE SEAM" below.
+ * ========================================================================= */
+
+const LEAVE_DB_SCHEMA = 1;
+
+const DEFAULT_LEAVE_TYPES = [
+    { code: 'EL',  label: 'Earned Leave',      annualQuota: 12 },
+    { code: 'SL',  label: 'Sick Leave',        annualQuota: 8  },
+    { code: 'LWP', label: 'Leave Without Pay', annualQuota: 0  }  // 0 = uncapped/no quota
+];
+
+function makeEmptyLeaveDb() {
+    return {
+        schema: LEAVE_DB_SCHEMA,
+        updatedAt: null,
+        leaveTypes: DEFAULT_LEAVE_TYPES.map(t => ({ ...t })),
+        employees: {}
+    };
+}
+
+/**
+ * Validate + migrate a parsed object into a well-formed leave db.
+ * Throws on structurally invalid input so Import can report a clear error.
+ */
+function normalizeLeaveDb(obj) {
+    if (!obj || typeof obj !== 'object') throw new Error('Leave DB is not an object.');
+    const db = makeEmptyLeaveDb();
+    if (Array.isArray(obj.leaveTypes) && obj.leaveTypes.length) {
+        db.leaveTypes = obj.leaveTypes
+            .filter(t => t && typeof t.code === 'string' && t.code.trim())
+            .map(t => ({
+                code: String(t.code).trim(),
+                label: String(t.label || t.code).trim(),
+                annualQuota: Number.isFinite(+t.annualQuota) ? +t.annualQuota : 0
+            }));
+        if (!db.leaveTypes.length) db.leaveTypes = DEFAULT_LEAVE_TYPES.map(t => ({ ...t }));
+    }
+    if (obj.employees && typeof obj.employees === 'object') {
+        for (const [empNo, e] of Object.entries(obj.employees)) {
+            if (!e || typeof e !== 'object') continue;
+            const emp = {
+                empNo: String(e.empNo || empNo),
+                fullName: String(e.fullName || ''),
+                entitlements: {},
+                leaves: {}
+            };
+            if (e.entitlements && typeof e.entitlements === 'object') {
+                for (const [code, v] of Object.entries(e.entitlements)) {
+                    if (Number.isFinite(+v)) emp.entitlements[code] = +v;
+                }
+            }
+            if (e.leaves && typeof e.leaves === 'object') {
+                for (const [dateKey, lv] of Object.entries(e.leaves)) {
+                    if (!lv || typeof lv !== 'object') continue;
+                    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) continue;
+                    const qty = (+lv.qty === 1 || +lv.qty === 0.5) ? +lv.qty : 1;
+                    emp.leaves[dateKey] = {
+                        date: dateKey,
+                        qty,
+                        typeCode: (typeof lv.typeCode === 'string' && lv.typeCode) ? lv.typeCode : null,
+                        source: lv.source === 'manual' ? 'manual' : 'auto',
+                        manualTag: !!lv.manualTag,
+                        note: typeof lv.note === 'string' ? lv.note : '',
+                        detectedKind: lv.detectedKind === 'half_day' ? 'half_day' : 'not_moved_in'
+                    };
+                }
+            }
+            db.employees[emp.empNo] = emp;
+        }
+    }
+    db.schema = LEAVE_DB_SCHEMA;
+    db.updatedAt = typeof obj.updatedAt === 'string' ? obj.updatedAt : null;
+    return db;
+}
+
+/**
+ * Ensure an employee record exists in the db, updating the display name.
+ */
+function ensureLeaveEmployee(db, empNo, fullName) {
+    const key = String(empNo);
+    if (!db.employees[key]) {
+        db.employees[key] = { empNo: key, fullName: fullName || '', entitlements: {}, leaves: {} };
+    } else if (fullName && db.employees[key].fullName !== fullName) {
+        db.employees[key].fullName = fullName; // keep the latest display name
+    }
+    return db.employees[key];
+}
+
+/**
+ * Idempotent reconcile of detected leaves for a date range into the db.
+ *
+ * Walks the SAME (employee × day) grid the attendance report uses, so the
+ * detection is identical to what the report shows. For each day that the
+ * attendance model classifies as a leave candidate:
+ *   - not-moved-in working day  → qty 1.0, detectedKind 'not_moved_in'
+ *   - half-day-leave working day → qty 0.5, detectedKind 'half_day'
+ * it UPSERTS a leave record keyed by dateKey.
+ *
+ * Manual tags are preserved: if an existing record has manualTag === true,
+ * only its qty/detectedKind are refreshed; typeCode/note are left untouched.
+ *
+ * Returns a summary { created, updated, unchanged, skippedManual }.
+ */
+function processLeaveRange(db, records, filterStart, filterEnd) {
+    const summary = { created: 0, updated: 0, unchanged: 0, preservedManual: 0 };
+    // Reuse the report model so detection logic stays single-sourced.
+    const model = buildReportModel(records, filterStart, filterEnd);
+    if (model.empty) return summary;
+
+    // Build an empNo lookup from the records (model groups by fullName).
+    const nameToEmpNo = new Map();
+    for (const r of records) nameToEmpNo.set(r.fullName, r.empNo);
+
+    for (const mo of model.months) {
+        for (const emp of mo.employees) {
+            const empNo = nameToEmpNo.get(emp.fullName) || emp.fullName;
+            const dbEmp = ensureLeaveEmployee(db, empNo, emp.fullName);
+            for (const day of emp.days) {
+                // Only working-day leaves count; holidays/weekends never do.
+                const isLeaveCandidate = day.isNotMovedIn || day.isHalfDay;
+                if (!isLeaveCandidate) {
+                    // RECONCILE SEAM (deferred): if dbEmp.leaves[dateKey] exists
+                    // here, the person now shows attendance / non-leave on a day
+                    // previously flagged as leave. We intentionally DO NOT remove
+                    // it this iteration. Next iteration: flag for confirmation.
+                    continue;
+                }
+                const dateKey = ymdKey(day.date);
+                const qty = day.isHalfDay ? 0.5 : 1.0;
+                const detectedKind = day.isHalfDay ? 'half_day' : 'not_moved_in';
+                const existing = dbEmp.leaves[dateKey];
+                if (!existing) {
+                    dbEmp.leaves[dateKey] = {
+                        date: dateKey,
+                        qty,
+                        typeCode: null,
+                        source: 'auto',
+                        manualTag: false,
+                        note: '',
+                        detectedKind
+                    };
+                    summary.created++;
+                } else if (existing.manualTag) {
+                    // Preserve the human's classification; refresh only qty/kind.
+                    const changed = existing.qty !== qty || existing.detectedKind !== detectedKind;
+                    existing.qty = qty;
+                    existing.detectedKind = detectedKind;
+                    summary.preservedManual++;
+                    if (changed) summary.updated++; else summary.unchanged++;
+                } else {
+                    // Auto record — safe to refresh in place (still no duplicate).
+                    const changed = existing.qty !== qty || existing.detectedKind !== detectedKind;
+                    existing.qty = qty;
+                    existing.detectedKind = detectedKind;
+                    if (changed) summary.updated++; else summary.unchanged++;
+                }
+            }
+        }
+    }
+    return summary;
+}
+
+/**
+ * Resolve an employee's entitlement for a leave type:
+ * explicit per-employee override if set, else the type's annualQuota.
+ */
+function entitlementFor(db, empNo, typeCode) {
+    const emp = db.employees[String(empNo)];
+    if (emp && Object.prototype.hasOwnProperty.call(emp.entitlements, typeCode)) {
+        return emp.entitlements[typeCode];
+    }
+    const t = db.leaveTypes.find(t => t.code === typeCode);
+    return t ? t.annualQuota : 0;
+}
+
+/**
+ * Compute per-type used/remaining balances for one employee.
+ * "used" sums qty of leaves tagged with that type. Untagged leaves are
+ * counted separately so the UI can nudge the user to classify them.
+ */
+function computeBalances(db, empNo) {
+    const emp = db.employees[String(empNo)];
+    const used = {};
+    let untagged = 0;
+    for (const t of db.leaveTypes) used[t.code] = 0;
+    if (emp) {
+        for (const lv of Object.values(emp.leaves)) {
+            if (lv.typeCode && used.hasOwnProperty(lv.typeCode)) used[lv.typeCode] += lv.qty;
+            else if (!lv.typeCode) untagged += lv.qty;
+        }
+    }
+    const rows = db.leaveTypes.map(t => {
+        const ent = entitlementFor(db, empNo, t.code);
+        return {
+            code: t.code,
+            label: t.label,
+            entitlement: ent,
+            used: used[t.code] || 0,
+            remaining: ent - (used[t.code] || 0),
+            uncapped: ent === 0 && t.code === 'LWP'
+        };
+    });
+    return { rows, untagged };
+}
+
+/* ---------- Rendering ---------- */
+function escapeHtml(s) {
+    if (s === undefined || s === null) return '';
+    return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function fmtPresentNum(n) {
+    // Show as integer when whole, else with one decimal (e.g. 0.5, 3.5)
+    return Number.isInteger(n) ? String(n) : (Math.round(n * 10) / 10).toFixed(1).replace(/\.0$/, '');
+}
+
+function renderReport(model) {
+    const tree = document.getElementById('mainTree');
+    tree.innerHTML = '';
+    if (model.empty || model.months.length === 0) {
+        tree.innerHTML = `<li class="empty-state">No attendance records fall within the selected date range.<br><strong>Adjust the From / To dates or click Reset.</strong></li>`;
+        return;
+    }
+    const html = [];
+    for (const mo of model.months) {
+        html.push(renderMonth(mo));
+    }
+    tree.innerHTML = html.join('');
+}
+
+function renderMonth(mo) {
+    const parts = [];
+    parts.push(`<li class="node level-0"><div class="row-item level-0-row" onclick="toggle(this)">
+        <div class="col-1"><span class="icon">▶</span>${escapeHtml(mo.label)}</div>
+        <div></div><div></div><div></div><div></div>
+        <div class="hours-val">${escapeHtml(formatHM(mo.totalGross))}</div>
+        <div class="worked-val">${escapeHtml(formatHM(mo.totalWorked))}</div>
+    </div><ul class="children tree">`);
+    for (const emp of mo.employees) {
+        parts.push(renderEmployee(emp));
+    }
+    parts.push(`</ul></li>`);
+    return parts.join('');
+}
+
+function renderEmployee(emp) {
+    const errClass = emp.hasError ? 'icon icon-error' : 'icon';
+    const parts = [];
+    parts.push(`<li class="node level-1"><div class="row-item level-1-row" onclick="toggle(this)">
+        <div class="col-1"><span class="${errClass}">▶</span>${escapeHtml(emp.fullName)} <span class="badge">${escapeHtml(fmtPresentNum(emp.presentDays))} Days Present</span> <span class="badge badge-leave">${escapeHtml(fmtPresentNum(emp.leaves))} Leaves</span></div>
+        <div></div><div></div><div></div><div></div>
+        <div class="hours-val">${escapeHtml(formatHM(emp.totalGross))}</div>
+        <div class="worked-val">${escapeHtml(formatHM(emp.totalWorked))}</div>
+    </div><ul class="children tree">`);
+    for (const day of emp.days) {
+        parts.push(renderDay(day));
+    }
+    parts.push(`</ul></li>`);
+    return parts.join('');
+}
+
+function renderDay(d) {
+    const dateStr = `${pad2(d.date.getDate())} ${MONTH_SHORT[d.date.getMonth()]} ${d.date.getFullYear()} (${DAY_SHORT[d.date.getDay()]})`;
+    const tagStr = d.tag ? ` [${escapeHtml(d.tag)}]` : '';
+    const hasMovements = d.movements && d.movements.length > 0;
+    const noMovClass = hasMovements ? '' : ' no-movements';
+    const rowClass = d.rowClass ? ' ' + d.rowClass : '';
+    const iconClass = d.hasOddLogs ? 'icon icon-error' : 'icon';
+    const movBadge = hasMovements ? ` <span class="badge">${d.movements.length} Mov</span>` : '';
+
+    // Devices/times columns
+    let deviceInHtml, timeInHtml, deviceOutHtml, timeOutHtml, grossHtml, workedHtml;
+    if (!d.isPresent) {
+        deviceInHtml = `<div class="device-val">---</div>`;
+        timeInHtml = `<div class="missing-log">---</div>`;
+        deviceOutHtml = `<div class="device-val">---</div>`;
+        timeOutHtml = `<div class="missing-log">---</div>`;
+        grossHtml = `<div class="hours-val">---</div>`;
+        workedHtml = `<div class="worked-val">---</div>`;
+    } else if (d.notSignedOut) {
+        deviceInHtml = `<div class="device-val">${escapeHtml(d.deviceIn || '---')}</div>`;
+        timeInHtml = `<div class="in-time">${escapeHtml(formatClockTime(d.timeIn))}</div>`;
+        deviceOutHtml = `<div class="device-val">${escapeHtml(d.deviceOut || '---')}</div>`;
+        timeOutHtml = `<div class="missing-log">Not Signed Out</div>`;
+        grossHtml = `<div class="hours-val">${escapeHtml(formatHM(d.grossMinutes))}</div>`;
+        workedHtml = `<div class="worked-val">${escapeHtml(formatHM(d.workedMinutes))}</div>`;
+    } else {
+        deviceInHtml = `<div class="device-val">${escapeHtml(d.deviceIn || '---')}</div>`;
+        timeInHtml = `<div class="in-time">${escapeHtml(formatClockTime(d.timeIn))}</div>`;
+        deviceOutHtml = `<div class="device-val">${escapeHtml(d.deviceOut || '---')}</div>`;
+        timeOutHtml = `<div class="in-time">${escapeHtml(formatClockTime(d.timeOut))}</div>`;
+        grossHtml = `<div class="hours-val">${escapeHtml(formatHM(d.grossMinutes))}</div>`;
+        workedHtml = `<div class="worked-val">${escapeHtml(formatHM(d.workedMinutes))}</div>`;
+    }
+
+    const clickAttr = hasMovements ? ' onclick="toggle(this)"' : '';
+    const parts = [];
+    parts.push(`<li class="node level-2${rowClass}${noMovClass}"><div class="row-item level-2-row"${clickAttr}>
+        <div class="col-1"><span class="${iconClass}">▶</span>${escapeHtml(dateStr)}${tagStr}${movBadge}</div>
+        ${deviceInHtml}${timeInHtml}
+        ${deviceOutHtml}${timeOutHtml}
+        ${grossHtml}${workedHtml}
+    </div>`);
+
+    if (hasMovements) {
+        parts.push(`<ul class="children tree">`);
+        parts.push(`<li class="level-3"><div class="row-item movement-header-row"><div class="col-1">Movements</div><div>Device</div><div>Out</div><div>Device</div><div>In</div><div>Duration</div><div></div></div></li>`);
+        d.movements.forEach((mv, idx) => {
+            const outDev = `<div class="device-val">${escapeHtml(mv.outLog.device || '---')}</div>`;
+            const outTime = `<div class="in-time">${escapeHtml(formatClockTime(mv.outLog.date))}</div>`;
+            let inDev, inTime, durHtml;
+            if (mv.inLog) {
+                inDev = `<div class="device-val">${escapeHtml(mv.inLog.device || '---')}</div>`;
+                inTime = `<div class="in-time">${escapeHtml(formatClockTime(mv.inLog.date))}</div>`;
+                durHtml = `<div class="hours-val">${escapeHtml(formatHM(mv.durationMin))}</div>`;
+            } else {
+                inDev = `<div class="device-val">---</div>`;
+                inTime = `<div class="missing-log">---</div>`;
+                durHtml = `<div class="hours-val"></div>`;
+            }
+            parts.push(`<li class="level-3"><div class="row-item level-3-row">
+                <div class="col-1">Break ${idx + 1}</div>${outDev}${outTime}${inDev}${inTime}${durHtml}<div></div>
+            </div></li>`);
+        });
+        parts.push(`</ul>`);
+    }
+    parts.push(`</li>`);
+    return parts.join('');
+}
+
+/* =========================================================================
+ * PERSISTENCE LAYER
+ * =========================================================================
+ * Capability-detecting storage for the leave db. Two transports behind one
+ * interface; the data (a normalized leave-db JSON) is identical either way.
+ *
+ *   A) File System Access (Chromium, secure context incl. http://localhost):
+ *      - User connects a leave_db.json file (or creates one) via picker.
+ *      - The FileSystemFileHandle is cached in IndexedDB so the app remembers
+ *        the file across reloads (browser still re-grants write permission,
+ *        usually one click per session).
+ *      - Saves are DEBOUNCED (~1s trailing) and flushed on visibility/unload.
+ *      - Point the file at a Google-Drive-synced folder for cloud backup.
+ *
+ *   B) Fallback (file://, preview sandbox, Firefox/Safari):
+ *      - Manual Import (file input) / Export (download) of the same JSON.
+ *
+ * Single-editor model. A lightweight "changed since load" guard compares the
+ * on-disk updatedAt with what we last wrote, warning before clobbering.
+ * ========================================================================= */
+
+const fsaSupported = (typeof window !== 'undefined') &&
+    typeof window.showSaveFilePicker === 'function' &&
+    typeof window.showOpenFilePicker === 'function';
+
+const AUTOSAVE_DEBOUNCE_MS = 1000;
+
+/* --- tiny IndexedDB helper to persist the file handle across reloads --- */
+const HANDLE_DB = 'wspl-leave-store';
+const HANDLE_STORE = 'handles';
+const HANDLE_KEY = 'leaveDbFile';
+
+function idbOpen() {
+    return new Promise((resolve, reject) => {
+        const req = indexedDB.open(HANDLE_DB, 1);
+        req.onupgradeneeded = () => req.result.createObjectStore(HANDLE_STORE);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+    });
+}
+async function idbPutHandle(handle) {
+    try {
+        const db = await idbOpen();
+        await new Promise((res, rej) => {
+            const tx = db.transaction(HANDLE_STORE, 'readwrite');
+            tx.objectStore(HANDLE_STORE).put(handle, HANDLE_KEY);
+            tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+        });
+        db.close();
+    } catch (e) { console.warn('idbPutHandle failed', e); }
+}
+async function idbGetHandle() {
+    try {
+        const db = await idbOpen();
+        const handle = await new Promise((res, rej) => {
+            const tx = db.transaction(HANDLE_STORE, 'readonly');
+            const r = tx.objectStore(HANDLE_STORE).get(HANDLE_KEY);
+            r.onsuccess = () => res(r.result || null); r.onerror = () => rej(r.error);
+        });
+        db.close();
+        return handle;
+    } catch (e) { console.warn('idbGetHandle failed', e); return null; }
+}
+async function idbClearHandle() {
+    try {
+        const db = await idbOpen();
+        await new Promise((res, rej) => {
+            const tx = db.transaction(HANDLE_STORE, 'readwrite');
+            tx.objectStore(HANDLE_STORE).delete(HANDLE_KEY);
+            tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+        });
+        db.close();
+    } catch (e) { console.warn('idbClearHandle failed', e); }
+}
+
+/* --- permission helpers --- */
+async function verifyPermission(handle, write) {
+    const opts = { mode: write ? 'readwrite' : 'read' };
+    if ((await handle.queryPermission(opts)) === 'granted') return true;
+    if ((await handle.requestPermission(opts)) === 'granted') return true;
+    return false;
+}
+
+/* --- the storage controller --- */
+const storage = {
+    mode: fsaSupported ? 'fsa' : 'fallback',  // current transport
+    handle: null,             // FileSystemFileHandle when connected
+    connected: false,         // true once a file is connected (fsa)
+    lastWrittenAt: null,      // updatedAt string we last persisted
+    saveState: 'idle',        // 'idle' | 'saving' | 'saved' | 'unsaved' | 'error'
+    _debounceTimer: null,
+    _statusCb: null,          // UI callback(stateString, detail)
+
+    onStatus(cb) { this._statusCb = cb; },
+    _emit(detail) { if (this._statusCb) this._statusCb(this.saveState, detail || ''); },
+    _setState(s, detail) { this.saveState = s; this._emit(detail); },
+
+    /* Serialize the current leave db to pretty JSON, stamping updatedAt. */
+    serialize(db) {
+        db.updatedAt = new Date().toISOString();
+        this.lastWrittenAt = db.updatedAt;
+        return JSON.stringify(db, null, 2);
+    },
+
+    /* Connect (pick/create) a leave_db.json via FS Access. Returns loaded db or null. */
+    async connectFile() {
+        if (!fsaSupported) throw new Error('File System Access not supported in this browser.');
+        const handle = await window.showSaveFilePicker({
+            suggestedName: 'leave_db.json',
+            types: [{ description: 'Leave database (JSON)', accept: { 'application/json': ['.json'] } }]
+        });
+        if (!(await verifyPermission(handle, true))) throw new Error('Write permission denied.');
+        this.handle = handle;
+        this.connected = true;
+        await idbPutHandle(handle);
+        // Try to read existing content (may be an empty new file).
+        const loaded = await this.readFromHandle();
+        this._setState('saved', 'Connected');
+        return loaded;
+    },
+
+    /* Reconnect a previously-cached handle on startup. Returns loaded db or null. */
+    async tryReconnect() {
+        if (!fsaSupported) return null;
+        const handle = await idbGetHandle();
+        if (!handle) return null;
+        // Don't force a permission prompt on load; only reconnect if already granted.
+        const opts = { mode: 'readwrite' };
+        const perm = await handle.queryPermission(opts);
+        this.handle = handle;
+        this.connected = true;
+        if (perm === 'granted') {
+            const loaded = await this.readFromHandle();
+            this._setState('saved', 'Reconnected');
+            return loaded;
+        }
+        // Permission needs a user gesture — signal "needs permission".
+        this._setState('unsaved', 'Reconnect — permission needed');
+        return null;
+    },
+
+    /* Re-request permission on the cached handle (call from a click). */
+    async grantReconnect() {
+        if (!this.handle) return null;
+        if (!(await verifyPermission(this.handle, true))) throw new Error('Permission denied.');
+        const loaded = await this.readFromHandle();
+        this._setState('saved', 'Reconnected');
+        return loaded;
+    },
+
+    async readFromHandle() {
+        if (!this.handle) return null;
+        const file = await this.handle.getFile();
+        const text = await file.text();
+        if (!text || !text.trim()) return null; // brand-new empty file
+        const parsed = JSON.parse(text);
+        const db = normalizeLeaveDb(parsed);
+        this.lastWrittenAt = db.updatedAt;
+        return db;
+    },
+
+    /* Check whether the on-disk file changed since we last wrote (conflict guard). */
+    async diskChangedSinceWrite() {
+        if (!this.handle) return false;
+        try {
+            const file = await this.handle.getFile();
+            const text = await file.text();
+            if (!text || !text.trim()) return false;
+            const onDisk = JSON.parse(text);
+            return onDisk.updatedAt && this.lastWrittenAt && onDisk.updatedAt !== this.lastWrittenAt;
+        } catch { return false; }
+    },
+
+    async writeNow(db) {
+        if (!this.handle) { this._setState('unsaved', 'No file connected'); return false; }
+        try {
+            this._setState('saving');
+            const json = this.serialize(db);
+            const writable = await this.handle.createWritable();
+            await writable.write(json);
+            await writable.close();
+            this._setState('saved', new Date().toLocaleTimeString());
+            return true;
+        } catch (e) {
+            console.error('writeNow failed', e);
+            this._setState('error', e.message || 'write failed');
+            return false;
+        }
+    },
+
+    /* Debounced save: schedule a write ~1s after the last change. */
+    scheduleSave(db) {
+        if (this.mode !== 'fsa' || !this.connected) {
+            // Fallback mode: mark dirty so the UI can prompt Export.
+            this._setState('unsaved', 'Export to persist');
+            return;
+        }
+        this._setState('unsaved');
+        clearTimeout(this._debounceTimer);
+        this._debounceTimer = setTimeout(() => { this.writeNow(db); }, AUTOSAVE_DEBOUNCE_MS);
+    },
+
+    /* Flush any pending debounced write immediately (best-effort on unload). */
+    flush(db) {
+        if (this._debounceTimer) {
+            clearTimeout(this._debounceTimer);
+            this._debounceTimer = null;
+            if (this.mode === 'fsa' && this.connected) return this.writeNow(db);
+        }
+        return Promise.resolve(false);
+    },
+
+    async disconnect() {
+        clearTimeout(this._debounceTimer);
+        this._debounceTimer = null;
+        this.handle = null;
+        this.connected = false;
+        await idbClearHandle();
+        this._setState('idle', 'Disconnected');
+    }
+};
+
+/* ---------- UI interactivity ---------- */
+function toggle(e) { e.parentElement.classList.toggle('expanded'); }
+function expandAll() {
+    document.querySelectorAll('.node:not(.no-movements)').forEach(n => n.classList.add('expanded'));
+}
+function collapseAll() {
+    document.querySelectorAll('.node').forEach(n => n.classList.remove('expanded'));
+}
+
+/* ---------- File loading wiring ---------- */
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+const chooseBtn = document.getElementById('chooseBtn');
+const errorMsg = document.getElementById('errorMsg');
+const uploadScreen = document.getElementById('uploadScreen');
+const reportControls = document.getElementById('reportControls');
+const reportContainer = document.getElementById('reportContainer');
+const reportMeta = document.getElementById('reportMeta');
+const newFileBtn = document.getElementById('newFileBtn');
+const filterStartInput = document.getElementById('filterStart');
+const filterEndInput = document.getElementById('filterEnd');
+const applyFilterBtn = document.getElementById('applyFilterBtn');
+const resetFilterBtn = document.getElementById('resetFilterBtn');
+
+/* Module state: the currently-loaded data, kept so we can re-filter without
+ * re-parsing the file. */
+const state = {
+    records: null,       // all parsed records
+    fileName: '',
+    naturalRange: null   // { start, end } from the data
+};
+
+/* Date <-> input-value (YYYY-MM-DD) helpers (local time, no UTC drift). */
+function dateToInputValue(d) {
+    return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+function inputValueToDate(v) {
+    if (!v) return null;
+    const m = v.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return null;
+    return new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10));
+}
+function fmtDate(d) {
+    return `${pad2(d.getDate())} ${MONTH_SHORT[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+/* Render the meta line above the report. */
+function renderMeta(model) {
+    const ds = model.dateRange.start, de = model.dateRange.end;
+    const nat = model.naturalRange;
+    // Flag when the active range differs from the full data range.
+    const isFiltered = nat && (ds.getTime() !== nat.start.getTime() || de.getTime() !== nat.end.getTime());
+    const filteredNote = isFiltered
+        ? ` <span class="filter-warn">(filtered — full data ${escapeHtml(fmtDate(nat.start))}–${escapeHtml(fmtDate(nat.end))})</span>`
+        : '';
+    reportMeta.innerHTML =
+        `<strong>${escapeHtml(state.fileName)}</strong> &nbsp;·&nbsp; ` +
+        `${escapeHtml(model.totalRecords.toString())} logs &nbsp;·&nbsp; ` +
+        `${escapeHtml(model.employees.length.toString())} employees &nbsp;·&nbsp; ` +
+        `${escapeHtml(fmtDate(ds))} – ${escapeHtml(fmtDate(de))}` +
+        filteredNote;
+}
+
+/* Build + render the report for the given (optional) date range. */
+function rebuild(filterStart, filterEnd) {
+    const model = buildReportModel(state.records, filterStart, filterEnd);
+    renderReport(model);
+    renderMeta(model);
+}
+
+chooseBtn.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', (e) => {
+    if (e.target.files && e.target.files[0]) handleFile(e.target.files[0]);
+});
+
+['dragenter', 'dragover'].forEach(ev => {
+    dropzone.addEventListener(ev, (e) => { e.preventDefault(); e.stopPropagation(); dropzone.classList.add('dragover'); });
+});
+['dragleave', 'drop'].forEach(ev => {
+    dropzone.addEventListener(ev, (e) => { e.preventDefault(); e.stopPropagation(); dropzone.classList.remove('dragover'); });
+});
+dropzone.addEventListener('drop', (e) => {
+    const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) handleFile(f);
+});
+
+newFileBtn.addEventListener('click', () => {
+    // Reset UI and state
+    fileInput.value = '';
+    errorMsg.textContent = '';
+    document.getElementById('mainTree').innerHTML = '';
+    state.records = null;
+    state.fileName = '';
+    state.naturalRange = null;
+    uploadScreen.classList.remove('hidden');
+    reportControls.classList.add('hidden');
+    reportContainer.classList.add('hidden');
+});
+
+/* Apply the date-range filter from the inputs. */
+applyFilterBtn.addEventListener('click', () => {
+    if (!state.records) return;
+    let start = inputValueToDate(filterStartInput.value);
+    let end = inputValueToDate(filterEndInput.value);
+    // If a field is blank, fall back to the natural bound.
+    if (!start) start = state.naturalRange.start;
+    if (!end) end = state.naturalRange.end;
+    // Guard against an inverted range by swapping.
+    if (start.getTime() > end.getTime()) {
+        const tmp = start; start = end; end = tmp;
+        filterStartInput.value = dateToInputValue(start);
+        filterEndInput.value = dateToInputValue(end);
+    }
+    rebuild(start, end);
+});
+
+/* Reset the filter back to the full data range. */
+resetFilterBtn.addEventListener('click', () => {
+    if (!state.records) return;
+    filterStartInput.value = dateToInputValue(state.naturalRange.start);
+    filterEndInput.value = dateToInputValue(state.naturalRange.end);
+    rebuild(state.naturalRange.start, state.naturalRange.end);
+});
+
+function handleFile(file) {
+    errorMsg.textContent = '';
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+        errorMsg.textContent = 'Please choose a .csv file.';
+        return;
+    }
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+        try {
+            const text = evt.target.result;
+            const rows = parseCSV(text);
+            const records = rowsToRecords(rows);
+
+            // Stash state for re-filtering.
+            state.records = records;
+            state.fileName = file.name;
+            state.naturalRange = getDataDateRange(records);
+
+            // Initialise the date inputs to the full data range and set the
+            // selectable bounds so users can't pick outside the data.
+            const minV = dateToInputValue(state.naturalRange.start);
+            const maxV = dateToInputValue(state.naturalRange.end);
+            filterStartInput.value = minV;
+            filterEndInput.value = maxV;
+            filterStartInput.min = minV; filterStartInput.max = maxV;
+            filterEndInput.min = minV;   filterEndInput.max = maxV;
+
+            // Initial render uses the full natural range.
+            rebuild(state.naturalRange.start, state.naturalRange.end);
+
+            uploadScreen.classList.add('hidden');
+            reportControls.classList.remove('hidden');
+            reportContainer.classList.remove('hidden');
+            modeToggle.classList.remove('hidden');
+            // Prepare the leave view for this dataset (does not switch to it).
+            onCsvLoadedForLeave();
+        } catch (err) {
+            console.error(err);
+            errorMsg.textContent = err && err.message ? err.message : 'Failed to parse the CSV file.';
+        }
+    };
+    reader.onerror = () => { errorMsg.textContent = 'Unable to read the file.'; };
+    reader.readAsText(file);
+}
+
+/* =========================================================================
+ * LEAVE ACCOUNTING — UI MODULE
+ * ========================================================================= */
+
+/* Leave-view state. The leave db is the single source of truth; it persists. */
+const leaveState = {
+    db: makeEmptyLeaveDb(),
+    mode: 'attendance'   // 'attendance' | 'leave'
+};
+
+/* Expose internal seams for console-driven contracts/testing later. */
+window._leaveState = leaveState;
+window._storage = storage;
+window._processLeaveRange = (s, e) => processLeaveRange(leaveState.db, state.records, s, e);
+window._getLeaveDb = () => leaveState.db;
+
+/* ----- Elements ----- */
+const modeToggle = document.getElementById('modeToggle');
+const modeAttendanceBtn = document.getElementById('modeAttendanceBtn');
+const modeLeaveBtn = document.getElementById('modeLeaveBtn');
+const leaveControls = document.getElementById('leaveControls');
+const leaveContainer = document.getElementById('leaveContainer');
+const leaveTree = document.getElementById('leaveTree');
+const leaveMeta = document.getElementById('leaveMeta');
+const persistBar = document.getElementById('persistBar');
+const saveDot = document.getElementById('saveDot');
+const saveLabel = document.getElementById('saveLabel');
+const processRangeBtn = document.getElementById('processRangeBtn');
+const connectFileBtn = document.getElementById('connectFileBtn');
+const grantPermBtn = document.getElementById('grantPermBtn');
+const importBtn = document.getElementById('importBtn');
+const exportBtn = document.getElementById('exportBtn');
+const importInput = document.getElementById('importInput');
+const persistNote = document.getElementById('persistNote');
+const manageTypesBtn = document.getElementById('manageTypesBtn');
+const manageEntBtn = document.getElementById('manageEntBtn');
+const newFileBtn2 = document.getElementById('newFileBtn2');
+
+/* ----- Save-status indicator ----- */
+storage.onStatus((s, detail) => {
+    saveDot.className = 'save-dot ' + (s === 'idle' ? '' : s);
+    const labels = {
+        idle: 'No database', saving: 'Saving…', saved: 'Saved',
+        unsaved: 'Unsaved', error: 'Error'
+    };
+    let txt = labels[s] || s;
+    if (s === 'saved' && detail && /\d/.test(detail)) txt = 'Saved ' + detail;
+    else if (detail) txt = (labels[s] || s) + (s === 'error' ? ': ' + detail : '');
+    saveLabel.textContent = txt;
+});
+
+/* ----- Mode switching ----- */
+function setMode(mode) {
+    leaveState.mode = mode;
+    const attendance = mode === 'attendance';
+    modeAttendanceBtn.classList.toggle('active', attendance);
+    modeLeaveBtn.classList.toggle('active', !attendance);
+    reportControls.classList.toggle('hidden', !attendance);
+    reportContainer.classList.toggle('hidden', !attendance);
+    leaveControls.classList.toggle('hidden', attendance);
+    persistBar.classList.toggle('hidden', attendance);
+    leaveContainer.classList.toggle('hidden', attendance);
+    if (!attendance) renderLeaveView();
+}
+modeAttendanceBtn.addEventListener('click', () => setMode('attendance'));
+modeLeaveBtn.addEventListener('click', () => setMode('leave'));
+
+/* ----- Called when a CSV is (re)loaded ----- */
+async function onCsvLoadedForLeave() {
+    // Seed/refresh employee identity in the db from the CSV (names, existence),
+    // without creating any leaves — leaves only appear on explicit Process.
+    for (const emp of (buildReportModel(state.records).employees)) {
+        const empNo = emp.empNo || emp.fullName;
+        ensureLeaveEmployee(leaveState.db, empNo, emp.fullName);
+    }
+    // Attempt silent reconnect to a previously-connected db file.
+    if (fsaSupported) {
+        try {
+            const loaded = await storage.tryReconnect();
+            if (loaded) { leaveState.db = loaded; }
+            if (storage.connected && !loaded && storage.saveState === 'unsaved') {
+                grantPermBtn.style.display = '';
+            }
+        } catch (e) { console.warn(e); }
+    } else {
+        persistNote.textContent = 'Auto-save needs a localhost/https origin (Chromium). Use Import/Export here.';
+        connectFileBtn.style.display = 'none';
+    }
+    updateLeaveMeta();
+}
+
+function updateLeaveMeta() {
+    const empCount = Object.keys(leaveState.db.employees).length;
+    let leaveCount = 0, untagged = 0;
+    for (const e of Object.values(leaveState.db.employees)) {
+        for (const lv of Object.values(e.leaves)) { leaveCount++; if (!lv.typeCode) untagged++; }
+    }
+    const modeNote = storage.mode === 'fsa'
+        ? (storage.connected ? 'auto-save on' : 'not connected')
+        : 'import/export mode';
+    leaveMeta.innerHTML =
+        `<strong>Leave DB</strong> &nbsp;·&nbsp; ${empCount} employees &nbsp;·&nbsp; ` +
+        `${leaveCount} leave days &nbsp;·&nbsp; ` +
+        (untagged ? `<span class="filter-warn">${untagged} untagged</span> &nbsp;·&nbsp; ` : '') +
+        `<span style="color:#94a3b8;">${modeNote}</span>`;
+}
+
+/* ----- Mark the db dirty and schedule a debounced save ----- */
+function touchDb() {
+    leaveState.db.updatedAt = new Date().toISOString();
+    storage.scheduleSave(leaveState.db);
+    updateLeaveMeta();
+}
+
+/* ----- Render the leave view (employees → leave days) ----- */
+function renderLeaveView() {
+    updateLeaveMeta();
+    const db = leaveState.db;
+    const empNos = Object.keys(db.employees).sort((a, b) => {
+        const na = db.employees[a].fullName || '', nb = db.employees[b].fullName || '';
+        return na.localeCompare(nb, undefined, { sensitivity: 'base' });
+    });
+    if (!empNos.length) {
+        leaveTree.innerHTML = `<li class="empty-state">No employees yet. Load a CSV and click <strong>Process Range → DB</strong>.</li>`;
+        return;
+    }
+    const parts = [];
+    for (const empNo of empNos) {
+        const emp = db.employees[empNo];
+        const bal = computeBalances(db, empNo);
+        const leaveDates = Object.keys(emp.leaves).sort().reverse(); // desc
+        const chips = bal.rows.map(r => {
+            const rem = fmtPresentNum(r.remaining);
+            const remCls = (!r.uncapped && r.remaining < 0) ? ' class="rem-neg"' : '';
+            const usedTxt = fmtPresentNum(r.used);
+            if (r.uncapped) return `<span class="bal-chip">${escapeHtml(r.code)}: ${usedTxt} used</span>`;
+            return `<span class="bal-chip">${escapeHtml(r.code)}: <span${remCls}>${rem}</span>/${fmtPresentNum(r.entitlement)}</span>`;
+        }).join('');
+        const untaggedChip = bal.untagged > 0
+            ? `<span class="bal-chip untagged">${fmtPresentNum(bal.untagged)} untagged</span>` : '';
+        parts.push(`<li class="node">
+            <div class="leave-emp-row" onclick="toggle(this)">
+                <div class="col-1"><span class="icon">▶</span>${escapeHtml(emp.fullName || empNo)} <span class="badge">${leaveDates.length} leave days</span></div>
+                <div class="balances">${chips}${untaggedChip}</div>
+            </div>
+            <ul class="children tree">`);
+        if (!leaveDates.length) {
+            parts.push(`<li class="leave-empty-note">No leave days recorded in the database for this employee.</li>`);
+        } else {
+            parts.push(`<li><div class="leave-day-header"><div>Date</div><div>Qty</div><div>Kind</div><div>Leave Type</div><div>Note</div></div></li>`);
+            for (const dk of leaveDates) {
+                parts.push(renderLeaveDayRow(empNo, emp.leaves[dk]));
+            }
+        }
+        parts.push(`</ul></li>`);
+    }
+    leaveTree.innerHTML = parts.join('');
+}
+
+function renderLeaveDayRow(empNo, lv) {
+    const d = inputValueToDate(lv.date);
+    const dateStr = `${pad2(d.getDate())} ${MONTH_SHORT[d.getMonth()]} ${d.getFullYear()} (${DAY_SHORT[d.getDay()]})`;
+    const qtyCls = lv.qty === 1 ? 'qty-pill full' : 'qty-pill';
+    const kindTxt = lv.detectedKind === 'half_day' ? 'Half day' : 'Full day (absent)';
+    const opts = ['<option value="">— untagged —</option>']
+        .concat(leaveState.db.leaveTypes.map(t =>
+            `<option value="${escapeHtml(t.code)}"${lv.typeCode === t.code ? ' selected' : ''}>${escapeHtml(t.label)} (${escapeHtml(t.code)})</option>`))
+        .join('');
+    const selCls = lv.typeCode ? '' : ' untagged-sel';
+    const dataAttr = `data-emp="${escapeHtml(empNo)}" data-date="${escapeHtml(lv.date)}"`;
+    return `<li><div class="leave-day-row">
+        <div class="ld-date">${escapeHtml(dateStr)}</div>
+        <div><span class="${qtyCls}">${fmtPresentNum(lv.qty)}</span></div>
+        <div class="ld-kind">${escapeHtml(kindTxt)}</div>
+        <div><select class="leave-type-sel${selCls}" ${dataAttr}>${opts}</select></div>
+        <div><input type="text" class="leave-note-inp" ${dataAttr} value="${escapeHtml(lv.note || '')}" placeholder="note…"></div>
+    </div></li>`;
+}
+
+/* ----- Event delegation for tag/note edits ----- */
+leaveTree.addEventListener('change', (e) => {
+    const sel = e.target.closest('.leave-type-sel');
+    if (sel) {
+        const emp = leaveState.db.employees[sel.dataset.emp];
+        const lv = emp && emp.leaves[sel.dataset.date];
+        if (!lv) return;
+        lv.typeCode = sel.value || null;
+        lv.manualTag = true;            // human classified → preserved on re-process
+        lv.source = 'manual';
+        sel.classList.toggle('untagged-sel', !lv.typeCode);
+        touchDb();
+        // Re-render just the balances by re-rendering the whole view is simplest+safe.
+        renderLeaveView();
+        return;
+    }
+});
+leaveTree.addEventListener('input', (e) => {
+    const inp = e.target.closest('.leave-note-inp');
+    if (inp) {
+        const emp = leaveState.db.employees[inp.dataset.emp];
+        const lv = emp && emp.leaves[inp.dataset.date];
+        if (!lv) return;
+        lv.note = inp.value;
+        lv.manualTag = true;
+        touchDb(); // debounced; won't thrash disk
+    }
+});
+
+/* ----- Process Range → DB ----- */
+processRangeBtn.addEventListener('click', () => {
+    if (!state.records) return;
+    // Use the same date range the attendance filter is showing.
+    let s = inputValueToDate(filterStartInput.value) || state.naturalRange.start;
+    let en = inputValueToDate(filterEndInput.value) || state.naturalRange.end;
+    if (s.getTime() > en.getTime()) { const t = s; s = en; en = t; }
+    const summary = processLeaveRange(leaveState.db, state.records, s, en);
+    touchDb();
+    renderLeaveView();
+    persistNote.textContent =
+        `Processed ${fmtDate(s)}–${fmtDate(en)}: +${summary.created} new, ` +
+        `${summary.updated} updated, ${summary.unchanged} unchanged` +
+        (summary.preservedManual ? `, ${summary.preservedManual} manual tags kept` : '') + '.';
+});
+
+/* ----- Persistence buttons ----- */
+connectFileBtn.addEventListener('click', async () => {
+    try {
+        const loaded = await storage.connectFile();
+        if (loaded) {
+            // Merge identities from current CSV into the loaded db.
+            leaveState.db = loaded;
+            if (state.records) {
+                for (const emp of buildReportModel(state.records).employees) {
+                    ensureLeaveEmployee(leaveState.db, emp.empNo || emp.fullName, emp.fullName);
+                }
+            }
+        } else {
+            // New/empty file — write current db immediately.
+            await storage.writeNow(leaveState.db);
+        }
+        grantPermBtn.style.display = 'none';
+        renderLeaveView();
+        persistNote.textContent = 'Database connected. Auto-save is on (debounced).';
+    } catch (e) {
+        persistNote.textContent = 'Connect cancelled or failed: ' + (e.message || e);
+    }
+});
+grantPermBtn.addEventListener('click', async () => {
+    try {
+        const loaded = await storage.grantReconnect();
+        if (loaded) leaveState.db = loaded;
+        grantPermBtn.style.display = 'none';
+        renderLeaveView();
+        persistNote.textContent = 'Reconnected. Auto-save is on.';
+    } catch (e) {
+        persistNote.textContent = 'Reconnect failed: ' + (e.message || e);
+    }
+});
+exportBtn.addEventListener('click', () => {
+    const json = JSON.stringify(leaveState.db, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'leave_db.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    persistNote.textContent = 'Exported leave_db.json.';
+});
+importBtn.addEventListener('click', () => importInput.click());
+importInput.addEventListener('change', (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+        try {
+            const parsed = JSON.parse(ev.target.result);
+            leaveState.db = normalizeLeaveDb(parsed);
+            if (state.records) {
+                for (const emp of buildReportModel(state.records).employees) {
+                    ensureLeaveEmployee(leaveState.db, emp.empNo || emp.fullName, emp.fullName);
+                }
+            }
+            renderLeaveView();
+            // If connected to a file, persist the imported data.
+            if (storage.connected) touchDb();
+            persistNote.textContent = 'Imported leave database.';
+        } catch (err) {
+            persistNote.textContent = 'Import failed: ' + (err.message || err);
+        }
+    };
+    reader.readAsText(f);
+    importInput.value = '';
+});
+
+/* ----- New File (leave controls) ----- */
+newFileBtn2.addEventListener('click', () => newFileBtn.click());
+
+/* ----- Modals: Leave Types ----- */
+const typesModal = document.getElementById('typesModal');
+const typesModalBody = document.getElementById('typesModalBody');
+manageTypesBtn.addEventListener('click', () => { renderTypesModal(); typesModal.classList.remove('hidden'); });
+document.getElementById('addTypeBtn').addEventListener('click', () => {
+    leaveState.db.leaveTypes.push({ code: '', label: '', annualQuota: 0 });
+    renderTypesModal();
+});
+document.getElementById('saveTypesBtn').addEventListener('click', () => {
+    // Collect + validate
+    const rows = [...typesModalBody.querySelectorAll('.type-edit-row')];
+    const types = [];
+    for (const r of rows) {
+        const code = r.querySelector('.t-code').value.trim().toUpperCase();
+        const label = r.querySelector('.t-label').value.trim();
+        const quota = +r.querySelector('.t-quota').value || 0;
+        if (!code) continue;
+        if (types.some(t => t.code === code)) continue; // dedupe
+        types.push({ code, label: label || code, annualQuota: quota });
+    }
+    if (types.length) leaveState.db.leaveTypes = types;
+    typesModal.classList.add('hidden');
+    touchDb();
+    renderLeaveView();
+});
+function renderTypesModal() {
+    typesModalBody.innerHTML = leaveState.db.leaveTypes.map(t => `
+        <div class="type-edit-row">
+            <input class="t-code" value="${escapeHtml(t.code)}" placeholder="CODE" maxlength="6">
+            <input class="t-label" value="${escapeHtml(t.label)}" placeholder="Label">
+            <input class="t-quota" type="number" step="0.5" value="${t.annualQuota}" placeholder="Quota">
+            <button class="del-type" title="Remove">✕</button>
+        </div>`).join('');
+    typesModalBody.querySelectorAll('.del-type').forEach((btn, i) => {
+        btn.addEventListener('click', () => { leaveState.db.leaveTypes.splice(i, 1); renderTypesModal(); });
+    });
+}
+
+/* ----- Modals: Entitlements ----- */
+const entModal = document.getElementById('entModal');
+const entModalBody = document.getElementById('entModalBody');
+manageEntBtn.addEventListener('click', () => { renderEntModal(); entModal.classList.remove('hidden'); });
+document.getElementById('saveEntBtn').addEventListener('click', () => {
+    const rows = [...entModalBody.querySelectorAll('.ent-row')];
+    for (const r of rows) {
+        const empNo = r.dataset.emp;
+        const emp = leaveState.db.employees[empNo];
+        if (!emp) continue;
+        emp.entitlements = {};
+        r.querySelectorAll('input[data-code]').forEach(inp => {
+            const v = inp.value.trim();
+            if (v !== '') emp.entitlements[inp.dataset.code] = +v;
+        });
+    }
+    entModal.classList.add('hidden');
+    touchDb();
+    renderLeaveView();
+});
+function renderEntModal() {
+    const types = leaveState.db.leaveTypes;
+    entModalBody.style.setProperty('--ent-cols', types.length);
+    const empNos = Object.keys(leaveState.db.employees).sort((a, b) =>
+        (leaveState.db.employees[a].fullName || '').localeCompare(leaveState.db.employees[b].fullName || ''));
+    const head = `<div class="ent-head"><div>Employee</div>${types.map(t => `<div>${escapeHtml(t.code)}</div>`).join('')}</div>`;
+    const body = empNos.map(empNo => {
+        const emp = leaveState.db.employees[empNo];
+        const inputs = types.map(t => {
+            const v = Object.prototype.hasOwnProperty.call(emp.entitlements, t.code) ? emp.entitlements[t.code] : '';
+            return `<input type="number" step="0.5" data-code="${escapeHtml(t.code)}" value="${v}" placeholder="${t.annualQuota}">`;
+        }).join('');
+        return `<div class="ent-row" data-emp="${escapeHtml(empNo)}"><div class="ent-name">${escapeHtml(emp.fullName || empNo)}</div>${inputs}</div>`;
+    }).join('');
+    entModalBody.innerHTML = head + body;
+}
+
+/* ----- Modal open/close ----- */
+document.querySelectorAll('[data-close]').forEach(el => {
+    el.addEventListener('click', () => document.getElementById(el.dataset.close).classList.add('hidden'));
+});
+document.querySelectorAll('.modal-overlay').forEach(ov => {
+    ov.addEventListener('click', (e) => { if (e.target === ov) ov.classList.add('hidden'); });
+});
+document.getElementById('helpBtn').addEventListener('click', () => {
+    document.getElementById('helpModal').classList.remove('hidden');
+});
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        document.querySelectorAll('.modal-overlay:not(.hidden)').forEach(m => m.classList.add('hidden'));
+    }
+});
+
+/* ----- Flush pending save on hide/unload ----- */
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') storage.flush(leaveState.db);
+});
+window.addEventListener('beforeunload', () => { storage.flush(leaveState.db); });
+
+</script>
+</body>
+</html>
