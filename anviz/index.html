@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -37,12 +36,15 @@ header.main-header {
 header.main-header h1 { margin: 0; font-size: 1.4rem; font-weight: 600; letter-spacing: 0.02em; }
 
 /* Upload screen */
-.upload-screen {
-    flex: 1;
+.upload-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 20px;
+    z-index: 2000;
 }
 .upload-card {
     width: 100%;
@@ -51,8 +53,13 @@ header.main-header h1 { margin: 0; font-size: 1.4rem; font-weight: 600; letter-s
     border: 1px solid var(--border);
     border-radius: 10px;
     padding: 36px 32px;
-    box-shadow: 0 6px 24px rgba(15, 23, 42, 0.06);
+    box-shadow: 0 20px 60px rgba(15, 23, 42, 0.3);
     text-align: center;
+    position: relative;
+}
+.upload-close {
+    position: absolute;
+    top: 10px; right: 14px;
 }
 .upload-card h2 {
     margin: 0 0 6px;
@@ -147,6 +154,8 @@ header.main-header h1 { margin: 0; font-size: 1.4rem; font-weight: 600; letter-s
     transition: background 0.12s;
 }
 .btn:hover { background: #f1f5f9; }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn:disabled:hover { background: #fff; }
 .btn-primary {
     background: var(--primary);
     color: white;
@@ -202,6 +211,33 @@ header.main-header h1 { margin: 0; font-size: 1.4rem; font-weight: 600; letter-s
     font-size: 0.95rem;
 }
 .empty-state strong { color: #64748b; }
+
+/* Getting-started panel (leave view empty state) */
+.getting-started {
+    max-width: 720px;
+    margin: 30px auto;
+    padding: 0 20px;
+}
+.getting-started h2 { color: var(--primary); font-size: 1.3rem; margin: 0 0 6px; }
+.gs-lead { color: #64748b; font-size: 0.88rem; margin: 0 0 22px; }
+.gs-step {
+    display: flex; gap: 14px; align-items: flex-start;
+    background: #fff; border: 1px solid var(--border); border-radius: 9px;
+    padding: 16px 18px; margin-bottom: 12px;
+}
+.gs-step.done { background: #f0fdf4; border-color: #bbf7d0; }
+.gs-num {
+    flex-shrink: 0;
+    width: 26px; height: 26px; border-radius: 50%;
+    background: var(--primary); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.8rem; font-weight: 700;
+}
+.gs-step.done .gs-num { background: var(--success); }
+.gs-step > div { font-size: 0.88rem; color: #334155; line-height: 1.5; }
+.gs-step code { background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 3px; padding: 1px 5px; font-size: 0.82rem; color: #1e3a8a; }
+.gs-actions { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+.gs-hint { margin-top: 8px; font-size: 0.76rem; color: #94a3b8; }
 
 /* Report tree */
 .scroll-container {
@@ -497,11 +533,12 @@ header.main-header { position: relative; }
     </div>
 </header>
 
-<!-- Upload screen -->
-<div id="uploadScreen" class="upload-screen">
+<!-- Upload overlay (opened on demand via "Load attendance CSV") -->
+<div id="uploadScreen" class="upload-overlay hidden">
     <div class="upload-card">
-        <h2>Generate Attendance Report</h2>
-        <p class="subtitle">Upload an Anviz CX5 attendance CSV file to generate the report.</p>
+        <button class="modal-x upload-close" id="uploadCloseBtn" title="Close">×</button>
+        <h2>Load Attendance CSV</h2>
+        <p class="subtitle">Upload an Anviz CX5 attendance CSV. It's read in your browser and never uploaded anywhere.</p>
         <label class="dropzone" id="dropzone" for="fileInput">
             <span class="icon-large">⬆</span>
             <div class="hint"><strong>Click to choose a file</strong> or drag &amp; drop here</div>
@@ -554,7 +591,8 @@ header.main-header { position: relative; }
     <div class="save-status" id="saveStatus" title="Persistence status">
         <span class="save-dot" id="saveDot"></span><span id="saveLabel">No database</span>
     </div>
-    <button class="btn" id="processRangeBtn" title="Detect leaves in the current date range and merge into the database (idempotent)">Process Range → DB</button>
+    <button class="btn" id="loadCsvBtn">Load attendance CSV</button>
+    <button class="btn" id="processRangeBtn" disabled title="Load an attendance CSV first to detect leaves">Process Range → DB</button>
     <button class="btn" id="manageTypesBtn">Leave Types</button>
     <button class="btn" id="manageEntBtn">Entitlements</button>
     <button class="btn btn-primary" id="newFileBtn2">New File</button>
@@ -607,7 +645,7 @@ header.main-header { position: relative; }
         <div class="modal-body help-body">
 
             <h4>Getting started</h4>
-            <p>Export an attendance CSV from the Anviz CX5 device (or CrosschexCloud), then drag it onto the upload box or click <em>Choose CSV File</em>. Everything runs in your browser — the CSV is never uploaded anywhere.</p>
+            <p>The app opens in <strong>Leave Accounting</strong> and shows three setup steps. You can do them in any order: connect (or import) your leave database, set up leave types and entitlements, and load an attendance CSV. Everything runs in your browser — nothing is uploaded anywhere.</p>
 
             <h4>Two modes</h4>
             <p>Use the toggle in the header to switch between them. Both work off the same loaded CSV.</p>
@@ -1835,16 +1873,19 @@ dropzone.addEventListener('drop', (e) => {
 });
 
 newFileBtn.addEventListener('click', () => {
-    // Reset UI and state
+    // Clear the loaded CSV and its attendance report, but keep the leave db
+    // and stay in a usable state (the app is no longer gated on a CSV).
     fileInput.value = '';
     errorMsg.textContent = '';
     document.getElementById('mainTree').innerHTML = '';
     state.records = null;
     state.fileName = '';
     state.naturalRange = null;
-    uploadScreen.classList.remove('hidden');
-    reportControls.classList.add('hidden');
-    reportContainer.classList.add('hidden');
+    // Attendance report has no data now: disable its processing affordance.
+    processRangeBtn.disabled = true;
+    processRangeBtn.title = 'Load an attendance CSV first to detect leaves';
+    // Return to Leave Accounting (home base) and refresh its empty/getting-started state.
+    setMode('leave');
 });
 
 /* Apply the date-range filter from the inputs. */
@@ -1899,15 +1940,21 @@ function handleFile(file) {
             filterStartInput.min = minV; filterStartInput.max = maxV;
             filterEndInput.min = minV;   filterEndInput.max = maxV;
 
-            // Initial render uses the full natural range.
+            // Initial render of the attendance report (kept ready behind the toggle).
             rebuild(state.naturalRange.start, state.naturalRange.end);
 
+            // Close the upload overlay. Do NOT switch modes — stay where we are
+            // (Leave Accounting is the home base). The attendance report is built
+            // and available via the toggle.
             uploadScreen.classList.add('hidden');
-            reportControls.classList.remove('hidden');
-            reportContainer.classList.remove('hidden');
-            modeToggle.classList.remove('hidden');
-            // Prepare the leave view for this dataset (does not switch to it).
+
+            // CSV is loaded: enable leave processing.
+            processRangeBtn.disabled = false;
+            processRangeBtn.title = 'Detect leaves in the current date range and merge into the database (idempotent)';
+
+            // Prepare the leave view for this dataset (seeds employee identities).
             onCsvLoadedForLeave();
+            if (leaveState.mode === 'leave') renderLeaveView();
         } catch (err) {
             console.error(err);
             errorMsg.textContent = err && err.message ? err.message : 'Failed to parse the CSV file.';
@@ -1984,26 +2031,13 @@ function setMode(mode) {
 modeAttendanceBtn.addEventListener('click', () => setMode('attendance'));
 modeLeaveBtn.addEventListener('click', () => setMode('leave'));
 
-/* ----- Called when a CSV is (re)loaded ----- */
-async function onCsvLoadedForLeave() {
+/* ----- Called when a CSV is (re)loaded — seeds employee identities only ----- */
+function onCsvLoadedForLeave() {
     // Seed/refresh employee identity in the db from the CSV (names, existence),
     // without creating any leaves — leaves only appear on explicit Process.
     for (const emp of (buildReportModel(state.records).employees)) {
         const empNo = emp.empNo || emp.fullName;
         ensureLeaveEmployee(leaveState.db, empNo, emp.fullName);
-    }
-    // Attempt silent reconnect to a previously-connected db file.
-    if (fsaSupported) {
-        try {
-            const loaded = await storage.tryReconnect();
-            if (loaded) { leaveState.db = loaded; }
-            if (storage.connected && !loaded && storage.saveState === 'unsaved') {
-                grantPermBtn.style.display = '';
-            }
-        } catch (e) { console.warn(e); }
-    } else {
-        persistNote.textContent = 'Auto-save needs a localhost/https origin (Chromium). Use Import/Export here.';
-        connectFileBtn.style.display = 'none';
     }
     updateLeaveMeta();
 }
@@ -2031,6 +2065,61 @@ function touchDb() {
     updateLeaveMeta();
 }
 
+/* ----- Branch-aware getting-started empty state ----- */
+function buildLeaveEmptyState() {
+    const hasRecords = !!state.records;
+    const connected = storage.connected;
+    const needPerm = grantPermBtn.style.display !== 'none';
+
+    // Step 1: database. Depends on environment + connection state.
+    // Order matters: a cached-but-unauthorized handle sets connected=true AND
+    // needPerm=true, so the permission prompt must win over the "done" state.
+    let dbStep;
+    if (needPerm) {
+        dbStep = `<div class="gs-step"><span class="gs-num">1</span>
+            <div><strong>Reconnect your leave database.</strong> A previously used file was found — grant permission to continue.
+            <div class="gs-actions"><button class="btn btn-primary" onclick="document.getElementById('grantPermBtn').click()">Reconnect (grant permission)</button></div></div></div>`;
+    } else if (connected) {
+        dbStep = `<div class="gs-step done"><span class="gs-num">✓</span>
+            <div><strong>Leave database connected.</strong> ${storage.mode === 'fsa' ? 'Changes auto-save.' : 'Use Export to save.'}</div></div>`;
+    } else if (fsaSupported) {
+        dbStep = `<div class="gs-step"><span class="gs-num">1</span>
+            <div><strong>Connect a leave database.</strong> Pick or create a <code>leave_db.json</code> file (put it in a synced folder like Google Drive for backup). Changes then save automatically.
+            <div class="gs-actions">
+                <button class="btn btn-primary" onclick="document.getElementById('connectFileBtn').click()">Connect leave_db.json</button>
+                <button class="btn" onclick="document.getElementById('importBtn').click()">Import existing JSON</button>
+            </div></div></div>`;
+    } else {
+        dbStep = `<div class="gs-step"><span class="gs-num">1</span>
+            <div><strong>Load a leave database.</strong> Auto-save isn't available here (it needs a local server or hosted site in Chrome/Edge), so import an existing <code>leave_db.json</code> or start fresh and Export when done.
+            <div class="gs-actions"><button class="btn btn-primary" onclick="document.getElementById('importBtn').click()">Import JSON</button></div>
+            <div class="gs-hint">Tip: run <code>python3 -m http.server 8000</code> in this file's folder and open <code>http://localhost:8000/</code> to enable auto-save.</div></div></div>`;
+    }
+
+    // Step 2: configure types/entitlements (always available).
+    const cfgStep = `<div class="gs-step"><span class="gs-num">2</span>
+        <div><strong>Set up leave types &amp; entitlements.</strong> Define the leave categories and annual quotas now, or adjust them later.
+        <div class="gs-actions">
+            <button class="btn" onclick="document.getElementById('manageTypesBtn').click()">Leave Types</button>
+            <button class="btn" onclick="document.getElementById('manageEntBtn').click()">Entitlements</button>
+        </div>
+        <div class="gs-hint">Entitlements need employees — they appear once you load an attendance CSV (step 3).</div></div></div>`;
+
+    // Step 3: load attendance.
+    const csvStep = hasRecords
+        ? `<div class="gs-step done"><span class="gs-num">✓</span>
+            <div><strong>Attendance loaded</strong> (${escapeHtml(state.fileName)}). Click <strong>Process Range → DB</strong> in the toolbar to detect leave days.</div></div>`
+        : `<div class="gs-step"><span class="gs-num">3</span>
+            <div><strong>Load attendance records.</strong> Upload an Anviz CX5 CSV to populate employees and detect leave days.
+            <div class="gs-actions"><button class="btn btn-primary" onclick="document.getElementById('loadCsvBtn').click()">Load attendance CSV</button></div></div></div>`;
+
+    return `<div class="getting-started">
+        <h2>Leave Accounting</h2>
+        <p class="gs-lead">Get started in three steps. You can do them in any order — configuration is saved to your leave database.</p>
+        ${dbStep}${cfgStep}${csvStep}
+    </div>`;
+}
+
 /* ----- Render the leave view (employees → leave days) ----- */
 function renderLeaveView() {
     updateLeaveMeta();
@@ -2040,7 +2129,7 @@ function renderLeaveView() {
         return na.localeCompare(nb, undefined, { sensitivity: 'base' });
     });
     if (!empNos.length) {
-        leaveTree.innerHTML = `<li class="empty-state">No employees yet. Load a CSV and click <strong>Process Range → DB</strong>.</li>`;
+        leaveTree.innerHTML = `<li>${buildLeaveEmptyState()}</li>`;
         return;
     }
     const parts = [];
@@ -2302,6 +2391,7 @@ document.getElementById('helpBtn').addEventListener('click', () => {
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
         document.querySelectorAll('.modal-overlay:not(.hidden)').forEach(m => m.classList.add('hidden'));
+        uploadScreen.classList.add('hidden');
     }
 });
 
@@ -2310,6 +2400,57 @@ document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') storage.flush(leaveState.db);
 });
 window.addEventListener('beforeunload', () => { storage.flush(leaveState.db); });
+
+/* ----- Upload overlay open/close ----- */
+function openUploadOverlay() {
+    errorMsg.textContent = '';
+    uploadScreen.classList.remove('hidden');
+}
+document.getElementById('loadCsvBtn').addEventListener('click', openUploadOverlay);
+document.getElementById('uploadCloseBtn').addEventListener('click', () => uploadScreen.classList.add('hidden'));
+uploadScreen.addEventListener('click', (e) => { if (e.target === uploadScreen) uploadScreen.classList.add('hidden'); });
+
+/* =========================================================================
+ * APP BOOT
+ * =========================================================================
+ * The app is no longer gated on a CSV. It opens directly into Leave
+ * Accounting, shows the toggle/help/persistence chrome, and attempts to
+ * reconnect a previously connected leave_db.json from the cached handle.
+ * ========================================================================= */
+async function startupReconnect() {
+    if (!fsaSupported) {
+        // Fallback environment: no auto-save; steer toward Import/Export.
+        persistNote.textContent = 'Auto-save needs a localhost/https origin (Chromium). Use Import/Export here.';
+        connectFileBtn.style.display = 'none';
+        return;
+    }
+    try {
+        const loaded = await storage.tryReconnect();
+        if (loaded) {
+            leaveState.db = loaded;
+            grantPermBtn.style.display = 'none';
+            persistNote.textContent = 'Reconnected to your leave database.';
+        } else if (storage.connected && storage.saveState === 'unsaved') {
+            // Handle cached but permission lapsed — needs a click.
+            grantPermBtn.style.display = '';
+            persistNote.textContent = 'A previous database was found — click Reconnect to grant access.';
+        }
+        // If no handle at all, the empty state will prompt to Connect.
+    } catch (e) {
+        console.warn('startupReconnect', e);
+    }
+    updateLeaveMeta();
+}
+
+async function bootApp() {
+    // Reveal the persistent chrome immediately — no CSV required.
+    modeToggle.classList.remove('hidden');
+    setMode('leave');            // open in Leave Accounting
+    await startupReconnect();    // try to bring back the saved db (or prompt)
+    renderLeaveView();           // render db contents or the getting-started state
+}
+
+bootApp();
 
 </script>
 </body>
