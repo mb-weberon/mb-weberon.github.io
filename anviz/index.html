@@ -2456,6 +2456,20 @@ function buildLeaveEmptyState() {
 }
 
 /* ----- Render the leave view (employees → leave days) ----- */
+function buildBalanceChips(db, empNo) {
+    const bal = computeBalances(db, empNo);
+    const chips = bal.rows.map(r => {
+        const rem = fmtPresentNum(r.remaining);
+        const remCls = (!r.uncapped && r.remaining < 0) ? ' class="rem-neg"' : '';
+        const usedTxt = fmtPresentNum(r.used);
+        if (r.uncapped) return `<span class="bal-chip">${escapeHtml(r.code)}: ${usedTxt} used</span>`;
+        return `<span class="bal-chip">${escapeHtml(r.code)}: <span${remCls}>${rem}</span>/${fmtPresentNum(r.entitlement)}</span>`;
+    }).join('');
+    const untaggedChip = bal.untagged > 0
+        ? `<span class="bal-chip untagged">${fmtPresentNum(bal.untagged)} untagged</span>` : '';
+    return chips + untaggedChip;
+}
+
 function renderLeaveView() {
     updateLeaveMeta();
     const db = leaveState.db;
@@ -2470,21 +2484,12 @@ function renderLeaveView() {
     const parts = [];
     for (const empNo of empNos) {
         const emp = db.employees[empNo];
-        const bal = computeBalances(db, empNo);
         const leaveDates = Object.keys(emp.leaves).sort().reverse(); // desc
-        const chips = bal.rows.map(r => {
-            const rem = fmtPresentNum(r.remaining);
-            const remCls = (!r.uncapped && r.remaining < 0) ? ' class="rem-neg"' : '';
-            const usedTxt = fmtPresentNum(r.used);
-            if (r.uncapped) return `<span class="bal-chip">${escapeHtml(r.code)}: ${usedTxt} used</span>`;
-            return `<span class="bal-chip">${escapeHtml(r.code)}: <span${remCls}>${rem}</span>/${fmtPresentNum(r.entitlement)}</span>`;
-        }).join('');
-        const untaggedChip = bal.untagged > 0
-            ? `<span class="bal-chip untagged">${fmtPresentNum(bal.untagged)} untagged</span>` : '';
-        parts.push(`<li class="node">
+        const balancesHtml = buildBalanceChips(db, empNo);
+        parts.push(`<li class="node" data-emp-node="${escapeHtml(empNo)}">
             <div class="leave-emp-row" onclick="toggle(this)">
                 <div class="col-1"><span class="icon">▶</span>${escapeHtml(emp.fullName || empNo)} <span class="badge">${leaveDates.length} leave days</span></div>
-                <div class="balances">${chips}${untaggedChip}</div>
+                <div class="balances">${balancesHtml}</div>
             </div>
             <ul class="children tree">`);
         if (!leaveDates.length) {
@@ -2498,6 +2503,14 @@ function renderLeaveView() {
         parts.push(`</ul></li>`);
     }
     leaveTree.innerHTML = parts.join('');
+}
+
+/* Update only one employee's balance chips, preserving expand/collapse state. */
+function refreshEmployeeBalances(empNo) {
+    const node = leaveTree.querySelector(`[data-emp-node="${CSS.escape(empNo)}"]`);
+    if (!node) return;
+    const balDiv = node.querySelector('.balances');
+    if (balDiv) balDiv.innerHTML = buildBalanceChips(leaveState.db, empNo);
 }
 
 function renderLeaveDayRow(empNo, lv) {
@@ -2532,8 +2545,9 @@ leaveTree.addEventListener('change', (e) => {
         lv.source = 'manual';
         sel.classList.toggle('untagged-sel', !lv.typeCode);
         touchDb();
-        // Re-render just the balances by re-rendering the whole view is simplest+safe.
-        renderLeaveView();
+        // Surgically update just this employee's balance chips so the tree's
+        // expand/collapse state is preserved (no full re-render).
+        refreshEmployeeBalances(sel.dataset.emp);
         return;
     }
 });
