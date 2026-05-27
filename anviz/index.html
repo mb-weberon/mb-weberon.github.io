@@ -384,6 +384,24 @@ header.main-header h1 { margin: 0; font-size: 1.4rem; font-weight: 600; letter-s
 }
 .subbar-label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; color: #94a3b8; letter-spacing: 0.03em; }
 .subbar-note { font-size: 0.7rem; color: #64748b; margin-left: 4px; }
+.sources-list { display: inline-flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.source-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 0.68rem; background: #eef2ff; border: 1px solid #c7d2fe;
+    color: #3730a3; border-radius: 12px; padding: 3px 4px 3px 9px;
+}
+.source-chip .src-meta { color: #6366f1; opacity: 0.85; }
+.source-chip .src-dup { color: #b45309; }
+.source-chip .src-remove {
+    border: none; background: rgba(99,102,241,0.15); color: #4338ca;
+    width: 16px; height: 16px; border-radius: 50%; cursor: pointer;
+    font-size: 0.7rem; line-height: 1; display: flex; align-items: center; justify-content: center;
+}
+.source-chip .src-remove:hover { background: rgba(99,102,241,0.3); }
+.source-clear-all {
+    border: none; background: none; color: #6366f1; font-size: 0.68rem;
+    font-weight: 700; cursor: pointer; text-decoration: underline; margin-left: 4px;
+}
 
 /* Leave tree rows */
 .leave-emp-row {
@@ -497,6 +515,22 @@ header.main-header h1 { margin: 0; font-size: 1.4rem; font-weight: 600; letter-s
     background: var(--primary); color: #fff; padding: 2px 7px; border-radius: 9px;
     margin-left: 10px; flex-shrink: 0;
 }
+.csv-file-chk { margin-right: 10px; cursor: pointer; flex-shrink: 0; }
+.csv-file-name { flex: 1; }
+.csv-loaded-tag {
+    font-size: 0.6rem; font-weight: 700; text-transform: uppercase;
+    background: #f1f5f9; color: #64748b; padding: 2px 7px; border-radius: 9px;
+    margin-left: 10px; flex-shrink: 0; border: 1px solid var(--border);
+}
+.csv-picker-hint {
+    font-size: 0.78rem; color: #64748b; margin-bottom: 12px;
+    padding: 8px 10px; background: #f8fafc; border-radius: 6px;
+    border-left: 3px solid var(--primary);
+}
+.csv-picker-actions {
+    display: flex; gap: 8px; justify-content: flex-end;
+    margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border);
+}
 
 /* Cloud fetch modal */
 .cloud-section { margin-bottom: 18px; }
@@ -519,6 +553,44 @@ header.main-header h1 { margin: 0; font-size: 1.4rem; font-weight: 600; letter-s
 .cloud-warn {
     font-size: 0.74rem; color: #b45309; background: #fffbeb; border: 1px solid #fde68a;
     border-radius: 6px; padding: 9px 11px; margin: 10px 0 0; line-height: 1.45;
+}
+
+/* Prominent proxy-command block inside the cloud modal */
+.proxy-cmd-block {
+    background: #0f172a; color: #e2e8f0; border-radius: 8px;
+    padding: 12px 14px; margin: 12px 0 4px;
+}
+.proxy-cmd-label {
+    font-size: 0.72rem; color: #94a3b8; margin-bottom: 8px; line-height: 1.45;
+}
+.proxy-cmd-row {
+    display: flex; align-items: stretch; gap: 8px;
+    background: #1e293b; border: 1px solid #334155; border-radius: 6px;
+    padding: 4px 4px 4px 12px;
+}
+.proxy-cmd {
+    flex: 1; font-family: var(--mono, "SFMono-Regular", Consolas, monospace);
+    font-size: 0.78rem; color: #e2e8f0;
+    background: transparent; padding: 7px 0;
+    white-space: nowrap; overflow-x: auto; min-width: 0;
+    user-select: all; -webkit-user-select: all;
+}
+.proxy-cmd::-webkit-scrollbar { height: 4px; }
+.proxy-cmd::-webkit-scrollbar-thumb { background: #475569; border-radius: 2px; }
+.proxy-copy-btn {
+    flex-shrink: 0; font-family: inherit; font-size: 0.7rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.03em;
+    background: var(--primary); color: #fff; border: none; border-radius: 4px;
+    padding: 0 12px; cursor: pointer; transition: background 0.15s;
+}
+.proxy-copy-btn:hover { background: #1e40af; }
+.proxy-copy-btn.copied { background: var(--ok, #059669); }
+.proxy-cmd-hint {
+    font-size: 0.72rem; color: #94a3b8; margin-top: 8px; line-height: 1.45;
+}
+.proxy-cmd-hint code {
+    background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12);
+    color: #cbd5e1; border-radius: 3px; padding: 1px 5px; font-size: 0.76rem;
 }
 .pw-toggle {
     position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
@@ -589,7 +661,7 @@ header.main-header { position: relative; }
             <span class="icon-large">⬆</span>
             <div class="hint"><strong>Click to choose a file</strong> or drag &amp; drop here</div>
             <div class="sub-hint">CSV file from the Anviz CX5 device export</div>
-            <input type="file" id="fileInput" class="file-input" accept=".csv,text/csv">
+            <input type="file" id="fileInput" class="file-input" accept=".csv,text/csv" multiple>
         </label>
         <button class="choose-btn" id="chooseBtn" type="button">Choose CSV File</button>
         <div class="error-msg" id="errorMsg"></div>
@@ -614,7 +686,6 @@ header.main-header { position: relative; }
     </div>
     <button class="btn" onclick="expandAll()">Expand All</button>
     <button class="btn" onclick="collapseAll()">Collapse All</button>
-    <button class="btn btn-primary" id="newFileBtn">New File</button>
 </div>
 
 <!-- Report container (hidden until report rendered) -->
@@ -642,7 +713,6 @@ header.main-header { position: relative; }
     <button class="btn" id="processRangeBtn" disabled title="Load an attendance CSV first to detect leaves">Process Range → DB</button>
     <button class="btn" id="manageTypesBtn">Leave Types</button>
     <button class="btn" id="manageEntBtn">Entitlements</button>
-    <button class="btn btn-primary" id="newFileBtn2">New File</button>
 </div>
 
 <!-- Persistence sub-bar -->
@@ -652,6 +722,7 @@ header.main-header { position: relative; }
     <button class="btn" id="grantPermBtn" style="display:none;">Reconnect (grant permission)</button>
     <button class="btn" id="importBtn">Import JSON</button>
     <button class="btn" id="exportBtn">Export JSON</button>
+    <button class="btn" id="clearRecordsBtn" title="Delete all detected/tagged leave days, keeping leave types and entitlements">Clear leave records</button>
     <input type="file" id="importInput" class="file-input" accept=".json,application/json">
     <span class="subbar-note" id="persistNote"></span>
 </div>
@@ -679,7 +750,14 @@ header.main-header { position: relative; }
                     <span>Proxy base URL</span>
                     <input type="text" id="cloudProxyUrl" placeholder="http://localhost:8010/proxy/" spellcheck="false">
                 </label>
-                <p class="cloud-hint">The CrossChex API blocks direct browser calls (CORS). Run a local proxy — e.g. <code>npx local-cors-proxy --proxyUrl https://api.us.crosschexcloud.com</code> — and point this at <code>http://localhost:8010/proxy/</code> (trailing slash matters).</p>
+                <div class="proxy-cmd-block">
+                    <div class="proxy-cmd-label">CrossChex blocks direct browser calls (CORS). Run this local proxy first:</div>
+                    <div class="proxy-cmd-row">
+                        <code class="proxy-cmd" id="proxyCmd">npx local-cors-proxy --proxyUrl https://api.us.crosschexcloud.com</code>
+                        <button type="button" class="proxy-copy-btn" id="proxyCopyBtn" title="Copy to clipboard">Copy</button>
+                    </div>
+                    <div class="proxy-cmd-hint">Then point the URL above at <code>http://localhost:8010/proxy/</code> (trailing slash matters).</div>
+                </div>
                 <div class="cloud-row">
                     <label class="cloud-field">
                         <span>API Key</span>
@@ -719,6 +797,13 @@ header.main-header { position: relative; }
             <button class="btn btn-primary" id="cloudFetchBtn">Fetch records</button>
         </div>
     </div>
+</div>
+
+<!-- Loaded attendance sources bar -->
+<div class="subbar hidden" id="sourcesBar">
+    <span class="subbar-label">Attendance:</span>
+    <span class="subbar-note" id="sourcesNote">No attendance loaded.</span>
+    <span class="sources-list" id="sourcesList"></span>
 </div>
 
 <!-- Leave Accounting view -->
@@ -802,11 +887,29 @@ header.main-header { position: relative; }
             </ul>
             <p class="help-tip"><strong>Credentials &amp; security:</strong> the proxy only fixes CORS — your API key/secret still pass through it from the browser. If you tick “Remember”, they're stored locally in this browser (IndexedDB), never in <code>leave_db.json</code> and never in the workspace folder. On a public (e.g. GitHub Pages) URL they're readable by anyone with access to the page, so only use the cloud fetch on a trusted machine.</p>
 
+            <h4>Loading multiple attendance sources</h4>
+            <p>You can load several CSVs at once and combine them with cloud fetches — useful for tracking a full year across many monthly exports. Each load <strong>adds</strong> to the working set rather than replacing it.</p>
+            <ul>
+                <li>Pick multiple files in the OS dialog, or tick several rows in the in-folder picker and click <em>Load selected</em>.</li>
+                <li>The <strong>Attendance bar</strong> shows each loaded source as a chip with its record count and date range. Click × on a chip to remove just that source; <em>clear all</em> drops them all.</li>
+                <li>If two sources overlap (e.g. an April export that also contains 1 May, plus a separate May export), the overlapping punches are detected and dropped from the later source, so nothing is double-counted. The chip shows how many records were duplicates.</li>
+                <li>Single-CSV math is preserved: the app never deduplicates within one source — only across sources.</li>
+            </ul>
+
+            <h4>Leave database structure</h4>
+            <p>The <code>leave_db.json</code> file has two top-level blocks:</p>
+            <ul>
+                <li><code>config</code> — leave types, per-employee identity, and entitlements. This is the slow-changing setup.</li>
+                <li><code>records</code> — the leave ledger, keyed by employee number then by date.</li>
+            </ul>
+            <p>To start a fresh ledger while keeping types and entitlements: click <em>Clear leave records</em> in the persistence bar, or open <code>leave_db.json</code> in any editor and set <code>"records": {}</code>. Either way, your <code>config</code> stays untouched.</p>
+
             <h4>Good to know</h4>
             <ul>
                 <li>The app shows exactly what's in the CSV. If an export includes an unexpected day, that day really is in the file — use the date filter to scope it out.</li>
                 <li>Leave days are keyed by employee + date, so re-processing a range is always safe.</li>
                 <li>Single editor at a time is assumed. If the same database file is edited from two places via cloud sync, the last save wins.</li>
+                <li>Older <code>leave_db.json</code> files (pre-config/records split) are migrated automatically on import or when reconnecting the workspace folder.</li>
             </ul>
 
         </div>
@@ -1355,7 +1458,7 @@ function buildReportModel(records, filterStart, filterEnd) {
  *     marked "RECONCILE SEAM" below.
  * ========================================================================= */
 
-const LEAVE_DB_SCHEMA = 1;
+const LEAVE_DB_SCHEMA = 2;
 
 const DEFAULT_LEAVE_TYPES = [
     { code: 'EL',  label: 'Earned Leave',      annualQuota: 12 },
@@ -1363,81 +1466,130 @@ const DEFAULT_LEAVE_TYPES = [
     { code: 'LWP', label: 'Leave Without Pay', annualQuota: 0  }  // 0 = uncapped/no quota
 ];
 
+/* Schema 2 shape:
+ *   { schema:2, updatedAt, config:{ leaveTypes:[], employees:{ empNo:{empNo,fullName,entitlements:{}} } },
+ *     records:{ empNo:{ dateKey:{date,qty,typeCode,source,manualTag,note,detectedKind} } } }
+ * config = slow-changing setup (survives clearing the ledger).
+ * records = the leave ledger (clearable via the app or by hand-editing the file). */
 function makeEmptyLeaveDb() {
     return {
         schema: LEAVE_DB_SCHEMA,
         updatedAt: null,
-        leaveTypes: DEFAULT_LEAVE_TYPES.map(t => ({ ...t })),
-        employees: {}
+        config: {
+            leaveTypes: DEFAULT_LEAVE_TYPES.map(t => ({ ...t })),
+            employees: {}
+        },
+        records: {}
     };
 }
 
+/* ----- Accessor helpers: all code reads/writes the db through these, so the
+ *       config/records split lives in one place. ----- */
+function dbLeaveTypes(db) { return db.config.leaveTypes; }
+function dbSetLeaveTypes(db, types) { db.config.leaveTypes = types; }
+function dbEmployees(db) { return db.config.employees; }
+function dbEmployee(db, empNo) { return db.config.employees[String(empNo)] || null; }
+function dbLeavesFor(db, empNo) { return db.records[String(empNo)] || {}; }
+function dbLeaveEntry(db, empNo, dateKey) {
+    const r = db.records[String(empNo)];
+    return r ? (r[dateKey] || null) : null;
+}
+function dbSetLeaveEntry(db, empNo, dateKey, entry) {
+    const key = String(empNo);
+    if (!db.records[key]) db.records[key] = {};
+    db.records[key][dateKey] = entry;
+}
+function dbClearAllRecords(db) { db.records = {}; }
+
 /**
- * Validate + migrate a parsed object into a well-formed leave db.
- * Throws on structurally invalid input so Import can report a clear error.
+ * Validate + migrate a parsed object into a well-formed schema-2 leave db.
+ * Accepts schema-1 (flat: top-level leaveTypes, employees each with
+ * entitlements+leaves) and splits it into config/records. Throws on
+ * structurally invalid input so Import can report a clear error.
  */
 function normalizeLeaveDb(obj) {
     if (!obj || typeof obj !== 'object') throw new Error('Leave DB is not an object.');
     const db = makeEmptyLeaveDb();
-    if (Array.isArray(obj.leaveTypes) && obj.leaveTypes.length) {
-        db.leaveTypes = obj.leaveTypes
+    const isV2 = obj.config || obj.records || obj.schema >= 2;
+
+    /* ---- leave types ---- */
+    const rawTypes = isV2 ? (obj.config && obj.config.leaveTypes) : obj.leaveTypes;
+    if (Array.isArray(rawTypes) && rawTypes.length) {
+        const types = rawTypes
             .filter(t => t && typeof t.code === 'string' && t.code.trim())
             .map(t => ({
                 code: String(t.code).trim(),
                 label: String(t.label || t.code).trim(),
                 annualQuota: Number.isFinite(+t.annualQuota) ? +t.annualQuota : 0
             }));
-        if (!db.leaveTypes.length) db.leaveTypes = DEFAULT_LEAVE_TYPES.map(t => ({ ...t }));
+        if (types.length) db.config.leaveTypes = types;
     }
-    if (obj.employees && typeof obj.employees === 'object') {
-        for (const [empNo, e] of Object.entries(obj.employees)) {
+
+    /* ---- employees + entitlements (config) ---- */
+    const rawEmployees = isV2 ? (obj.config && obj.config.employees) : obj.employees;
+    if (rawEmployees && typeof rawEmployees === 'object') {
+        for (const [empNo, e] of Object.entries(rawEmployees)) {
             if (!e || typeof e !== 'object') continue;
-            const emp = {
-                empNo: String(e.empNo || empNo),
-                fullName: String(e.fullName || ''),
-                entitlements: {},
-                leaves: {}
-            };
+            const key = String(e.empNo || empNo);
+            const emp = { empNo: key, fullName: String(e.fullName || ''), entitlements: {} };
             if (e.entitlements && typeof e.entitlements === 'object') {
                 for (const [code, v] of Object.entries(e.entitlements)) {
                     if (Number.isFinite(+v)) emp.entitlements[code] = +v;
                 }
             }
-            if (e.leaves && typeof e.leaves === 'object') {
-                for (const [dateKey, lv] of Object.entries(e.leaves)) {
-                    if (!lv || typeof lv !== 'object') continue;
-                    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) continue;
-                    const qty = (+lv.qty === 1 || +lv.qty === 0.5) ? +lv.qty : 1;
-                    emp.leaves[dateKey] = {
-                        date: dateKey,
-                        qty,
-                        typeCode: (typeof lv.typeCode === 'string' && lv.typeCode) ? lv.typeCode : null,
-                        source: lv.source === 'manual' ? 'manual' : 'auto',
-                        manualTag: !!lv.manualTag,
-                        note: typeof lv.note === 'string' ? lv.note : '',
-                        detectedKind: lv.detectedKind === 'half_day' ? 'half_day' : 'not_moved_in'
-                    };
-                }
-            }
-            db.employees[emp.empNo] = emp;
+            db.config.employees[key] = emp;
         }
     }
+
+    /* ---- leave records (ledger) ---- */
+    const ingestLeaveMap = (empKey, leavesObj) => {
+        if (!leavesObj || typeof leavesObj !== 'object') return;
+        for (const [dateKey, lv] of Object.entries(leavesObj)) {
+            if (!lv || typeof lv !== 'object') continue;
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) continue;
+            const qty = (+lv.qty === 1 || +lv.qty === 0.5) ? +lv.qty : 1;
+            if (!db.records[empKey]) db.records[empKey] = {};
+            db.records[empKey][dateKey] = {
+                date: dateKey,
+                qty,
+                typeCode: (typeof lv.typeCode === 'string' && lv.typeCode) ? lv.typeCode : null,
+                source: lv.source === 'manual' ? 'manual' : 'auto',
+                manualTag: !!lv.manualTag,
+                note: typeof lv.note === 'string' ? lv.note : '',
+                detectedKind: lv.detectedKind === 'half_day' ? 'half_day' : 'not_moved_in'
+            };
+        }
+    };
+    if (isV2 && obj.records && typeof obj.records === 'object') {
+        for (const [empNo, leavesObj] of Object.entries(obj.records)) {
+            ingestLeaveMap(String(empNo), leavesObj);
+        }
+    } else if (!isV2 && obj.employees && typeof obj.employees === 'object') {
+        // schema-1 migration: pull each employee's .leaves into records[empNo]
+        for (const [empNo, e] of Object.entries(obj.employees)) {
+            if (e && typeof e === 'object' && e.leaves) {
+                ingestLeaveMap(String(e.empNo || empNo), e.leaves);
+            }
+        }
+    }
+
     db.schema = LEAVE_DB_SCHEMA;
     db.updatedAt = typeof obj.updatedAt === 'string' ? obj.updatedAt : null;
     return db;
 }
 
 /**
- * Ensure an employee record exists in the db, updating the display name.
+ * Ensure an employee exists in config, updating the display name.
+ * Returns the config employee record.
  */
 function ensureLeaveEmployee(db, empNo, fullName) {
     const key = String(empNo);
-    if (!db.employees[key]) {
-        db.employees[key] = { empNo: key, fullName: fullName || '', entitlements: {}, leaves: {} };
-    } else if (fullName && db.employees[key].fullName !== fullName) {
-        db.employees[key].fullName = fullName; // keep the latest display name
+    if (!db.config.employees[key]) {
+        db.config.employees[key] = { empNo: key, fullName: fullName || '', entitlements: {} };
+    } else if (fullName && db.config.employees[key].fullName !== fullName) {
+        db.config.employees[key].fullName = fullName; // keep the latest display name
     }
-    return db.employees[key];
+    return db.config.employees[key];
 }
 
 /**
@@ -1468,23 +1620,23 @@ function processLeaveRange(db, records, filterStart, filterEnd) {
     for (const mo of model.months) {
         for (const emp of mo.employees) {
             const empNo = nameToEmpNo.get(emp.fullName) || emp.fullName;
-            const dbEmp = ensureLeaveEmployee(db, empNo, emp.fullName);
+            ensureLeaveEmployee(db, empNo, emp.fullName);
             for (const day of emp.days) {
                 // Only working-day leaves count; holidays/weekends never do.
                 const isLeaveCandidate = day.isNotMovedIn || day.isHalfDay;
                 if (!isLeaveCandidate) {
-                    // RECONCILE SEAM (deferred): if dbEmp.leaves[dateKey] exists
-                    // here, the person now shows attendance / non-leave on a day
-                    // previously flagged as leave. We intentionally DO NOT remove
-                    // it this iteration. Next iteration: flag for confirmation.
+                    // RECONCILE SEAM (deferred): if a record exists for this
+                    // (empNo,dateKey), the person now shows attendance / non-leave
+                    // on a day previously flagged as leave. We intentionally DO NOT
+                    // remove it this iteration. Next iteration: flag for confirmation.
                     continue;
                 }
                 const dateKey = ymdKey(day.date);
                 const qty = day.isHalfDay ? 0.5 : 1.0;
                 const detectedKind = day.isHalfDay ? 'half_day' : 'not_moved_in';
-                const existing = dbEmp.leaves[dateKey];
+                const existing = dbLeaveEntry(db, empNo, dateKey);
                 if (!existing) {
-                    dbEmp.leaves[dateKey] = {
+                    dbSetLeaveEntry(db, empNo, dateKey, {
                         date: dateKey,
                         qty,
                         typeCode: null,
@@ -1492,7 +1644,7 @@ function processLeaveRange(db, records, filterStart, filterEnd) {
                         manualTag: false,
                         note: '',
                         detectedKind
-                    };
+                    });
                     summary.created++;
                 } else if (existing.manualTag) {
                     // Preserve the human's classification; refresh only qty/kind.
@@ -1519,11 +1671,11 @@ function processLeaveRange(db, records, filterStart, filterEnd) {
  * explicit per-employee override if set, else the type's annualQuota.
  */
 function entitlementFor(db, empNo, typeCode) {
-    const emp = db.employees[String(empNo)];
+    const emp = dbEmployee(db, empNo);
     if (emp && Object.prototype.hasOwnProperty.call(emp.entitlements, typeCode)) {
         return emp.entitlements[typeCode];
     }
-    const t = db.leaveTypes.find(t => t.code === typeCode);
+    const t = dbLeaveTypes(db).find(t => t.code === typeCode);
     return t ? t.annualQuota : 0;
 }
 
@@ -1533,17 +1685,15 @@ function entitlementFor(db, empNo, typeCode) {
  * counted separately so the UI can nudge the user to classify them.
  */
 function computeBalances(db, empNo) {
-    const emp = db.employees[String(empNo)];
     const used = {};
     let untagged = 0;
-    for (const t of db.leaveTypes) used[t.code] = 0;
-    if (emp) {
-        for (const lv of Object.values(emp.leaves)) {
-            if (lv.typeCode && used.hasOwnProperty(lv.typeCode)) used[lv.typeCode] += lv.qty;
-            else if (!lv.typeCode) untagged += lv.qty;
-        }
+    for (const t of dbLeaveTypes(db)) used[t.code] = 0;
+    const leaves = dbLeavesFor(db, empNo);
+    for (const lv of Object.values(leaves)) {
+        if (lv.typeCode && used.hasOwnProperty(lv.typeCode)) used[lv.typeCode] += lv.qty;
+        else if (!lv.typeCode) untagged += lv.qty;
     }
-    const rows = db.leaveTypes.map(t => {
+    const rows = dbLeaveTypes(db).map(t => {
         const ent = entitlementFor(db, empNo, t.code);
         return {
             code: t.code,
@@ -2106,7 +2256,8 @@ function apiRecordToInternal(rec) {
         date: dt,
         dateKey: ymdKey(dt),
         monthKey: ymKey(dt),
-        device: dev
+        device: dev,
+        _uuid: rec.uuid || null      // stronger dedup key when present
     };
 }
 
@@ -2142,6 +2293,81 @@ if (typeof window !== 'undefined') {
     window._apiRecordToInternal = apiRecordToInternal;
 }
 
+/* =========================================================================
+ * MULTI-SOURCE ATTENDANCE STORE
+ * =========================================================================
+ * Each CSV load and API fetch becomes a "source"; the report and leave
+ * pipeline read state.records, which is the deduplicated merge of all
+ * sources. Dedup key: empNo + exact timestamp + device, with the API uuid
+ * taking precedence when present. ========================================= */
+
+const state = {
+    records: null,       // deduplicated merge of all sources
+    fileName: '',        // label of the most recently added source
+    naturalRange: null,  // { start, end } from the merged data
+    sources: []          // [{ id, label, records, count, added, start, end }]
+};
+
+let _sourceSeq = 0;
+
+function recordDedupKey(r) {
+    if (r._uuid) return 'uuid:' + r._uuid;
+    return `${r.empNo}|${r.date.getTime()}|${r.device || ''}`;
+}
+
+function rebuildMergedRecords() {
+    // Dedup is INTER-source only: a single source's records are taken at face
+    // value (preserving the long-standing CSV-only behavior, including
+    // genuine-or-spurious same-minute repeats). Only when a second source
+    // contains a punch that already appeared in a PRIOR source do we drop it.
+    const seenInPriorSources = new Set();
+    const merged = [];
+    for (const src of state.sources) {
+        const thisSourceKeys = new Set();
+        for (const r of src.records) {
+            const k = recordDedupKey(r);
+            if (seenInPriorSources.has(k)) continue;  // already taken from a prior source
+            merged.push(r);
+            thisSourceKeys.add(k);
+        }
+        // After processing this source, its keys join the prior-set.
+        for (const k of thisSourceKeys) seenInPriorSources.add(k);
+    }
+    if (!merged.length) { state.records = null; state.naturalRange = null; return; }
+    state.records = merged;
+    state.naturalRange = getDataDateRange(merged);
+}
+
+function addSource(records, label) {
+    // "added" counts how many of this source's records would actually contribute
+    // new punches to the merge (i.e. weren't already present in earlier sources).
+    const priorKeys = new Set();
+    for (const s of state.sources) for (const r of s.records) priorKeys.add(recordDedupKey(r));
+    let added = 0;
+    const thisSeen = new Set();
+    for (const r of records) {
+        const k = recordDedupKey(r);
+        if (priorKeys.has(k)) continue;
+        if (thisSeen.has(k)) { added++; continue; } // intra-source repeats still "added"
+        thisSeen.add(k);
+        added++;
+    }
+    const range = getDataDateRange(records);
+    const src = {
+        id: ++_sourceSeq, label, records,
+        count: records.length, added,
+        start: range.start, end: range.end
+    };
+    state.sources.push(src);
+    rebuildMergedRecords();
+    return src;
+}
+
+function removeSource(id) {
+    state.sources = state.sources.filter(s => s.id !== id);
+    rebuildMergedRecords();
+}
+
 /* ---------- UI interactivity ---------- */
 function toggle(e) { e.parentElement.classList.toggle('expanded'); }
 function expandAll() {
@@ -2160,19 +2386,10 @@ const uploadScreen = document.getElementById('uploadScreen');
 const reportControls = document.getElementById('reportControls');
 const reportContainer = document.getElementById('reportContainer');
 const reportMeta = document.getElementById('reportMeta');
-const newFileBtn = document.getElementById('newFileBtn');
 const filterStartInput = document.getElementById('filterStart');
 const filterEndInput = document.getElementById('filterEnd');
 const applyFilterBtn = document.getElementById('applyFilterBtn');
 const resetFilterBtn = document.getElementById('resetFilterBtn');
-
-/* Module state: the currently-loaded data, kept so we can re-filter without
- * re-parsing the file. */
-const state = {
-    records: null,       // all parsed records
-    fileName: '',
-    naturalRange: null   // { start, end } from the data
-};
 
 /* Date <-> input-value (YYYY-MM-DD) helpers (local time, no UTC drift). */
 function dateToInputValue(d) {
@@ -2214,7 +2431,8 @@ function rebuild(filterStart, filterEnd) {
 
 chooseBtn.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', (e) => {
-    if (e.target.files && e.target.files[0]) handleFile(e.target.files[0]);
+    if (e.target.files && e.target.files.length) handleFiles(e.target.files);
+    fileInput.value = '';
 });
 
 ['dragenter', 'dragover'].forEach(ev => {
@@ -2224,25 +2442,23 @@ fileInput.addEventListener('change', (e) => {
     dropzone.addEventListener(ev, (e) => { e.preventDefault(); e.stopPropagation(); dropzone.classList.remove('dragover'); });
 });
 dropzone.addEventListener('drop', (e) => {
-    const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-    if (f) handleFile(f);
+    const files = e.dataTransfer && e.dataTransfer.files;
+    if (files && files.length) handleFiles(files);
 });
 
-newFileBtn.addEventListener('click', () => {
-    // Clear the loaded CSV and its attendance report, but keep the leave db
-    // and stay in a usable state (the app is no longer gated on a CSV).
+/* Clear ALL loaded attendance sources and the report, but keep the leave db. */
+function clearAllAttendance() {
     fileInput.value = '';
     errorMsg.textContent = '';
     document.getElementById('mainTree').innerHTML = '';
-    state.records = null;
+    state.sources = [];
+    rebuildMergedRecords();
     state.fileName = '';
-    state.naturalRange = null;
-    // Attendance report has no data now: disable its processing affordance.
     processRangeBtn.disabled = true;
     processRangeBtn.title = 'Load an attendance CSV first to detect leaves';
-    // Return to Leave Accounting (home base) and refresh its empty/getting-started state.
+    renderSourcesPanel();
     setMode('leave');
-});
+}
 
 /* Apply the date-range filter from the inputs. */
 applyFilterBtn.addEventListener('click', () => {
@@ -2269,33 +2485,42 @@ resetFilterBtn.addEventListener('click', () => {
     rebuild(state.naturalRange.start, state.naturalRange.end);
 });
 
-function handleFile(file) {
+/* Read one or more CSV File objects, parsing each as its own source. */
+function handleFiles(fileList) {
     errorMsg.textContent = '';
-    if (!file.name.toLowerCase().endsWith('.csv')) {
-        errorMsg.textContent = 'Please choose a .csv file.';
-        return;
+    const files = [...fileList].filter(f => f.name.toLowerCase().endsWith('.csv'));
+    if (!files.length) { errorMsg.textContent = 'Please choose .csv file(s).'; return; }
+    let remaining = files.length;
+    let anyOk = false;
+    const errors = [];
+    files.forEach(file => {
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+            try {
+                const records = rowsToRecords(parseCSV(evt.target.result));
+                ingestRecords(records, file.name);
+                anyOk = true;
+            } catch (err) {
+                errors.push(`${file.name}: ${err.message || err}`);
+            }
+            if (--remaining === 0) finishMulti();
+        };
+        reader.onerror = () => {
+            errors.push(`${file.name}: unable to read`);
+            if (--remaining === 0) finishMulti();
+        };
+        reader.readAsText(file);
+    });
+    function finishMulti() {
+        if (anyOk) uploadScreen.classList.add('hidden');
+        errorMsg.textContent = errors.length ? errors.join('  •  ') : '';
     }
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-        try {
-            loadCsvText(evt.target.result, file.name);
-        } catch (err) {
-            console.error(err);
-            errorMsg.textContent = err && err.message ? err.message : 'Failed to parse the CSV file.';
-        }
-    };
-    reader.onerror = () => { errorMsg.textContent = 'Unable to read the file.'; };
-    reader.readAsText(file);
 }
 
-/* Shared CSV ingestion — used by both the OS upload and the in-folder picker.
- * Parses, stashes state, builds the report, and refreshes the leave view.
- * Stays in the current mode (Leave Accounting is the home base). */
+/* Shared CSV ingestion — used by the in-folder picker and the multi-file reader. */
 function loadCsvText(text, fileName) {
-    const rows = parseCSV(text);
-    const records = rowsToRecords(rows);
+    const records = rowsToRecords(parseCSV(text));
     ingestRecords(records, fileName);
-    // Close any open upload UI; do NOT switch modes.
     uploadScreen.classList.add('hidden');
 }
 
@@ -2324,6 +2549,7 @@ const leaveContainer = document.getElementById('leaveContainer');
 const leaveTree = document.getElementById('leaveTree');
 const leaveMeta = document.getElementById('leaveMeta');
 const persistBar = document.getElementById('persistBar');
+const sourcesBar = document.getElementById('sourcesBar');
 const saveDot = document.getElementById('saveDot');
 const saveLabel = document.getElementById('saveLabel');
 const processRangeBtn = document.getElementById('processRangeBtn');
@@ -2335,7 +2561,6 @@ const importInput = document.getElementById('importInput');
 const persistNote = document.getElementById('persistNote');
 const manageTypesBtn = document.getElementById('manageTypesBtn');
 const manageEntBtn = document.getElementById('manageEntBtn');
-const newFileBtn2 = document.getElementById('newFileBtn2');
 
 /* ----- Save-status indicator ----- */
 storage.onStatus((s, detail) => {
@@ -2360,14 +2585,60 @@ function setMode(mode) {
     reportContainer.classList.toggle('hidden', !attendance);
     leaveControls.classList.toggle('hidden', attendance);
     persistBar.classList.toggle('hidden', attendance);
+    sourcesBar.classList.toggle('hidden', attendance);
     leaveContainer.classList.toggle('hidden', attendance);
-    if (!attendance) renderLeaveView();
+    if (!attendance) { renderSourcesPanel(); renderLeaveView(); }
 }
 modeAttendanceBtn.addEventListener('click', () => setMode('attendance'));
 modeLeaveBtn.addEventListener('click', () => setMode('leave'));
 
+/* ----- Render the loaded-attendance sources panel ----- */
+function renderSourcesPanel() {
+    const note = document.getElementById('sourcesNote');
+    const list = document.getElementById('sourcesList');
+    if (!state.sources.length) {
+        note.textContent = 'No attendance loaded — use “Load attendance CSV” or “Fetch from cloud”.';
+        list.innerHTML = '';
+        return;
+    }
+    const totalRecords = state.records ? state.records.length : 0;
+    note.textContent = `${state.sources.length} source(s), ${totalRecords} unique punches:`;
+    const fmt = d => `${pad2(d.getDate())} ${MONTH_SHORT[d.getMonth()]}`;
+    list.innerHTML = state.sources.map(s => {
+        const dup = s.count - s.added;
+        const dupTxt = dup > 0 ? ` <span class="src-dup">(${dup} dup)</span>` : '';
+        return `<span class="source-chip">
+            <span>${escapeHtml(s.label)}</span>
+            <span class="src-meta">${s.count} · ${fmt(s.start)}–${fmt(s.end)}</span>${dupTxt}
+            <button class="src-remove" data-src="${s.id}" title="Remove this source">×</button>
+        </span>`;
+    }).join('') + `<button class="source-clear-all" id="srcClearAll">clear all</button>`;
+    list.querySelectorAll('.src-remove').forEach(btn => {
+        btn.addEventListener('click', () => {
+            removeSource(+btn.dataset.src);
+            // Re-bound filter + report to the new merged range.
+            if (state.naturalRange) {
+                const minV = dateToInputValue(state.naturalRange.start);
+                const maxV = dateToInputValue(state.naturalRange.end);
+                filterStartInput.value = minV; filterEndInput.value = maxV;
+                filterStartInput.min = minV; filterStartInput.max = maxV;
+                filterEndInput.min = minV;   filterEndInput.max = maxV;
+                rebuild(state.naturalRange.start, state.naturalRange.end);
+            } else {
+                document.getElementById('mainTree').innerHTML = '';
+                processRangeBtn.disabled = true;
+            }
+            renderSourcesPanel();
+            renderLeaveView();
+        });
+    });
+    const clearAll = document.getElementById('srcClearAll');
+    if (clearAll) clearAll.addEventListener('click', () => clearAllAttendance());
+}
+
 /* ----- Called when a CSV is (re)loaded — seeds employee identities only ----- */
 function onCsvLoadedForLeave() {
+    if (!state.records) return;
     // Seed/refresh employee identity in the db from the CSV (names, existence),
     // without creating any leaves — leaves only appear on explicit Process.
     for (const emp of (buildReportModel(state.records).employees)) {
@@ -2378,10 +2649,10 @@ function onCsvLoadedForLeave() {
 }
 
 function updateLeaveMeta() {
-    const empCount = Object.keys(leaveState.db.employees).length;
+    const empCount = Object.keys(dbEmployees(leaveState.db)).length;
     let leaveCount = 0, untagged = 0;
-    for (const e of Object.values(leaveState.db.employees)) {
-        for (const lv of Object.values(e.leaves)) { leaveCount++; if (!lv.typeCode) untagged++; }
+    for (const leaves of Object.values(leaveState.db.records)) {
+        for (const lv of Object.values(leaves)) { leaveCount++; if (!lv.typeCode) untagged++; }
     }
     const modeNote = storage.mode === 'fsa'
         ? (storage.connected ? 'auto-save on' : 'not connected')
@@ -2473,8 +2744,9 @@ function buildBalanceChips(db, empNo) {
 function renderLeaveView() {
     updateLeaveMeta();
     const db = leaveState.db;
-    const empNos = Object.keys(db.employees).sort((a, b) => {
-        const na = db.employees[a].fullName || '', nb = db.employees[b].fullName || '';
+    const emps = dbEmployees(db);
+    const empNos = Object.keys(emps).sort((a, b) => {
+        const na = emps[a].fullName || '', nb = emps[b].fullName || '';
         return na.localeCompare(nb, undefined, { sensitivity: 'base' });
     });
     if (!empNos.length) {
@@ -2483,8 +2755,9 @@ function renderLeaveView() {
     }
     const parts = [];
     for (const empNo of empNos) {
-        const emp = db.employees[empNo];
-        const leaveDates = Object.keys(emp.leaves).sort().reverse(); // desc
+        const emp = emps[empNo];
+        const leaves = dbLeavesFor(db, empNo);
+        const leaveDates = Object.keys(leaves).sort().reverse(); // desc
         const balancesHtml = buildBalanceChips(db, empNo);
         parts.push(`<li class="node" data-emp-node="${escapeHtml(empNo)}">
             <div class="leave-emp-row" onclick="toggle(this)">
@@ -2497,7 +2770,7 @@ function renderLeaveView() {
         } else {
             parts.push(`<li><div class="leave-day-header"><div>Date</div><div>Qty</div><div>Kind</div><div>Leave Type</div><div>Note</div></div></li>`);
             for (const dk of leaveDates) {
-                parts.push(renderLeaveDayRow(empNo, emp.leaves[dk]));
+                parts.push(renderLeaveDayRow(empNo, leaves[dk]));
             }
         }
         parts.push(`</ul></li>`);
@@ -2519,7 +2792,7 @@ function renderLeaveDayRow(empNo, lv) {
     const qtyCls = lv.qty === 1 ? 'qty-pill full' : 'qty-pill';
     const kindTxt = lv.detectedKind === 'half_day' ? 'Half day' : 'Full day (absent)';
     const opts = ['<option value="">— untagged —</option>']
-        .concat(leaveState.db.leaveTypes.map(t =>
+        .concat(dbLeaveTypes(leaveState.db).map(t =>
             `<option value="${escapeHtml(t.code)}"${lv.typeCode === t.code ? ' selected' : ''}>${escapeHtml(t.label)} (${escapeHtml(t.code)})</option>`))
         .join('');
     const selCls = lv.typeCode ? '' : ' untagged-sel';
@@ -2537,8 +2810,7 @@ function renderLeaveDayRow(empNo, lv) {
 leaveTree.addEventListener('change', (e) => {
     const sel = e.target.closest('.leave-type-sel');
     if (sel) {
-        const emp = leaveState.db.employees[sel.dataset.emp];
-        const lv = emp && emp.leaves[sel.dataset.date];
+        const lv = dbLeaveEntry(leaveState.db, sel.dataset.emp, sel.dataset.date);
         if (!lv) return;
         lv.typeCode = sel.value || null;
         lv.manualTag = true;            // human classified → preserved on re-process
@@ -2554,8 +2826,7 @@ leaveTree.addEventListener('change', (e) => {
 leaveTree.addEventListener('input', (e) => {
     const inp = e.target.closest('.leave-note-inp');
     if (inp) {
-        const emp = leaveState.db.employees[inp.dataset.emp];
-        const lv = emp && emp.leaves[inp.dataset.date];
+        const lv = dbLeaveEntry(leaveState.db, inp.dataset.emp, inp.dataset.date);
         if (!lv) return;
         lv.note = inp.value;
         lv.manualTag = true;
@@ -2649,15 +2920,28 @@ importInput.addEventListener('change', (e) => {
     importInput.value = '';
 });
 
-/* ----- New File (leave controls) ----- */
-newFileBtn2.addEventListener('click', () => newFileBtn.click());
+/* ----- Clear leave records (keeps types + entitlements) ----- */
+document.getElementById('clearRecordsBtn').addEventListener('click', () => {
+    let count = 0;
+    for (const leaves of Object.values(leaveState.db.records)) count += Object.keys(leaves).length;
+    if (count === 0) { persistNote.textContent = 'No leave records to clear.'; return; }
+    const ok = window.confirm(
+        `Delete all ${count} leave record(s)?\n\n` +
+        `Leave types and per-employee entitlements are kept. ` +
+        `This cannot be undone (though your last export/backup still has them).`);
+    if (!ok) return;
+    dbClearAllRecords(leaveState.db);
+    touchDb();
+    renderLeaveView();
+    persistNote.textContent = `Cleared ${count} leave record(s). Types and entitlements kept.`;
+});
 
 /* ----- Modals: Leave Types ----- */
 const typesModal = document.getElementById('typesModal');
 const typesModalBody = document.getElementById('typesModalBody');
 manageTypesBtn.addEventListener('click', () => { renderTypesModal(); typesModal.classList.remove('hidden'); });
 document.getElementById('addTypeBtn').addEventListener('click', () => {
-    leaveState.db.leaveTypes.push({ code: '', label: '', annualQuota: 0 });
+    dbLeaveTypes(leaveState.db).push({ code: '', label: '', annualQuota: 0 });
     renderTypesModal();
 });
 document.getElementById('saveTypesBtn').addEventListener('click', () => {
@@ -2672,13 +2956,13 @@ document.getElementById('saveTypesBtn').addEventListener('click', () => {
         if (types.some(t => t.code === code)) continue; // dedupe
         types.push({ code, label: label || code, annualQuota: quota });
     }
-    if (types.length) leaveState.db.leaveTypes = types;
+    if (types.length) dbSetLeaveTypes(leaveState.db, types);
     typesModal.classList.add('hidden');
     touchDb();
     renderLeaveView();
 });
 function renderTypesModal() {
-    typesModalBody.innerHTML = leaveState.db.leaveTypes.map(t => `
+    typesModalBody.innerHTML = dbLeaveTypes(leaveState.db).map(t => `
         <div class="type-edit-row">
             <input class="t-code" value="${escapeHtml(t.code)}" placeholder="CODE" maxlength="6">
             <input class="t-label" value="${escapeHtml(t.label)}" placeholder="Label">
@@ -2686,7 +2970,7 @@ function renderTypesModal() {
             <button class="del-type" title="Remove">✕</button>
         </div>`).join('');
     typesModalBody.querySelectorAll('.del-type').forEach((btn, i) => {
-        btn.addEventListener('click', () => { leaveState.db.leaveTypes.splice(i, 1); renderTypesModal(); });
+        btn.addEventListener('click', () => { dbLeaveTypes(leaveState.db).splice(i, 1); renderTypesModal(); });
     });
 }
 
@@ -2698,7 +2982,7 @@ document.getElementById('saveEntBtn').addEventListener('click', () => {
     const rows = [...entModalBody.querySelectorAll('.ent-row')];
     for (const r of rows) {
         const empNo = r.dataset.emp;
-        const emp = leaveState.db.employees[empNo];
+        const emp = dbEmployee(leaveState.db, empNo);
         if (!emp) continue;
         emp.entitlements = {};
         r.querySelectorAll('input[data-code]').forEach(inp => {
@@ -2711,13 +2995,14 @@ document.getElementById('saveEntBtn').addEventListener('click', () => {
     renderLeaveView();
 });
 function renderEntModal() {
-    const types = leaveState.db.leaveTypes;
+    const types = dbLeaveTypes(leaveState.db);
     entModalBody.style.setProperty('--ent-cols', types.length);
-    const empNos = Object.keys(leaveState.db.employees).sort((a, b) =>
-        (leaveState.db.employees[a].fullName || '').localeCompare(leaveState.db.employees[b].fullName || ''));
+    const emps = dbEmployees(leaveState.db);
+    const empNos = Object.keys(emps).sort((a, b) =>
+        (emps[a].fullName || '').localeCompare(emps[b].fullName || ''));
     const head = `<div class="ent-head"><div>Employee</div>${types.map(t => `<div>${escapeHtml(t.code)}</div>`).join('')}</div>`;
     const body = empNos.map(empNo => {
-        const emp = leaveState.db.employees[empNo];
+        const emp = emps[empNo];
         const inputs = types.map(t => {
             const v = Object.prototype.hasOwnProperty.call(emp.entitlements, t.code) ? emp.entitlements[t.code] : '';
             return `<input type="number" step="0.5" data-code="${escapeHtml(t.code)}" value="${v}" placeholder="${t.annualQuota}">`;
@@ -2784,22 +3069,43 @@ async function openCsvPicker() {
         csvPickerBody.innerHTML = `<div class="leave-empty-note">No CSV files found in <strong>${escapeHtml(storage.workspaceName)}</strong>. Drop your Anviz exports into that folder, or use “Browse elsewhere…”.</div>`;
         return;
     }
-    csvPickerBody.innerHTML = files.map((f, i) =>
-        `<button class="csv-file-row${i === 0 ? ' newest' : ''}" data-idx="${i}">
-            <span class="csv-file-name">${escapeHtml(f.name)}</span>
-            ${i === 0 ? '<span class="csv-newest-tag">newest</span>' : ''}
-        </button>`).join('');
-    csvPickerBody.querySelectorAll('.csv-file-row').forEach(btn => {
-        btn.addEventListener('click', async () => {
-            const f = files[+btn.dataset.idx];
+    // Mark sources already loaded so the user can see what's in.
+    const loadedLabels = new Set(state.sources.map(s => s.label));
+    csvPickerBody.innerHTML =
+        `<div class="csv-picker-hint">Select one or more files, then “Load selected”.</div>` +
+        files.map((f, i) => {
+            const already = loadedLabels.has(f.name);
+            return `<label class="csv-file-row${i === 0 ? ' newest' : ''}">
+                <input type="checkbox" class="csv-file-chk" data-idx="${i}" ${already ? '' : 'checked'}>
+                <span class="csv-file-name">${escapeHtml(f.name)}</span>
+                ${i === 0 ? '<span class="csv-newest-tag">newest</span>' : ''}
+                ${already ? '<span class="csv-loaded-tag">loaded</span>' : ''}
+            </label>`;
+        }).join('') +
+        `<div class="csv-picker-actions">
+            <button class="btn" id="csvSelectAll">Select all</button>
+            <button class="btn btn-primary" id="csvLoadSelected">Load selected</button>
+         </div>`;
+
+    document.getElementById('csvSelectAll').addEventListener('click', () => {
+        const boxes = csvPickerBody.querySelectorAll('.csv-file-chk');
+        const allOn = [...boxes].every(b => b.checked);
+        boxes.forEach(b => { b.checked = !allOn; });
+    });
+    document.getElementById('csvLoadSelected').addEventListener('click', async () => {
+        const chosen = [...csvPickerBody.querySelectorAll('.csv-file-chk')]
+            .filter(b => b.checked).map(b => files[+b.dataset.idx]);
+        if (!chosen.length) return;
+        csvPickerModal.classList.add('hidden');
+        for (const f of chosen) {
             try {
                 const text = await storage.readCsvFromHandle(f.handle);
-                csvPickerModal.classList.add('hidden');
                 loadCsvText(text, f.name);
             } catch (e) {
-                csvPickerBody.innerHTML = `<div class="leave-empty-note">Failed to read ${escapeHtml(f.name)}: ${escapeHtml(e.message || String(e))}</div>`;
+                console.error('CSV read failed', f.name, e);
+                persistNote.textContent = `Failed to read ${f.name}: ${e.message || e}`;
             }
-        });
+        }
     });
 }
 
@@ -2899,6 +3205,31 @@ document.getElementById('cloudPwToggle').addEventListener('click', () => {
     document.getElementById('cloudPwToggle').textContent = t === 'password' ? 'show' : 'hide';
 });
 
+/* Copy the proxy command to clipboard. Falls back to selection on older
+ * browsers / non-secure contexts where navigator.clipboard is unavailable. */
+document.getElementById('proxyCopyBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('proxyCopyBtn');
+    const text = document.getElementById('proxyCmd').textContent.trim();
+    let ok = false;
+    try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(text);
+            ok = true;
+        }
+    } catch { /* fall through to selection */ }
+    if (!ok) {
+        // Fallback: select the command text so the user can hit Ctrl/Cmd-C.
+        const range = document.createRange();
+        range.selectNodeContents(document.getElementById('proxyCmd'));
+        const sel = window.getSelection();
+        sel.removeAllRanges(); sel.addRange(range);
+        try { ok = document.execCommand && document.execCommand('copy'); } catch { ok = false; }
+    }
+    btn.textContent = ok ? 'Copied' : 'Selected';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1600);
+});
+
 async function persistCredsIfWanted() {
     if (cloudRemember.checked) {
         await idbPutCreds({ proxyUrl: cloudProxyUrl.value.trim(), key: cloudApiKey.value.trim(), secret: cloudApiSecret.value.trim() });
@@ -2990,11 +3321,12 @@ function groupByEmp(records) {
 }
 
 /* Shared ingestion used by CSV and cloud paths: stash state, build report,
- * refresh leave view. Mirrors loadCsvText but takes records directly. */
-function ingestRecords(records, fileName) {
-    state.records = records;
-    state.fileName = fileName;
-    state.naturalRange = getDataDateRange(records);
+ * refresh leave view. Mirrors loadCsvText but takes records directly.
+ * Accumulates: each call ADDS a source and re-merges (deduplicated). */
+function ingestRecords(records, label) {
+    const src = addSource(records, label);
+    state.fileName = label; // most-recent label, for legacy display
+    // Re-bound the date filter to the merged natural range.
     const minV = dateToInputValue(state.naturalRange.start);
     const maxV = dateToInputValue(state.naturalRange.end);
     filterStartInput.value = minV; filterEndInput.value = maxV;
@@ -3004,7 +3336,9 @@ function ingestRecords(records, fileName) {
     processRangeBtn.disabled = false;
     processRangeBtn.title = 'Detect leaves in the current date range and merge into the database (idempotent)';
     onCsvLoadedForLeave();
+    renderSourcesPanel();
     if (leaveState.mode === 'leave') renderLeaveView();
+    return src;
 }
 
 
