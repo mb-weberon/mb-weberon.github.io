@@ -498,6 +498,34 @@ header.main-header h1 { margin: 0; font-size: 1.4rem; font-weight: 600; letter-s
     margin-left: 10px; flex-shrink: 0;
 }
 
+/* Cloud fetch modal */
+.cloud-section { margin-bottom: 18px; }
+.cloud-section:last-child { margin-bottom: 0; }
+.cloud-section-title {
+    font-size: 0.66rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em;
+    color: #94a3b8; margin-bottom: 10px; padding-bottom: 4px; border-bottom: 1px solid var(--border);
+}
+.cloud-field { display: block; margin-bottom: 10px; }
+.cloud-field > span { display: block; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; color: var(--muted, #64748b); margin-bottom: 4px; letter-spacing: 0.03em; }
+.cloud-field input[type=text], .cloud-field input[type=password], .cloud-field input[type=date] {
+    width: 100%; font-family: var(--mono, monospace); font-size: 0.82rem;
+    padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: #fff; color: #334155;
+}
+.cloud-field input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(30,58,138,0.12); }
+.cloud-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.cloud-hint { font-size: 0.74rem; color: #64748b; margin: 6px 0 0; line-height: 1.45; }
+.cloud-hint code { background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 3px; padding: 1px 5px; font-size: 0.76rem; color: #1e3a8a; }
+.cloud-check { display: flex; align-items: center; gap: 7px; font-size: 0.78rem; color: #475569; margin-top: 8px; cursor: pointer; }
+.cloud-warn {
+    font-size: 0.74rem; color: #b45309; background: #fffbeb; border: 1px solid #fde68a;
+    border-radius: 6px; padding: 9px 11px; margin: 10px 0 0; line-height: 1.45;
+}
+.pw-toggle {
+    position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+    border: none; background: none; cursor: pointer; font-size: 0.66rem;
+    color: #64748b; font-weight: 700; text-transform: uppercase;
+}
+
 /* Help button */
 .help-btn {
     position: absolute;
@@ -610,6 +638,7 @@ header.main-header { position: relative; }
         <span class="save-dot" id="saveDot"></span><span id="saveLabel">No database</span>
     </div>
     <button class="btn" id="loadCsvBtn">Load attendance CSV</button>
+    <button class="btn" id="fetchCloudBtn">Fetch from cloud</button>
     <button class="btn" id="processRangeBtn" disabled title="Load an attendance CSV first to detect leaves">Process Range → DB</button>
     <button class="btn" id="manageTypesBtn">Leave Types</button>
     <button class="btn" id="manageEntBtn">Entitlements</button>
@@ -635,6 +664,59 @@ header.main-header { position: relative; }
         <div class="modal-foot">
             <span class="modal-note">Files in your workspace folder.</span>
             <button class="btn" id="browseElsewhereBtn">Browse elsewhere…</button>
+        </div>
+    </div>
+</div>
+
+<!-- Cloud fetch overlay -->
+<div class="modal-overlay hidden" id="cloudModal">
+    <div class="modal modal-wide">
+        <div class="modal-head"><h3>Fetch from CrossChex Cloud</h3><button class="modal-x" data-close="cloudModal">×</button></div>
+        <div class="modal-body">
+            <div class="cloud-section">
+                <div class="cloud-section-title">Connection</div>
+                <label class="cloud-field">
+                    <span>Proxy base URL</span>
+                    <input type="text" id="cloudProxyUrl" placeholder="http://localhost:8010/proxy/" spellcheck="false">
+                </label>
+                <p class="cloud-hint">The CrossChex API blocks direct browser calls (CORS). Run a local proxy — e.g. <code>npx local-cors-proxy --proxyUrl https://api.us.crosschexcloud.com</code> — and point this at <code>http://localhost:8010/proxy/</code> (trailing slash matters).</p>
+                <div class="cloud-row">
+                    <label class="cloud-field">
+                        <span>API Key</span>
+                        <input type="text" id="cloudApiKey" placeholder="developer api_key" autocomplete="off" spellcheck="false">
+                    </label>
+                    <label class="cloud-field">
+                        <span>API Secret</span>
+                        <span style="position:relative; display:block;">
+                            <input type="password" id="cloudApiSecret" placeholder="developer api_secret" autocomplete="off" spellcheck="false">
+                            <button type="button" class="pw-toggle" id="cloudPwToggle">show</button>
+                        </span>
+                    </label>
+                </div>
+                <label class="cloud-check"><input type="checkbox" id="cloudRemember"> Remember credentials on this device (IndexedDB)</label>
+                <p class="cloud-warn" id="cloudCredWarn">Credentials are sent through the proxy to CrossChex and, if remembered, stored locally in this browser. On a public (e.g. GitHub Pages) origin they are readable by anyone with access to this page — use only on a trusted machine.</p>
+            </div>
+
+            <div class="cloud-section">
+                <div class="cloud-section-title">Date range</div>
+                <div class="cloud-row">
+                    <label class="cloud-field"><span>From</span><input type="date" id="cloudBegin"></label>
+                    <label class="cloud-field"><span>To</span><input type="date" id="cloudEnd"></label>
+                </div>
+                <p class="cloud-hint">Records are fetched in IST and converted for display. Large ranges are paged automatically (100/request).</p>
+            </div>
+
+            <div class="cloud-section" id="cloudProgressSection" style="display:none;">
+                <div class="cloud-section-title">Progress</div>
+                <ul class="log" id="cloudLog"></ul>
+            </div>
+        </div>
+        <div class="modal-foot">
+            <label class="modal-note" style="display:flex; align-items:center; gap:6px; margin-right:auto;">
+                <input type="checkbox" id="cloudWriteCsv" checked> Also save a CSV to the workspace folder
+            </label>
+            <button class="btn" id="cloudTestBtn">Test token</button>
+            <button class="btn btn-primary" id="cloudFetchBtn">Fetch records</button>
         </div>
     </div>
 </div>
@@ -709,6 +791,16 @@ header.main-header { position: relative; }
                 <li><strong>Import / Export:</strong> always available. <em>Export</em> downloads <code>leave_db.json</code>; <em>Import</em> loads one back. Use this if auto-save isn't available in your setup — the file format is identical either way.</li>
             </ul>
             <p class="help-tip"><strong>To enable auto-save locally:</strong> put the HTML file in a folder, run <code>python3 -m http.server 8000</code> in that folder, and open <code>http://localhost:8000/</code> (then the file name). Opening the file directly by double-clicking won't allow auto-save — use Import/Export there.</p>
+
+            <h4>Fetching attendance from the cloud</h4>
+            <p>Instead of exporting a CSV by hand, you can pull records straight from CrossChex Cloud with <em>Fetch from cloud</em>. Because the CrossChex API blocks direct browser calls (CORS), this needs a small local proxy:</p>
+            <ul>
+                <li>Install once and run: <code>npx local-cors-proxy --proxyUrl https://api.us.crosschexcloud.com</code> — it listens on <code>http://localhost:8010/proxy</code>.</li>
+                <li>In <em>Fetch from cloud</em>, set the proxy URL to <code>http://localhost:8010/proxy/</code> (trailing slash matters), enter your API key and secret, pick a date range, and fetch. Records are paged automatically and converted from UTC to IST.</li>
+                <li>The fetched data loads just like a CSV, and (by default) is also written as a CSV into your workspace folder so cloud and manual data look identical.</li>
+                <li><em>Test token</em> checks the connection without fetching anything.</li>
+            </ul>
+            <p class="help-tip"><strong>Credentials &amp; security:</strong> the proxy only fixes CORS — your API key/secret still pass through it from the browser. If you tick “Remember”, they're stored locally in this browser (IndexedDB), never in <code>leave_db.json</code> and never in the workspace folder. On a public (e.g. GitHub Pages) URL they're readable by anyone with access to the page, so only use the cloud fetch on a trusted machine.</p>
 
             <h4>Good to know</h4>
             <ul>
@@ -1854,6 +1946,202 @@ const storage = {
     }
 };
 
+/* =========================================================================
+ * CLOUD API CLIENT (CrossChex Cloud)
+ * =========================================================================
+ * The browser cannot call the API directly (CORS), so all requests go through
+ * a proxy (e.g. local-cors-proxy). This module does the documented two-step
+ * dance — authorize.token then paginated attendance.record/getrecord — and
+ * maps the returned punches into the SAME internal record shape that
+ * rowsToRecords() produces, so the report + leave pipeline is unchanged.
+ *
+ * Timezone: the API stores/returns UTC ISO timestamps (…+00:00). We convert
+ * each checktime to IST (UTC+5:30) wall-clock so display and date-keys match
+ * the CSV-based flow, regardless of the viewer's browser timezone.
+ * ========================================================================= */
+
+const IST_OFFSET_MIN = 5 * 60 + 30; // +05:30
+
+/* UUID v4 for header.requestId */
+function cloudUuid() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    return '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, c =>
+        (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16));
+}
+
+/* ISO-8601 with offset for header.timestamp (local zone is fine for the header) */
+function cloudIsoNow() {
+    const d = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    const tz = -d.getTimezoneOffset(), sign = tz >= 0 ? '+' : '-';
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}` +
+           `T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}` +
+           `${sign}${pad(Math.floor(Math.abs(tz)/60))}:${pad(Math.abs(tz)%60)}`;
+}
+
+/* Convert a UTC instant (ISO string) to a Date carrying IST wall-clock in the
+ * browser's local fields, so ymdKey()/formatClockTime() read out IST values
+ * even if the browser isn't in IST. We do this by shifting the epoch by the
+ * difference between IST and the local zone, then letting local getters read
+ * the shifted value. */
+function utcIsoToIstLocalDate(iso) {
+    const inst = new Date(iso);                       // correct UTC instant
+    if (isNaN(inst.getTime())) return null;
+    const localOffsetMin = -inst.getTimezoneOffset(); // local zone offset (min east of UTC)
+    const shiftMin = IST_OFFSET_MIN - localOffsetMin; // how far to nudge so local fields show IST
+    return new Date(inst.getTime() + shiftMin * 60000);
+}
+
+/* Build a begin/end ISO window in UTC from IST calendar dates (inclusive day). */
+function istDateRangeToUtcIso(beginDateStr, endDateStr) {
+    // beginDateStr/endDateStr are YYYY-MM-DD chosen as IST calendar days.
+    // IST 00:00:00 on begin  → subtract 5:30 to get UTC.
+    // IST 23:59:59 on end    → subtract 5:30 to get UTC.
+    const toUtc = (dateStr, h, m, s) => {
+        const [y, mo, da] = dateStr.split('-').map(Number);
+        // Construct the IST wall-clock instant as if UTC, then subtract offset.
+        const asUtc = Date.UTC(y, mo - 1, da, h, m, s);
+        return new Date(asUtc - IST_OFFSET_MIN * 60000).toISOString().replace('.000Z', '+00:00');
+    };
+    return {
+        begin: toUtc(beginDateStr, 0, 0, 0),
+        end: toUtc(endDateStr, 23, 59, 59)
+    };
+}
+
+const cloudApi = {
+    proxyUrl: 'http://localhost:8010/proxy/',
+    _onLog: null,
+    onLog(cb) { this._onLog = cb; },
+    _log(state, title, detail) { if (this._onLog) this._onLog(state, title, detail); },
+
+    _normalizeProxy(url) {
+        let u = (url || '').trim();
+        if (!u) u = this.proxyUrl;
+        if (!/\/$/.test(u)) u += '/'; // ensure trailing slash for path-rewrite proxies
+        return u;
+    },
+
+    async _post(proxyUrl, body) {
+        const res = await fetch(this._normalizeProxy(proxyUrl), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        const text = await res.text();
+        let json = null;
+        try { json = JSON.parse(text); } catch { /* keep text */ }
+        return { status: res.status, ok: res.ok, json, text };
+    },
+
+    async getToken(proxyUrl, key, secret) {
+        const body = {
+            header: { nameSpace: 'authorize.token', nameAction: 'token', version: '1.0',
+                      requestId: cloudUuid(), timestamp: cloudIsoNow() },
+            payload: { api_key: key, api_secret: secret }
+        };
+        const r = await this._post(proxyUrl, body);
+        const token = r.json && r.json.payload && r.json.payload.token;
+        if (!token) {
+            const code = r.json && (r.json.code || (r.json.payload && r.json.payload.code));
+            throw new Error('Token request failed' + (code ? ` (${code})` : ` (HTTP ${r.status})`));
+        }
+        return { token, expires: r.json.payload.expires };
+    },
+
+    async getRecordPage(proxyUrl, token, beginIso, endIso, page, perPage) {
+        const body = {
+            header: { nameSpace: 'attendance.record', nameAction: 'getrecord', version: '1.0',
+                      requestId: cloudUuid(), timestamp: cloudIsoNow() },
+            authorize: { type: 'token', token },
+            payload: { begin_time: beginIso, end_time: endIso, order: 'asc',
+                       page: String(page), per_page: String(perPage) }
+        };
+        const r = await this._post(proxyUrl, body);
+        if (!r.json || !r.json.payload) {
+            const code = r.json && (r.json.code || (r.json.payload && r.json.payload.code));
+            throw new Error('Record request failed' + (code ? ` (${code})` : ` (HTTP ${r.status})`));
+        }
+        return r.json.payload; // { count, list, page, perPage, pageCount }
+    },
+
+    /* Fetch all pages for a date range. Returns array of raw API record objects. */
+    async fetchAllRecords(proxyUrl, key, secret, beginIso, endIso) {
+        this._log('run', 'Authorizing', 'Requesting token…');
+        const { token, expires } = await this.getToken(proxyUrl, key, secret);
+        this._log('ok', 'Token received', expires ? `expires ${expires}` : '');
+
+        const perPage = 100;
+        this._log('run', 'Fetching page 1', `${beginIso} → ${endIso}`);
+        const first = await this.getRecordPage(proxyUrl, token, beginIso, endIso, 1, perPage);
+        let all = Array.isArray(first.list) ? first.list.slice() : [];
+        const total = first.count != null ? first.count : all.length;
+        const pageCount = first.pageCount != null ? first.pageCount
+            : Math.max(1, Math.ceil(total / perPage));
+        this._log('ok', `Page 1 of ${pageCount}`, `${all.length} of ${total} records`);
+
+        for (let p = 2; p <= pageCount; p++) {
+            this._log('run', `Fetching page ${p}`, `of ${pageCount}`);
+            const pg = await this.getRecordPage(proxyUrl, token, beginIso, endIso, p, perPage);
+            if (Array.isArray(pg.list)) all = all.concat(pg.list);
+            this._log('ok', `Page ${p} of ${pageCount}`, `${all.length} total so far`);
+        }
+        return all;
+    }
+};
+
+/* Map a raw API record into the app's internal record shape (IST-localized). */
+function apiRecordToInternal(rec) {
+    const emp = rec.employee || {};
+    const first = (emp.first_name || '').trim();
+    const last = (emp.last_name || '').trim();
+    const fullName = (first && last) ? `${first} ${last}` : (last || first || 'Unknown');
+    const empNo = (emp.workno != null ? String(emp.workno) : '').trim();
+    const dev = (rec.device && rec.device.name) ? rec.device.name : '';
+    const dt = utcIsoToIstLocalDate(rec.checktime);
+    if (!dt) return null;
+    return {
+        fullName, empNo,
+        position: '', department: '',
+        date: dt,
+        dateKey: ymdKey(dt),
+        monthKey: ymKey(dt),
+        device: dev
+    };
+}
+
+/* Convert internal records to a CSV string matching the Anviz export format,
+ * so cloud fetches and manual CSVs converge on identical artifacts. */
+function recordsToCsv(records) {
+    const header = ['First Name','Last Name','Employee No.','Position','Department','Date','Check Time','Device'];
+    const lines = [header.join(',')];
+    const q = s => {
+        s = (s == null) ? '' : String(s);
+        return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
+    for (const r of records) {
+        const d = r.date;
+        const dd = String(d.getDate()).padStart(2,'0');
+        const mm = String(d.getMonth()+1).padStart(2,'0');
+        const yyyy = d.getFullYear();
+        let h = d.getHours(); const min = String(d.getMinutes()).padStart(2,'0');
+        const ap = h >= 12 ? 'PM' : 'AM'; h = h % 12; if (h === 0) h = 12;
+        const dateStr = `${dd}/${mm}/${yyyy}`;
+        const timeStr = `${String(h).padStart(2,'0')}:${min} ${ap}`;
+        // first/last split: the report only uses fullName, but keep the format faithful.
+        const parts = r.fullName.split(' ');
+        const first = parts.length > 1 ? parts.slice(0, -1).join(' ') : '';
+        const last = parts.length > 1 ? parts[parts.length - 1] : r.fullName;
+        lines.push([q(first), q(last), q(r.empNo), q(r.position), q(r.department), q(dateStr), q(timeStr), q(r.device)].join(','));
+    }
+    return lines.join('\r\n');
+}
+
+if (typeof window !== 'undefined') {
+    window._cloudApi = cloudApi;
+    window._apiRecordToInternal = apiRecordToInternal;
+}
+
 /* ---------- UI interactivity ---------- */
 function toggle(e) { e.parentElement.classList.toggle('expanded'); }
 function expandAll() {
@@ -2006,33 +2294,9 @@ function handleFile(file) {
 function loadCsvText(text, fileName) {
     const rows = parseCSV(text);
     const records = rowsToRecords(rows);
-
-    // Stash state for re-filtering.
-    state.records = records;
-    state.fileName = fileName;
-    state.naturalRange = getDataDateRange(records);
-
-    // Initialise the date inputs to the full data range and bound them.
-    const minV = dateToInputValue(state.naturalRange.start);
-    const maxV = dateToInputValue(state.naturalRange.end);
-    filterStartInput.value = minV;
-    filterEndInput.value = maxV;
-    filterStartInput.min = minV; filterStartInput.max = maxV;
-    filterEndInput.min = minV;   filterEndInput.max = maxV;
-
-    // Build the attendance report (kept ready behind the toggle).
-    rebuild(state.naturalRange.start, state.naturalRange.end);
-
+    ingestRecords(records, fileName);
     // Close any open upload UI; do NOT switch modes.
     uploadScreen.classList.add('hidden');
-
-    // CSV is loaded: enable leave processing.
-    processRangeBtn.disabled = false;
-    processRangeBtn.title = 'Detect leaves in the current date range and merge into the database (idempotent)';
-
-    // Prepare the leave view for this dataset (seeds employee identities).
-    onCsvLoadedForLeave();
-    if (leaveState.mode === 'leave') renderLeaveView();
 }
 
 /* =========================================================================
@@ -2530,6 +2794,204 @@ document.getElementById('browseElsewhereBtn').addEventListener('click', () => {
     csvPickerModal.classList.add('hidden');
     openUploadOverlay();
 });
+
+/* =========================================================================
+ * CLOUD FETCH — UI WIRING
+ * ========================================================================= */
+const cloudModal = document.getElementById('cloudModal');
+const cloudProxyUrl = document.getElementById('cloudProxyUrl');
+const cloudApiKey = document.getElementById('cloudApiKey');
+const cloudApiSecret = document.getElementById('cloudApiSecret');
+const cloudBegin = document.getElementById('cloudBegin');
+const cloudEnd = document.getElementById('cloudEnd');
+const cloudLog = document.getElementById('cloudLog');
+const cloudProgressSection = document.getElementById('cloudProgressSection');
+const cloudWriteCsv = document.getElementById('cloudWriteCsv');
+const cloudRemember = document.getElementById('cloudRemember');
+
+/* Credential persistence in IndexedDB (separate store key; never in leave_db). */
+const CRED_KEY = 'cloudCreds';
+async function idbPutCreds(obj) {
+    try {
+        const db = await idbOpen();
+        await new Promise((res, rej) => {
+            const tx = db.transaction(HANDLE_STORE, 'readwrite');
+            tx.objectStore(HANDLE_STORE).put(obj, CRED_KEY);
+            tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+        });
+        db.close();
+    } catch (e) { console.warn('idbPutCreds', e); }
+}
+async function idbGetCreds() {
+    try {
+        const db = await idbOpen();
+        const v = await new Promise((res, rej) => {
+            const tx = db.transaction(HANDLE_STORE, 'readonly');
+            const r = tx.objectStore(HANDLE_STORE).get(CRED_KEY);
+            r.onsuccess = () => res(r.result || null); r.onerror = () => rej(r.error);
+        });
+        db.close(); return v;
+    } catch (e) { console.warn('idbGetCreds', e); return null; }
+}
+async function idbDelCreds() {
+    try {
+        const db = await idbOpen();
+        await new Promise((res, rej) => {
+            const tx = db.transaction(HANDLE_STORE, 'readwrite');
+            tx.objectStore(HANDLE_STORE).delete(CRED_KEY);
+            tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+        });
+        db.close();
+    } catch (e) { console.warn('idbDelCreds', e); }
+}
+
+function cloudLogReset() { cloudLog.innerHTML = ''; cloudProgressSection.style.display = 'none'; }
+function cloudLogAdd(state, title, detail) {
+    cloudProgressSection.style.display = '';
+    const li = document.createElement('li');
+    const mark = state === 'ok' ? '✓' : state === 'err' ? '✕' : state === 'run' ? '…' : '·';
+    li.innerHTML = `<span class="pill ${state}">${mark}</span><div><strong>${escapeHtml(title)}</strong>` +
+                   (detail ? `<div class="detail">${escapeHtml(detail)}</div>` : '') + `</div>`;
+    cloudLog.appendChild(li);
+}
+cloudApi.onLog((state, title, detail) => cloudLogAdd(state, title, detail));
+
+/* Open the cloud modal: restore saved creds + sensible default dates. */
+document.getElementById('fetchCloudBtn').addEventListener('click', async () => {
+    cloudLogReset();
+    cloudProxyUrl.value = cloudProxyUrl.value || cloudApi.proxyUrl;
+    // Default date range: mirror the attendance filter if a CSV is loaded, else last 30 days.
+    if (state.naturalRange) {
+        cloudBegin.value = dateToInputValue(state.naturalRange.start);
+        cloudEnd.value = dateToInputValue(state.naturalRange.end);
+    } else {
+        const now = new Date(), ago = new Date(now.getTime() - 30 * 86400000);
+        cloudBegin.value = dateToInputValue(ago);
+        cloudEnd.value = dateToInputValue(now);
+    }
+    const saved = await idbGetCreds();
+    if (saved) {
+        cloudProxyUrl.value = saved.proxyUrl || cloudProxyUrl.value;
+        cloudApiKey.value = saved.key || '';
+        cloudApiSecret.value = saved.secret || '';
+        cloudRemember.checked = true;
+    }
+    cloudModal.classList.remove('hidden');
+});
+
+document.getElementById('cloudPwToggle').addEventListener('click', () => {
+    const t = cloudApiSecret.type === 'password' ? 'text' : 'password';
+    cloudApiSecret.type = t;
+    document.getElementById('cloudPwToggle').textContent = t === 'password' ? 'show' : 'hide';
+});
+
+async function persistCredsIfWanted() {
+    if (cloudRemember.checked) {
+        await idbPutCreds({ proxyUrl: cloudProxyUrl.value.trim(), key: cloudApiKey.value.trim(), secret: cloudApiSecret.value.trim() });
+    } else {
+        await idbDelCreds();
+    }
+}
+
+/* Test token button. */
+document.getElementById('cloudTestBtn').addEventListener('click', async () => {
+    cloudLogReset();
+    const proxy = cloudProxyUrl.value.trim(), key = cloudApiKey.value.trim(), secret = cloudApiSecret.value.trim();
+    if (!proxy || !key || !secret) { cloudLogAdd('err', 'Missing fields', 'Proxy URL, API key and secret are all required.'); return; }
+    try {
+        cloudLogAdd('run', 'Requesting token', 'via proxy…');
+        const { expires } = await cloudApi.getToken(proxy, key, secret);
+        cloudLogAdd('ok', 'Token OK', expires ? `expires ${expires}` : 'connection works');
+        await persistCredsIfWanted();
+    } catch (e) {
+        cloudLogAdd('err', 'Token failed', (e.message || String(e)) + ' — is the proxy running? Check the proxy terminal & DevTools console.');
+    }
+});
+
+/* Fetch records button. */
+document.getElementById('cloudFetchBtn').addEventListener('click', async () => {
+    cloudLogReset();
+    const proxy = cloudProxyUrl.value.trim(), key = cloudApiKey.value.trim(), secret = cloudApiSecret.value.trim();
+    const beginD = cloudBegin.value, endD = cloudEnd.value;
+    if (!proxy || !key || !secret) { cloudLogAdd('err', 'Missing fields', 'Proxy URL, API key and secret are all required.'); return; }
+    if (!beginD || !endD) { cloudLogAdd('err', 'Missing dates', 'Pick a From and To date.'); return; }
+    let bD = beginD, eD = endD;
+    if (bD > eD) { const t = bD; bD = eD; eD = t; }
+    const { begin, end } = istDateRangeToUtcIso(bD, eD);
+
+    const fetchBtn = document.getElementById('cloudFetchBtn');
+    fetchBtn.disabled = true;
+    try {
+        const raw = await cloudApi.fetchAllRecords(proxy, key, secret, begin, end);
+        cloudLogAdd('run', 'Processing', `${raw.length} raw records → internal format`);
+        const records = raw.map(apiRecordToInternal).filter(Boolean);
+        if (!records.length) {
+            cloudLogAdd('err', 'No usable records', 'The API returned nothing for this range.');
+            fetchBtn.disabled = false;
+            return;
+        }
+        // Feed into the same pipeline the CSV path uses.
+        const fileName = `cloud_${bD}_to_${eD}.csv`;
+        ingestRecords(records, fileName);
+        cloudLogAdd('ok', 'Loaded into app', `${records.length} records, ${Object.keys(groupByEmp(records)).length} employees`);
+
+        // Optionally write a CSV into the workspace folder.
+        if (cloudWriteCsv.checked) {
+            if (storage.mode === 'fsa' && storage.connected && storage.dirHandle) {
+                try {
+                    const csv = recordsToCsv(records);
+                    const fh = await storage.dirHandle.getFileHandle(fileName, { create: true });
+                    const w = await fh.createWritable();
+                    await w.write(csv); await w.close();
+                    cloudLogAdd('ok', 'CSV saved to workspace', fileName);
+                } catch (e) {
+                    cloudLogAdd('err', 'CSV save failed', e.message || String(e));
+                }
+            } else {
+                // No folder connected — offer a download instead.
+                const csv = recordsToCsv(records);
+                const blob = new Blob([csv], { type: 'text/csv' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a'); a.href = url; a.download = fileName;
+                document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+                cloudLogAdd('ok', 'CSV downloaded', fileName + ' (no workspace folder connected)');
+            }
+        }
+        await persistCredsIfWanted();
+        cloudApi.proxyUrl = proxy;
+        // Close shortly so the user can see the final log.
+        setTimeout(() => cloudModal.classList.add('hidden'), 1200);
+    } catch (e) {
+        cloudLogAdd('err', 'Fetch failed', (e.message || String(e)) + ' — check the proxy and console.');
+    } finally {
+        fetchBtn.disabled = false;
+    }
+});
+
+/* Helper: group records by empNo (for the log count). */
+function groupByEmp(records) {
+    const g = {};
+    for (const r of records) g[r.empNo || r.fullName] = true;
+    return g;
+}
+
+/* Shared ingestion used by CSV and cloud paths: stash state, build report,
+ * refresh leave view. Mirrors loadCsvText but takes records directly. */
+function ingestRecords(records, fileName) {
+    state.records = records;
+    state.fileName = fileName;
+    state.naturalRange = getDataDateRange(records);
+    const minV = dateToInputValue(state.naturalRange.start);
+    const maxV = dateToInputValue(state.naturalRange.end);
+    filterStartInput.value = minV; filterEndInput.value = maxV;
+    filterStartInput.min = minV; filterStartInput.max = maxV;
+    filterEndInput.min = minV;   filterEndInput.max = maxV;
+    rebuild(state.naturalRange.start, state.naturalRange.end);
+    processRangeBtn.disabled = false;
+    processRangeBtn.title = 'Detect leaves in the current date range and merge into the database (idempotent)';
+    onCsvLoadedForLeave();
+    if (leaveState.mode === 'leave') renderLeaveView();
+}
 
 
 /* =========================================================================
