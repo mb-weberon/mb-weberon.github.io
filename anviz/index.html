@@ -484,6 +484,15 @@ header.main-header h1 { margin: 0; font-size: 1.4rem; font-weight: 600; letter-s
 .modal-body { padding: 16px 20px; overflow-y: auto; }
 .modal-foot { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 14px 20px; border-top: 1px solid var(--border); }
 .modal-note { margin-right: auto; font-size: 0.72rem; color: #94a3b8; }
+.threshold-field { margin-bottom: 16px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+.threshold-field label { display: block; font-size: 0.78rem; font-weight: 600; color: #334155; margin-bottom: 5px; }
+.threshold-field input {
+    width: 110px; font-family: inherit; font-size: 0.85rem; padding: 6px 9px;
+    border: 1px solid var(--border); border-radius: 5px;
+}
+.threshold-field input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px rgba(30,58,138,0.12); }
+.threshold-hint { font-size: 0.72rem; color: #94a3b8; margin-top: 6px; line-height: 1.45; }
+.types-subhead { font-size: 0.66rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: #94a3b8; margin-bottom: 10px; }
 .type-edit-row, .ent-row {
     display: grid; align-items: center; gap: 8px; margin-bottom: 8px;
 }
@@ -814,8 +823,16 @@ header.main-header { position: relative; }
 <!-- Modal: Leave Types editor -->
 <div class="modal-overlay hidden" id="typesModal">
     <div class="modal">
-        <div class="modal-head"><h3>Leave Types</h3><button class="modal-x" data-close="typesModal">×</button></div>
-        <div class="modal-body" id="typesModalBody"></div>
+        <div class="modal-head"><h3>Leave Types &amp; Rules</h3><button class="modal-x" data-close="typesModal">×</button></div>
+        <div class="modal-body">
+            <div class="threshold-field">
+                <label for="halfDayThreshInput">Half-day threshold (worked hours)</label>
+                <input type="number" id="halfDayThreshInput" min="0.5" max="12" step="0.5">
+                <div class="threshold-hint">A present day with fewer worked hours than this is flagged as a half-day leave (0.5). Default 5.</div>
+            </div>
+            <div class="types-subhead">Leave types</div>
+            <div id="typesModalBody"></div>
+        </div>
         <div class="modal-foot">
             <button class="btn" id="addTypeBtn">+ Add Type</button>
             <button class="btn btn-primary" id="saveTypesBtn">Done</button>
@@ -855,7 +872,7 @@ header.main-header { position: relative; }
             <ul>
                 <li>Click any row to expand it. <em>Expand All</em> / <em>Collapse All</em> act on everything.</li>
                 <li><strong>Date filter</strong> (From / To) limits the report to a range. Handy when an export includes stray days — e.g. an "April" download that also contains 1 May. Set the range and click <em>Apply</em>; <em>Reset</em> restores the full file.</li>
-                <li><strong>Day tags:</strong> <span class="hl hl-holiday">Weekly Holiday / Alternate Saturday / public holidays</span> (yellow), <span class="hl hl-leave">Not Moved In</span> (red — a working day with no punches), <span class="hl hl-half">Half Day Leave</span> (blue — under 5 worked hours).</li>
+                <li><strong>Day tags:</strong> <span class="hl hl-holiday">Weekly Holiday / Alternate Saturday / public holidays</span> (yellow), <span class="hl hl-leave">Not Moved In</span> (red — a working day with no punches), <span class="hl hl-half">Half Day Leave</span> (blue — worked hours below the half-day threshold, default 5h, set in <em>Leave Types &amp; Rules</em>).</li>
                 <li>A <span class="hl hl-err">red arrow</span> flags a day with an odd number of punches (a missing in/out), which bubbles up to the employee.</li>
                 <li><strong>Total Hours</strong> = first punch to last punch. <strong>Worked Hours</strong> = total minus the time out on breaks.</li>
             </ul>
@@ -899,7 +916,7 @@ header.main-header { position: relative; }
             <h4>Leave database structure</h4>
             <p>The <code>leave_db.json</code> file has two top-level blocks:</p>
             <ul>
-                <li><code>config</code> — leave types, per-employee identity, and entitlements. This is the slow-changing setup.</li>
+                <li><code>config</code> — leave types, the half-day threshold, per-employee identity, and entitlements. This is the slow-changing setup.</li>
                 <li><code>records</code> — the leave ledger, keyed by employee number then by date.</li>
             </ul>
             <p>To start a fresh ledger while keeping types and entitlements: click <em>Clear leave records</em> in the persistence bar, or open <code>leave_db.json</code> in any editor and set <code>"records": {}</code>. Either way, your <code>config</code> stays untouched.</p>
@@ -1105,6 +1122,16 @@ function diffMinutes(a, b) {
     return Math.round((b.getTime() - a.getTime()) / 60000);
 }
 
+/* Half-day threshold in minutes. Configurable; driven from the leave db's
+ * config.halfDayThresholdHours via setHalfDayThresholdHours(). buildDailyEntry
+ * reads this module-level value so all existing call sites stay unchanged. */
+let HALF_DAY_THRESHOLD_MIN = 5 * 60;
+function setHalfDayThresholdHours(hours) {
+    const h = (Number.isFinite(+hours) && +hours > 0) ? +hours : 5;
+    HALF_DAY_THRESHOLD_MIN = Math.round(h * 60);
+}
+function getHalfDayThresholdHours() { return HALF_DAY_THRESHOLD_MIN / 60; }
+
 /* ---------- Build the daily report shape ----------
  * For each (employee, date) compute:
  *  - logs sorted ascending
@@ -1227,11 +1254,9 @@ function buildDailyEntry(logs, calendarDay) {
         }
     }
 
-    // Half-day: worked < 5h, but only flag if there IS productive time (i.e. not the
-    // single-log case which is treated separately with its own tag).
-    // Reference shows: single-log day is tagged [Half Day Leave] AND icon-error,
-    //   because numLogs=1 implies workedMinutes=0 (< 5h).
-    if (entry.workedMinutes < 5 * 60 && entry.isPresent) {
+    // Half-day: worked < threshold (default 5h), but only flag if present.
+    // The single-log case has workedMinutes=0, so it falls under the threshold.
+    if (entry.workedMinutes < HALF_DAY_THRESHOLD_MIN && entry.isPresent) {
         // Don't apply half-day on holiday rows
         if (calendarDay.kind === 'working_day') {
             entry.isHalfDay = true;
@@ -1466,8 +1491,12 @@ const DEFAULT_LEAVE_TYPES = [
     { code: 'LWP', label: 'Leave Without Pay', annualQuota: 0  }  // 0 = uncapped/no quota
 ];
 
+const DEFAULT_HALF_DAY_THRESHOLD_HOURS = 5;
+
 /* Schema 2 shape:
- *   { schema:2, updatedAt, config:{ leaveTypes:[], employees:{ empNo:{empNo,fullName,entitlements:{}} } },
+ *   { schema:2, updatedAt,
+ *     config:{ leaveTypes:[], halfDayThresholdHours:Number,
+ *              employees:{ empNo:{empNo,fullName,entitlements:{}} } },
  *     records:{ empNo:{ dateKey:{date,qty,typeCode,source,manualTag,note,detectedKind} } } }
  * config = slow-changing setup (survives clearing the ledger).
  * records = the leave ledger (clearable via the app or by hand-editing the file). */
@@ -1477,6 +1506,7 @@ function makeEmptyLeaveDb() {
         updatedAt: null,
         config: {
             leaveTypes: DEFAULT_LEAVE_TYPES.map(t => ({ ...t })),
+            halfDayThresholdHours: DEFAULT_HALF_DAY_THRESHOLD_HOURS,
             employees: {}
         },
         records: {}
@@ -1500,6 +1530,14 @@ function dbSetLeaveEntry(db, empNo, dateKey, entry) {
     db.records[key][dateKey] = entry;
 }
 function dbClearAllRecords(db) { db.records = {}; }
+function dbHalfDayThresholdHours(db) {
+    const v = db.config && db.config.halfDayThresholdHours;
+    return Number.isFinite(+v) && +v > 0 ? +v : DEFAULT_HALF_DAY_THRESHOLD_HOURS;
+}
+function dbSetHalfDayThresholdHours(db, hours) {
+    db.config.halfDayThresholdHours = Number.isFinite(+hours) && +hours > 0
+        ? +hours : DEFAULT_HALF_DAY_THRESHOLD_HOURS;
+}
 
 /**
  * Validate + migrate a parsed object into a well-formed schema-2 leave db.
@@ -1524,6 +1562,11 @@ function normalizeLeaveDb(obj) {
             }));
         if (types.length) db.config.leaveTypes = types;
     }
+
+    /* ---- half-day threshold (config; v1 files won't have it → default) ---- */
+    const rawThreshold = isV2 ? (obj.config && obj.config.halfDayThresholdHours) : undefined;
+    db.config.halfDayThresholdHours = (Number.isFinite(+rawThreshold) && +rawThreshold > 0)
+        ? +rawThreshold : DEFAULT_HALF_DAY_THRESHOLD_HOURS;
 
     /* ---- employees + entitlements (config) ---- */
     const rawEmployees = isV2 ? (obj.config && obj.config.employees) : obj.employees;
@@ -2181,6 +2224,11 @@ const cloudApi = {
         const text = await res.text();
         let json = null;
         try { json = JSON.parse(text); } catch { /* keep text */ }
+        // Verbose wire logging for record calls (skip token to avoid logging secrets).
+        if (body && body.header && body.header.nameAction === 'getrecord') {
+            console.log('[cloudApi] >> request payload:', JSON.stringify(body.payload));
+            console.log('[cloudApi] << raw response body:', text);
+        }
         return { status: res.status, ok: res.ok, json, text };
     },
 
@@ -2207,34 +2255,159 @@ const cloudApi = {
             payload: { begin_time: beginIso, end_time: endIso, order: 'asc',
                        page: String(page), per_page: String(perPage) }
         };
+        console.log(`[cloudApi] getrecord request — page ${page}, per_page ${perPage}`,
+                    { begin_time: beginIso, end_time: endIso });
         const r = await this._post(proxyUrl, body);
+        // Detect the API's rate-limit exception (one call / 15s). Surfaced as a
+        // System/Exception with payload.type FREQUENT_REQUEST — signal a retry.
+        const ph = r.json && r.json.header;
+        const pp = r.json && r.json.payload;
+        if (ph && ph.name === 'Exception' && pp && pp.type === 'FREQUENT_REQUEST') {
+            console.warn('[cloudApi] rate-limited (FREQUENT_REQUEST) on page', page);
+            return { _rateLimited: true, _message: pp.message || 'rate limited' };
+        }
         if (!r.json || !r.json.payload) {
             const code = r.json && (r.json.code || (r.json.payload && r.json.payload.code));
+            console.warn('[cloudApi] getrecord bad response', { status: r.status, body: r.text });
             throw new Error('Record request failed' + (code ? ` (${code})` : ` (HTTP ${r.status})`));
         }
-        return r.json.payload; // { count, list, page, perPage, pageCount }
+        const p = r.json.payload;
+        // Log the raw pagination metadata so we can see exactly what each field means.
+        const list = Array.isArray(p.list) ? p.list : [];
+        let span = '(empty)';
+        if (list.length) {
+            const times = list.map(x => x.checktime).filter(Boolean).sort();
+            span = `${times[0]} … ${times[times.length - 1]}`;
+        }
+        console.log(`[cloudApi] getrecord response — page ${page}:`, {
+            count: p.count, page: p.page, perPage: p.perPage, pageCount: p.pageCount,
+            listLength: list.length, dateSpanInPage: span
+        });
+        return p; // { count, list, page, perPage, pageCount }
     },
 
-    /* Fetch all pages for a date range. Returns array of raw API record objects. */
+    /* Fetch all pages for a date range. Returns array of raw API record objects.
+     * Logs each page's metadata. Does NOT blindly trust pageCount (the API's
+     * field naming is ambiguous — in the docs example pageCount equals the total
+     * record count, not the number of pages). Instead it keeps paging while
+     * pages keep returning records, using count/pageCount only to estimate a
+     * target and as a sanity-check, with a hard safety cap. */
     async fetchAllRecords(proxyUrl, key, secret, beginIso, endIso) {
         this._log('run', 'Authorizing', 'Requesting token…');
         const { token, expires } = await this.getToken(proxyUrl, key, secret);
         this._log('ok', 'Token received', expires ? `expires ${expires}` : '');
 
         const perPage = 100;
-        this._log('run', 'Fetching page 1', `${beginIso} → ${endIso}`);
-        const first = await this.getRecordPage(proxyUrl, token, beginIso, endIso, 1, perPage);
-        let all = Array.isArray(first.list) ? first.list.slice() : [];
-        const total = first.count != null ? first.count : all.length;
-        const pageCount = first.pageCount != null ? first.pageCount
-            : Math.max(1, Math.ceil(total / perPage));
-        this._log('ok', `Page 1 of ${pageCount}`, `${all.length} of ${total} records`);
+        const HARD_PAGE_CAP = 1000; // safety: at 100/page that's 100k records
+        // The getrecord interface allows one call per 15s (FREQUENT_REQUEST).
+        // We wait this long between pages, and retry a page that gets throttled.
+        const THROTTLE_MS = 15500;       // a little over 15s for safety
+        const MAX_RETRIES_PER_PAGE = 6;  // ~1.5 min of retries before giving up on a page
+        const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-        for (let p = 2; p <= pageCount; p++) {
-            this._log('run', `Fetching page ${p}`, `of ${pageCount}`);
-            const pg = await this.getRecordPage(proxyUrl, token, beginIso, endIso, p, perPage);
-            if (Array.isArray(pg.list)) all = all.concat(pg.list);
-            this._log('ok', `Page ${p} of ${pageCount}`, `${all.length} total so far`);
+        let all = [];
+        let page = 1;
+        let reported = null;
+        let lastCallAt = Date.now(); // the token call counts as a recent hit
+
+        const fetchPageThrottled = async (pageNum) => {
+            for (let attempt = 0; attempt <= MAX_RETRIES_PER_PAGE; attempt++) {
+                // Respect the 15s floor since the previous API call.
+                const since = Date.now() - lastCallAt;
+                if (since < THROTTLE_MS) {
+                    const waitMs = THROTTLE_MS - since;
+                    this._log('run', `Waiting ${Math.ceil(waitMs/1000)}s`, `rate limit — before page ${pageNum}`);
+                    await sleep(waitMs);
+                }
+                const p = await this.getRecordPage(proxyUrl, token, beginIso, endIso, pageNum, perPage);
+                lastCallAt = Date.now();
+                if (p && p._rateLimited) {
+                    this._log('err', `Rate-limited on page ${pageNum}`,
+                        `retrying (${attempt + 1}/${MAX_RETRIES_PER_PAGE})…`);
+                    await sleep(THROTTLE_MS);
+                    continue;
+                }
+                return p;
+            }
+            throw new Error(`Page ${pageNum} kept getting rate-limited after ${MAX_RETRIES_PER_PAGE} retries.`);
+        };
+
+        while (page <= HARD_PAGE_CAP) {
+            this._log('run', `Fetching page ${page}`, page === 1 ? `${beginIso} → ${endIso}` : '');
+            const p = await fetchPageThrottled(page);
+            const list = Array.isArray(p.list) ? p.list : [];
+
+            if (page === 1) {
+                reported = { count: p.count, pageCount: p.pageCount, perPage: p.perPage };
+                this._log('ok', 'API page-1 metadata',
+                    `count=${p.count}, pageCount=${p.pageCount}, perPage=${p.perPage}, list=${list.length}`);
+                const estPages = Number.isFinite(+p.count) ? Math.ceil(+p.count / perPage) : '?';
+                if (estPages !== '?' && estPages > 1) {
+                    this._log('run', 'Heads-up: paged + throttled',
+                        `~${estPages} pages at 15s each ≈ ${Math.ceil(estPages * 15 / 60)} min. Please wait…`);
+                }
+            }
+
+            all = all.concat(list);
+            this._log('ok', `Page ${page} received`, `${list.length} record(s); ${all.length} total so far`);
+
+            const reportedCount = reported && Number.isFinite(+reported.count) ? +reported.count : null;
+            const moreExpected = reportedCount != null && all.length < reportedCount;
+
+            // CASE A — empty page.
+            if (list.length === 0) {
+                if (moreExpected) {
+                    console.warn(`[cloudApi] ANOMALY: page ${page} empty, but only ${all.length} of ${reportedCount} collected.`);
+                    this._log('err', `Page ${page} empty but more expected`,
+                        `Have ${all.length} of ${reportedCount}. See console for the raw page-${page} response.`);
+                }
+                console.log(`[cloudApi] stopping: page ${page} returned 0 records.`);
+                break;
+            }
+
+            // CASE B — a short (partial) page → end of data.
+            if (list.length < perPage) {
+                if (moreExpected) {
+                    console.warn(`[cloudApi] partial page ${page} (${list.length}) but only ${all.length} of ${reportedCount} — stopping.`);
+                    this._log('err', `Short page, fewer than reported`, `Have ${all.length} of ${reportedCount}.`);
+                } else {
+                    console.log(`[cloudApi] stopping: page ${page} returned ${list.length} < ${perPage} (last page).`);
+                }
+                break;
+            }
+
+            // CASE C — full page. Stop only if we've reached the reported count.
+            if (reportedCount != null && all.length >= reportedCount) {
+                console.log(`[cloudApi] stopping: collected ${all.length} >= reported count ${reportedCount}.`);
+                break;
+            }
+            page++;
+        }
+
+        if (page > HARD_PAGE_CAP) {
+            this._log('err', 'Safety cap hit', `Stopped at ${HARD_PAGE_CAP} pages — fetched ${all.length}.`);
+        }
+
+        // Final reconciliation log: compare what we got vs what the API claimed,
+        // and report the actual date span of everything fetched.
+        let overallSpan = '(none)';
+        if (all.length) {
+            const times = all.map(x => x.checktime).filter(Boolean).sort();
+            overallSpan = `${times[0]} … ${times[times.length - 1]}`;
+        }
+        console.log('[cloudApi] fetch complete', {
+            requested: { beginIso, endIso },
+            pagesFetched: Math.min(page, HARD_PAGE_CAP),
+            recordsFetched: all.length,
+            apiReportedCount: reported ? reported.count : null,
+            apiReportedPageCount: reported ? reported.pageCount : null,
+            overallDateSpan: overallSpan
+        });
+        this._log('ok', 'Fetch complete',
+            `${all.length} record(s) across ${Math.min(page, HARD_PAGE_CAP)} page(s). Span: ${overallSpan}`);
+        if (reported && Number.isFinite(+reported.count) && all.length < +reported.count) {
+            this._log('err', 'Fewer records than API reported',
+                `Got ${all.length} but API count=${reported.count}. The API may be capping the query window — see console.`);
         }
         return all;
     }
@@ -2424,6 +2597,8 @@ function renderMeta(model) {
 
 /* Build + render the report for the given (optional) date range. */
 function rebuild(filterStart, filterEnd) {
+    // Ensure the half-day threshold reflects the current config before building.
+    setHalfDayThresholdHours(dbHalfDayThresholdHours(leaveState.db));
     const model = buildReportModel(state.records, filterStart, filterEnd);
     renderReport(model);
     renderMeta(model);
@@ -2841,6 +3016,7 @@ processRangeBtn.addEventListener('click', () => {
     let s = inputValueToDate(filterStartInput.value) || state.naturalRange.start;
     let en = inputValueToDate(filterEndInput.value) || state.naturalRange.end;
     if (s.getTime() > en.getTime()) { const t = s; s = en; en = t; }
+    setHalfDayThresholdHours(dbHalfDayThresholdHours(leaveState.db));
     const summary = processLeaveRange(leaveState.db, state.records, s, en);
     touchDb();
     renderLeaveView();
@@ -2945,7 +3121,7 @@ document.getElementById('addTypeBtn').addEventListener('click', () => {
     renderTypesModal();
 });
 document.getElementById('saveTypesBtn').addEventListener('click', () => {
-    // Collect + validate
+    // Collect + validate leave types
     const rows = [...typesModalBody.querySelectorAll('.type-edit-row')];
     const types = [];
     for (const r of rows) {
@@ -2957,11 +3133,21 @@ document.getElementById('saveTypesBtn').addEventListener('click', () => {
         types.push({ code, label: label || code, annualQuota: quota });
     }
     if (types.length) dbSetLeaveTypes(leaveState.db, types);
+    // Half-day threshold
+    const threshRaw = document.getElementById('halfDayThreshInput').value;
+    dbSetHalfDayThresholdHours(leaveState.db, threshRaw);
+    setHalfDayThresholdHours(dbHalfDayThresholdHours(leaveState.db));
     typesModal.classList.add('hidden');
     touchDb();
+    // The threshold affects half-day detection in the report; rebuild it if data is loaded.
+    if (state.records && state.naturalRange) {
+        rebuild(inputValueToDate(filterStartInput.value) || state.naturalRange.start,
+                inputValueToDate(filterEndInput.value) || state.naturalRange.end);
+    }
     renderLeaveView();
 });
 function renderTypesModal() {
+    document.getElementById('halfDayThreshInput').value = dbHalfDayThresholdHours(leaveState.db);
     typesModalBody.innerHTML = dbLeaveTypes(leaveState.db).map(t => `
         <div class="type-edit-row">
             <input class="t-code" value="${escapeHtml(t.code)}" placeholder="CODE" maxlength="6">
